@@ -1,0 +1,6 @@
+[tool.black]
+line-length = 100
+target-version = ['py39']
+required-version = '25.1.0'
+include = '\.py$'
+extend-exclude = '/(vendor|build|artifacts)/'

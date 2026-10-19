@@ -1,0 +1,16 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+ContinuationIndentWidth: 4
+ColumnLimit: 100
+UseTab: Never
+PointerAlignment: Left
+DerivePointerAlignment: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortLambdasOnASingleLine: Empty
+ObjCBlockIndentWidth: 4
+BreakStringLiterals: true
+SortIncludes: Never
+ReflowComments: Never
