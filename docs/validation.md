@@ -34,6 +34,15 @@ Core Audio to reload drivers. Permission prompts require the user's response.
 
 ## Measurement boundaries
 
+Core/DSP tests and the core-only CI matrix require no audio devices or privacy
+grants. Installed tests reuse the approved helper and change source, block,
+lookback and driver settings through existing controls. Rebuilding or
+reinstalling that helper is a separate setup step. Keep its signed identity
+stable for future builds; certificate staging is described in
+[installation](install.md). First-time grants, revoked grants and access to a
+new protected resource can still require user action. A timeout alone is not
+proof that a consent dialog is visible or that permission is off.
+
 The installed timestamped fixture combines 1100/2200 Hz stereo carriers with
 channel-specific, host-time-coded markers. The output callback generates the
 marker from its Core Audio host timestamp. Each recording client correlates
@@ -62,6 +71,13 @@ stopped event must still succeed. Optional app-only comparisons disable both the
 microphone and monitor and do not certify those paths. The churn rehearsal opens
 and closes an additional one-second recording client every ten seconds while
 the two continuous clients keep recording.
+
+Each run now keeps private copies of its probe and source bundle, seals and
+verifies the source bundle locally, and records the executable snapshot hashes.
+Later client launches use those same copies. A concurrent rebuild can no longer
+remove the probe needed for client churn. The installed helper, broker and
+driver remain separately hash-recorded; installing updates during a run is
+still outside this validation workflow.
 
 The optional 64/128-frame render experiment is restricted to app-only
 device-stream capture. Its controller also requires positive minimum source

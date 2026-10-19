@@ -1,7 +1,7 @@
 #import <Foundation/Foundation.h>
 #include <CoreAudio/CoreAudio.h>
 #include <AudioUnit/AudioUnit.h>
-#include <loopz/timeline.hpp>
+#include <loopz/macos/driver_protocol.hpp>
 #include <loopz/probe_signal.hpp>
 #include <atomic>
 #include <array>

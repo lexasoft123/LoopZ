@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import plistlib
 import re
@@ -12,7 +13,14 @@ import subprocess
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument("--engine-args-json", default='["--tone", "--seconds", "120"]')
+parser.add_argument(
+    "--engine-signing-identity",
+    default=os.environ.get("LOOPZ_ENGINE_SIGNING_IDENTITY", "-"),
+    help="Apple Development/Developer ID identity or fingerprint; defaults to ad-hoc signing",
+)
 args = parser.parse_args()
+if not args.engine_signing_identity.strip():
+    parser.error("Engine signing identity must not be empty")
 engine_args = json.loads(args.engine_args_json)
 if not isinstance(engine_args, list) or not all(isinstance(x, str) for x in engine_args):
     raise SystemExit("engine arguments must be an array of strings")
@@ -40,12 +48,13 @@ identities = {
     "loopz-install-check": "com.lexasoft.loopz.install-check",
 }
 for name, identifier in identities.items():
+    signing_identity = args.engine_signing_identity if name == "LoopZ Engine.app" else "-"
     subprocess.run(
         [
             "codesign",
             "--force",
             "--sign",
-            "-",
+            signing_identity,
             "--timestamp=none",
             "--identifier",
             identifier,
@@ -60,6 +69,26 @@ details = subprocess.run(
     capture_output=True,
     check=True,
 ).stderr
+team = re.search(r"^TeamIdentifier=(.+)$", details, re.M)
+team_identifier = team[1] if team and team[1] != "not set" else None
+certificate_engine = args.engine_signing_identity != "-"
+if certificate_engine and not team_identifier:
+    raise SystemExit("Certificate-signed engine must have an Apple team identifier")
+designated_details = subprocess.run(
+    ["codesign", "-d", "-r-", str(stage / "LoopZ Engine.app")],
+    text=True,
+    capture_output=True,
+    check=True,
+)
+designated = re.search(
+    r"^(?:# )?designated => (.+)$",
+    designated_details.stdout + "\n" + designated_details.stderr,
+    re.M,
+)
+if not designated or (certificate_engine and "cdhash" in designated[1]):
+    raise SystemExit(
+        "Engine designated requirement is missing or not stable for certificate signing"
+    )
 match = re.search(r"^CDHash=([a-f0-9]+)$", details, re.M)
 if not match:
     raise SystemExit("Cannot pin helper code hash")
@@ -111,7 +140,11 @@ hashes = {
     json.dumps(
         {
             "protocol": 1,
-            "developmentSigning": "ad-hoc",
+            "developmentSigning": "certificate-signed-engine" if certificate_engine else "ad-hoc",
+            "engineSigning": {
+                "teamIdentifier": team_identifier,
+                "designatedRequirement": designated[1],
+            },
             "engineRequirement": requirement,
             "controlRequirement": control_requirement,
             "engineArguments": engine_args,

@@ -1,4 +1,4 @@
-#include <loopz/bridge.hpp>
+#include <loopz/macos/bridge.hpp>
 #include <xpc/xpc.h>
 #include <sys/mman.h>
 #include <dispatch/dispatch.h>

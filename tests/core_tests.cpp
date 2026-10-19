@@ -1,4 +1,4 @@
-#include <loopz/capture.hpp>
+#include <loopz/capture_buffer.hpp>
 #include <loopz/graph.hpp>
 #include <cassert>
 #include <cstdio>
@@ -6,9 +6,7 @@
 #include <memory>
 #include <array>
 #include <cmath>
-#include <sys/mman.h>
-#include <sys/wait.h>
-#include <unistd.h>
+#include <numbers>
 
 int main() {
     using namespace loopz;
@@ -35,58 +33,16 @@ int main() {
             }
     }
     writer.join();
-    struct Exchange {
-        Timeline ring;
-        std::atomic<uint64_t> published{0}, acknowledged[2]{};
-    };
-    // One writer and two live reader processes exchange 128 batches, including
-    // wraparound. The writer cannot finish until both independently validate.
-    auto* memory =
-        mmap(nullptr, sizeof(Exchange), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
-    assert(memory != MAP_FAILED);
-    auto* shared = new (memory) Exchange{};
-    pid_t children[2]{};
-    for (uint32_t reader = 0; reader < 2; ++reader) {
-        children[reader] = fork();
-        assert(children[reader] >= 0);
-        if (children[reader] == 0) {
-            uint64_t observations = 0;
-            for (uint64_t batch = 1; batch <= 128; ++batch) {
-                while (shared->published.load() < batch)
-                    std::this_thread::yield();
-                for (uint64_t i = (batch - 1) * 512; i < batch * 512; ++i) {
-                    float left, right;
-                    if (!shared->ring.read(i, left, right) || left != static_cast<float>(i) ||
-                        right != -static_cast<float>(i))
-                        _exit(1);
-                    ++observations;
-                }
-                shared->acknowledged[reader].store(batch);
-            }
-            _exit(observations == 65536 ? 0 : 1);
-        }
-    }
-    for (uint64_t batch = 1; batch <= 128; ++batch) {
-        for (uint64_t i = (batch - 1) * 512; i < batch * 512; ++i)
-            shared->ring.write(i, static_cast<float>(i), -static_cast<float>(i));
-        shared->published.store(batch);
-        while (shared->acknowledged[0].load() < batch || shared->acknowledged[1].load() < batch)
-            std::this_thread::yield();
-    }
-    for (auto child : children) {
-        int status = 0;
-        assert(waitpid(child, &status, 0) == child && WIFEXITED(status) &&
-               WEXITSTATUS(status) == 0);
-    }
-    munmap(memory, sizeof(Exchange));
     // Smaller actual renders must preserve output across callback partitions,
     // including limiter state/nonfinite containment, without writing the tail.
     for (double rate : {44100.0, 48000.0}) {
         constexpr uint32_t frames = 1024;
         std::array<float, frames> al{}, ar{}, ml{}, mr{}, pl{}, pr{}, expectedL{}, expectedR{};
         for (uint32_t i = 0; i < frames; ++i) {
-            al[i] = 1.2f * std::sin(2 * M_PI * 1100 * i / rate);
-            ar[i] = 1.1f * std::sin(2 * M_PI * 2200 * i / rate);
+            al[i] = static_cast<float>(1.2 *
+                                       std::sin(2 * std::numbers::pi_v<double> * 1100 * i / rate));
+            ar[i] = static_cast<float>(1.1 *
+                                       std::sin(2 * std::numbers::pi_v<double> * 2200 * i / rate));
             ml[i] = 0.2f;
             mr[i] = -0.1f;
             pl[i] = 0.05f;
@@ -169,7 +125,8 @@ int main() {
     for (uint64_t block = 0; block < 1400; ++block) {
         const auto first = block * kBlock;
         for (uint32_t i = 0; i < kBlock; ++i) {
-            input[i] = static_cast<float>(std::sin(2 * M_PI * 220 * (first + i) / inputRate));
+            input[i] = static_cast<float>(std::sin(2 * std::numbers::pi_v<double> * 220 *
+                                                   static_cast<double>(first + i) / inputRate));
             inputR[i] = -input[i];
         }
         capture->append(input.data(), inputR.data(), kBlock, startNs + frameNs(first, inputRate),
@@ -179,7 +136,8 @@ int main() {
             misses += capture->sample(target, 48000, output.data(), outputR.data(), kBlock);
             for (uint32_t i = 0; i < kBlock; ++i) {
                 const double expected =
-                    std::sin(2 * M_PI * 220 * ((target - startNs) * 1e-9 + i / 48000.0));
+                    std::sin(2 * std::numbers::pi_v<double> * 220 *
+                             (static_cast<double>(target - startNs) * 1e-9 + i / 48000.0));
                 maximumError = std::max(maximumError, std::fabs(output[i] - expected));
                 assert(std::fabs(output[i] + outputR[i]) < 1e-6);
                 ++checked;
@@ -194,7 +152,8 @@ int main() {
     inputR.fill(-0.5f);
     for (uint64_t block = 0; block < 32; ++block)
         discontinuous->append(input.data(), inputR.data(), kBlock,
-                              startNs + frameNs(block * kBlock, 48000), 48000, block * kBlock);
+                              startNs + frameNs(block * kBlock, 48000), 48000,
+                              static_cast<double>(block * kBlock));
     CaptureBuffer::ReaderState cachedClock;
     assert(discontinuous->sample(startNs + frameNs(28 * kBlock, 48000), 48000, output.data(),
                                  outputR.data(), kBlock, &cachedClock) == 0);
@@ -213,7 +172,8 @@ int main() {
     auto concurrentCapture = std::make_unique<CaptureBuffer>();
     for (uint64_t block = 0; block < 64; ++block)
         concurrentCapture->append(input.data(), inputR.data(), 128,
-                                  startNs + frameNs(block * 128, 48000), 48000, block * 128);
+                                  startNs + frameNs(block * 128, 48000), 48000,
+                                  static_cast<double>(block * 128));
     CaptureBuffer::ReaderState concurrentClock;
     assert(concurrentCapture->sample(startNs + frameNs(6144, 48000), 48000, output.data(),
                                      outputR.data(), kBlock, &concurrentClock) == 0);
@@ -224,7 +184,8 @@ int main() {
                 std::this_thread::yield();
             const auto first = (63 + round) * 128;
             concurrentCapture->append(input.data(), inputR.data(), 128,
-                                      startNs + frameNs(first, 48000), 48000, first);
+                                      startNs + frameNs(first, 48000), 48000,
+                                      static_cast<double>(first));
             captureDone.store(round);
             while (acknowledged.load() < round)
                 std::this_thread::yield();
@@ -246,7 +207,8 @@ int main() {
     captureWriter.join();
     assert(overlappingReads >= 1000);
     std::printf("PASS: two readers, overwrite silence, nonfinite containment, concurrent snapshots "
-                "(%llu reads), cross-process atomics, real zdsp mixing/limiting at both rates, "
+                "(%llu reads), real zdsp mixing/limiting at both rates, "
                 "+100 ppm timestamp conversion (%llu samples, max error %.6f)\n",
-                reads, checked, maximumError);
+                static_cast<unsigned long long>(reads), static_cast<unsigned long long>(checked),
+                maximumError);
 }

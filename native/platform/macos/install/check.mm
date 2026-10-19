@@ -2,7 +2,7 @@
 #include <CoreAudio/CoreAudio.h>
 #include <CoreAudio/AudioServerPlugIn.h>
 #include <AudioUnit/AudioUnit.h>
-#include <loopz/timeline.hpp>
+#include <loopz/macos/driver_protocol.hpp>
 #include <xpc/xpc.h>
 #include <atomic>
 #include <functional>

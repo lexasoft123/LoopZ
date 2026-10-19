@@ -8,19 +8,29 @@ std::unique_ptr<loopz::probe::StreamCheck> simulate(double rate, bool swap, bool
     auto check = std::make_unique<loopz::probe::StreamCheck>();
     check->rate = rate;
     float left[256], right[256];
-    for (uint64_t frame = 0; frame < rate * 5; frame += 256) {
-        const auto ns = 9000000000ULL + static_cast<uint64_t>(frame * 1e9 / rate);
+    for (uint64_t frame = 0; frame < static_cast<uint64_t>(rate * 5); frame += 256) {
+        const auto ns =
+            9000000000ULL + static_cast<uint64_t>(static_cast<double>(frame) * 1e9 / rate);
         for (unsigned i = 0; i < 256; ++i) {
             const auto time = ns + static_cast<uint64_t>((i + 0.5) * 1e9 / rate);
-            const double tone[2]{0.1 * std::sin(2 * M_PI * 1100 * (frame + i) / rate),
-                                 0.1 * std::sin(2 * M_PI * 2200 * (frame + i) / rate)};
-            const auto delay = delayNs + (jump && frame > rate * 3 ? 20000000ULL : 0);
-            left[i] = 0.01 * std::sin(2 * M_PI * 337 * (frame + i) / rate) + tone[swap ? 1 : 0] +
-                      (marker ? loopz::probe::marker(time - delay, swap ? 1 : 0) : 0);
-            right[i] = 0.01 * std::sin(2 * M_PI * 751 * (frame + i) / rate) + tone[swap ? 0 : 1] +
-                       (marker ? loopz::probe::marker(time - delay, swap ? 0 : 1) : 0);
+            const double tone[2]{0.1 * std::sin(2 * std::numbers::pi_v<double> * 1100 *
+                                                static_cast<double>(frame + i) / rate),
+                                 0.1 * std::sin(2 * std::numbers::pi_v<double> * 2200 *
+                                                static_cast<double>(frame + i) / rate)};
+            const auto delay =
+                delayNs + (jump && frame > static_cast<uint64_t>(rate * 3) ? 20000000ULL : 0);
+            left[i] =
+                static_cast<float>(0.01 * std::sin(2 * std::numbers::pi_v<double> * 337 *
+                                                   static_cast<double>(frame + i) / rate) +
+                                   tone[swap ? 1 : 0] +
+                                   (marker ? loopz::probe::marker(time - delay, swap ? 1 : 0) : 0));
+            right[i] =
+                static_cast<float>(0.01 * std::sin(2 * std::numbers::pi_v<double> * 751 *
+                                                   static_cast<double>(frame + i) / rate) +
+                                   tone[swap ? 0 : 1] +
+                                   (marker ? loopz::probe::marker(time - delay, swap ? 0 : 1) : 0));
         }
-        check->append(left, right, 256, ns, frame, true);
+        check->append(left, right, 256, ns, static_cast<double>(frame), true);
         check->consume();
     }
     return check;

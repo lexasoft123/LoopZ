@@ -5,6 +5,45 @@ source, one microphone, one silent hardware monitor and two independent
 recording clients. Completing these gates is required before expanding to
 multiple devices or building the complete interface.
 
+## Module boundaries
+
+The first portability refactor separates the reusable C++20 core from the
+macOS product backend. The baseline before this refactor is commit `92ce955`.
+
+| Layer | Location | Responsibility |
+| --- | --- | --- |
+| Portable core | `native/core`, `native/include/loopz` | zdsp graph, source history, timestamp interpolation, atomic timeline, marker analysis |
+| macOS backend | `native/platform/macos` | Core Audio capture/driver, Mach clock and scheduling, XPC transport, consent, inventory and process lifecycle |
+| Dependency composition | `cmake/singz` | Portable zdsp runtime; optional macOS zcore device host in `macos.cmake` |
+| Validation | `tests` | Standard C++ core tests; separate POSIX process test and macOS driver/installer tests |
+
+`CaptureBuffer::append` accepts samples, frame positions and nanosecond host
+anchors supplied by the backend. `sample` and `MixingGraph::render` operate
+without OS queries. The backend converts native timestamps into that common
+time domain and owns callback/thread lifetimes. The core does not choose
+Core Audio device UIDs, query permissions, create XPC connections or schedule
+Mach threads. It does not assume that a source history capacity is a queued
+delay. These are the existing concrete boundaries, without speculative
+Windows/Linux transport implementations.
+
+The Darwin `SharedAudio` layout, protocol constants and code-identity bridge
+are private backend contracts under `include/loopz/macos`. Moving them does
+not alter their byte layout, protocol or runtime ownership. Future backends
+must provide their own IPC and virtual-device contracts; standard C++ atomics
+alone do not establish a portable process-shared ABI.
+
+`LOOPZ_BUILD_MACOS_BACKEND=OFF` configures the core without Objective-C++ or
+Apple audio frameworks. Core headers cannot include backend/OS headers; a
+boundary test rejects those dependencies. Tests use standard C++ math and
+compiler-specific warning/assertion flags. The POSIX fork/mmap test is built
+only on UNIX. Vendor manifests use slash-normalized keys, and Git preserves
+hash-locked vendor bytes on Windows. The CI matrix covers macOS, Linux and
+Windows, but only local macOS runs have been executed in this workspace.
+
+This is the initial module split. The helper still owns the feasibility
+lifecycle and command-line orchestration; the complete route model and
+Windows/Linux audio backends remain future work.
+
 ## Processes and ownership
 
 `LoopZAudio.driver` publishes a stable Core Audio UID. Its virtual clock derives
@@ -36,8 +75,9 @@ The prototype's one-time global Core Audio restart was a development action;
 it does not satisfy this gate. Transactional helper/DSP updates preserve the loaded driver. The updater
 checks package compatibility, rolls back failed replacement, and measures
 service identity, default device selections and an independent silent hardware
-stream before committing. Fresh driver activation and driver-binary replacement
-still need an independently verified design. No automatic global-reset fallback belongs
+stream before committing. Fresh driver activation still needs an independently verified design.
+Guarded isolated-driver replacement has passed on macOS 26.6.2; it is an
+OS-specific experiment, not a supported activation API. No automatic global-reset fallback belongs
 in the product installer.
 
 Research the lifecycle of a minimal resident driver, replaceable helper and
@@ -86,14 +126,15 @@ are separate to prevent recursive pass-through.
 
 ## Clocks and conversion
 
-Mach absolute time is the common reference; the virtual device has its own
-sample clock at 44.1 or 48 kHz. Each capture endpoint retains its source sample
-counter and hardware host timestamp. A bounded source ring and copied affine
-anchor map a requested host time into source samples. Measured source rate
-accounts for long-term drift. The original measured graph aligned sources 4096 virtual frames
-behind its publication timestamp. Driver input adds a fixed 1024-frame queue
-margin. Expected software delay is therefore about 107 ms at 48 kHz, before
-application and hardware buffering; this is a measurement target, not a result.
+The macOS backend converts Mach absolute time to nanosecond anchors before
+passing samples into the portable core. Its virtual device has its own clock
+at 44.1 or 48 kHz. Each source retains its sample counter and host timestamp;
+the core maps requested host time into source samples and measures rate to
+account for long-term drift. The default helper lookback is 2048 frames and
+the default independent driver read queue is 1024 frames. The controlled
+app-only experiment uses a 192-frame lookback and zero additional read queue.
+Requested frame counts are distinct from measured signal latency; current
+measurements and exact settings are in [the latency report](latency-comparison.md).
 
 Each hardware monitor uses its own callback host timestamp and rate. It reads
 the published virtual timeline through interpolation, with an additional queue
@@ -110,8 +151,9 @@ transactions belong to the expansion phase.
 
 ## Sources and safety
 
-Application capture selects a bundle identity and currently captures a stereo
-mixdown. On macOS 26, Core Audio can restore processes by bundle ID. The older
+Application capture selects a bundle identity. A single eligible stereo
+float32 output stream uses device-stream capture; other eligible routes retain
+stereo mixdown. Unknown/failed output queries never become an empty route. On macOS 26, Core Audio can restore processes by bundle ID. The older
 OS fallback needs explicit process watching/rebinding and remains a gate for
 claiming full macOS 14.2 support. Browser/helper-process coverage must be
 verified; a single process is not assumed to represent an entire application.
@@ -134,15 +176,22 @@ need a separate user-facing policy; a limiter does not prevent feedback.
 
 ### Realtime latency revision
 
-The revised virtual graph runs on a dedicated time-constrained thread with an
-independent Audio Work Interval, rather than sharing HAL health queries and
-telemetry with the render deadline. Its default source lookback is 2048 frames;
-`--latency-frames` permits 256-frame increments through 4096 for controlled
-rehearsals. A private tap aggregate requests 128 frames. After warmup, the worker
-records the minimum margin between the required block end (including
-interpolation lookahead) and the latest capture sample represented by its clock
-snapshot. The original driver queue and its advertised 5120-frame latency are
-unchanged; reduced signal latency does not make that metadata accurate.
+The macOS virtual graph runs on a dedicated time-constrained thread with an
+independent Audio Work Interval. HAL health queries and telemetry stay on the
+control thread. Default rendering uses 256 frames; experimental 64/128-frame
+calls require app-only device-stream capture. The maximum prepared zdsp block
+stays 256 frames and capture history still accepts 4096-frame callbacks.
+Driver metadata follows the selected source lookback while its independent
+read queue keeps its existing 256-frame grid. Smaller app-only blocks compute
+32 frames before their output timestamp; default blocks use a 64-frame lead.
+The publication deadline is the current block's first output timestamp, and
+interrupted waits recheck the clock before reading source history.
+
+The minimum source margin uses the latest coherent clock snapshot available
+to that reader. Reusing an older anchor can underestimate available history;
+zero missing source frames and positive publication headroom are separately
+required. A narrow positive margin is experimental evidence, not a robust
+default or a substitute for the sustained validation gate.
 
 A render reader owns its last coherent source-clock snapshot. It makes only two
 publication attempts and can reuse that snapshot during a normal capture

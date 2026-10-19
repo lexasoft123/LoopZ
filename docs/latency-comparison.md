@@ -34,6 +34,22 @@ The guarded isolated-host reload passed without changing Core Audio or default
 devices, with an independent hardware continuity pass. A repeated 256-frame
 lookback rehearsal passed after reload before advancing to 192 frames.
 
+The same 64/192-frame configuration then passed a **600-second 48 kHz**
+regression. Both continuous clients validated 599 marker windows: one measured
+4–5 ms and the other 4 ms throughout. All 59 additional one-second client
+starts/exits passed. Active error deltas and post-checkpoint increments were
+zero, including source/driver misses and missed publication deadlines. Minimum
+source margin was 0.914 ms and minimum publication slack was 0.591 ms. Observed
+resident-memory ranges after the first minute were 64 KiB for the helper and
+48 KiB each for the source and two clients. Helper exit was clean.
+
+The post-run idle snapshot verified driver build 3, source metadata and input
+latency both 192 frames, queue zero, period 128, and unchanged default device
+selections. Callback receipt offsets were approximately 0.990–1.132 ms after
+their input sample timestamps. The 600-second result remains specific to this
+app-only fixture and does not meet the two-hour gate. The 44.1 kHz evidence is
+the twenty-second rehearsal, not a ten-minute run.
+
 The first longer small-block attempt was interrupted at approximately 334
 seconds when a concurrent build removed the probe used by later client churn
 launches. It is failed evidence, not a 600-second pass. The controller now
@@ -134,6 +150,17 @@ post-checkpoint increments were also zero. Minimum publication headroom was
 resident-memory ranges stayed below the 16 MiB per-process rehearsal limit.
 The helper exited successfully and all three test agents were stopped.
 
+That longer microphone regression belongs to the preceding helper. The newer
+small-block helper initially timed out while requesting microphone access;
+that failed setup remains at
+`artifacts/ultralow-48000-mic-monitor-regression-result.json`.
+System Settings subsequently showed LoopZ Engine access already enabled.
+Without changing permissions or replacing the helper, twenty-second retries
+passed at both rates: 21 ms at 48 kHz and 23 ms at 44.1 kHz, with both clients,
+nonzero microphone input, muted monitor coverage, clean helper exit and zero
+active errors. The earlier timeout's exact cause is not isolated; it did not
+establish that consent was missing or that a dialog was visible.
+
 A control-thread checkpoint after both recording clients finish captures active
 counter deltas before helper shutdown. Later increments are reported separately
 as `postCheckpointCounterIncrements` and are not automatically explained as
@@ -211,6 +238,18 @@ selected capture mode, and driver settings:
 - `artifacts/latency-render-lead-helper-install-result.json`
 - `artifacts/latency-recheck-cleanup-result.json`
 - `artifacts/latency-comparison-latest.json`
+- `artifacts/ultralow-helper-install-result.json`
+- `artifacts/ultralow-driver-update-result.json`
+- `artifacts/ultralow-48000-block64-source256-driver3-result.json`
+- `artifacts/ultralow-48000-block64-source192-driver3-result.json`
+- `artifacts/ultralow-44100-block64-source192-driver3-result.json`
+- `artifacts/ultralow-48000-block64-source192-churn-result.json`
+- `artifacts/ultralow-48000-block64-source192-interrupted-result.json`
+- `artifacts/ultralow-192-idle-snapshot.json`
+- `artifacts/ultralow-cleanup-result.json`
+- `artifacts/ultralow-summary.json`
+- `artifacts/ultralow-48000-mic-monitor-consent-retry-result.json`
+- `artifacts/ultralow-44100-mic-monitor-consent-retry-result.json`
 
 Earlier installation/recovery evidence remains in
 `artifacts/driver-host-recovery-result.json` and

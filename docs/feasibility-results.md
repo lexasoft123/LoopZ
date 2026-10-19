@@ -14,6 +14,22 @@ and positive source/publication margins. It uses actual 64-frame render calls,
 Measurement resolution is 1 ms. This is an explicit app-only experiment;
 microphone, monitoring and conservative defaults are unchanged.
 
+The 48 kHz small-block route also passed a 600-second regression at 4–5 ms:
+599 valid marker windows per client, 59 additional client checks, zero active
+and post-checkpoint errors, minimum source margin 0.914 ms and publication
+slack 0.591 ms. This remains an app-only experiment; the two-hour gate is unmet.
+
+These installed measurements use the baseline helper recorded by executable
+hash in the artifacts. The subsequent portability refactor has separate core
+and macOS build/test validation; its rebuilt helper was not installed during
+the latency measurements.
+The installed helper's microphone/monitor retries now pass at both rates,
+measuring 21/23 ms with zero active errors. System Settings showed access was
+already enabled; no permission settings or helper code changed for the retries.
+The earlier permission-request timeout remains failed setup evidence with an
+unisolated cause. Test agents are stopped and prior idle timing and 48 kHz
+restored; Core Audio and all three default devices are unchanged.
+
 The previous matched app-only rehearsals measured 16 ms at 48 kHz and 17–18 ms at
 44.1 kHz, versus a fresh Loopback measurement of 15–16 ms and 17 ms. Both use
 matching source rates and two independent clients. These are explicit

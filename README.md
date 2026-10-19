@@ -16,6 +16,22 @@ ctest --test-dir build --output-on-failure
 "build/LoopZ Engine.app/Contents/MacOS/LoopZ Engine" --list
 ```
 
+The DSP core can be built independently, with a C++20 compiler and Python 3:
+
+```sh
+cmake -S . -B build/core -DLOOPZ_BUILD_MACOS_BACKEND=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build/core --config Release --parallel 4
+ctest --test-dir build/core -C Release --output-on-failure
+```
+
+`native/core` and `native/include/loopz` contain platform-independent DSP,
+capture history, timeline math and marker analysis. All Core Audio, Mach, XPC,
+driver, helper and device-inventory code lives in `native/platform/macos`.
+Its headers are available only to backend targets. The core does not enable
+Objective-C++ or link Apple audio frameworks. Windows/Linux runtime backends
+are future work; a three-OS CI workflow checks the core build when published.
+Current local validation is on macOS, with the backend both enabled and disabled.
+
 Source formatting uses clang-format 22.1.8 and Black 25.1.0. Install the optional
 formatting tools once, then use the shared formatting command:
 
@@ -33,7 +49,7 @@ sources; the pinned vendor snapshot is excluded.
 The native snapshot is pinned in `vendor/singz.lock.json`. `cmake/singz` builds
 only device and graph components; media codecs, ML models and SingZ's product
 ownership layers are excluded. Apple's driver sample license is retained in
-`native/driver/APPLE-LICENSE.txt`. The `@singz/ui` dependency is reserved for
+`native/platform/macos/driver/APPLE-LICENSE.txt`. The `@singz/ui` dependency is reserved for
 the interface phase; this feasibility build has no routing GUI.
 
 See [the architecture contract](docs/architecture.md),

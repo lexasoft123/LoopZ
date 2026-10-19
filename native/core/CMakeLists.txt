@@ -1,0 +1,5 @@
+add_library(loopz_core STATIC graph.cpp capture_buffer.cpp)
+add_library(LoopZ::Core ALIAS loopz_core)
+target_include_directories(loopz_core PUBLIC "${PROJECT_SOURCE_DIR}/native/include")
+target_link_libraries(loopz_core PUBLIC SingZ::zdsp_runtime)
+loopz_strict_target(loopz_core)

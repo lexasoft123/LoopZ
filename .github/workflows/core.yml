@@ -1,0 +1,21 @@
+name: Portable core
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  core:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Configure without platform backend
+        run: cmake -S . -B build/core -DLOOPZ_BUILD_MACOS_BACKEND=OFF -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build/core --config Release --parallel 4
+      - name: Test
+        run: ctest --test-dir build/core -C Release --output-on-failure

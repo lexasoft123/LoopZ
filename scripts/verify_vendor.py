@@ -8,7 +8,7 @@ root = Path(__file__).resolve().parents[1]
 lock = json.loads((root / "vendor/singz.lock.json").read_text())
 base = root / "vendor/singz"
 actual = {
-    str(p.relative_to(base)): hashlib.sha256(p.read_bytes()).hexdigest()
+    p.relative_to(base).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
     for p in base.rglob("*")
     if p.is_file()
 }

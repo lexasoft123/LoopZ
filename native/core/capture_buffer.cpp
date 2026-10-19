@@ -1,4 +1,4 @@
-#include <loopz/capture.hpp>
+#include <loopz/capture_buffer.hpp>
 #include <algorithm>
 
 namespace loopz {
@@ -32,7 +32,8 @@ void CaptureBuffer::append(const float* left, const float* right, uint32_t frame
     }
     double measuredRate = nominalRate;
     if (firstHostNs > originHost_ + 1000000000) {
-        measuredRate = (cursor_ - originFrame_) * 1e9 / (firstHostNs - originHost_);
+        measuredRate = static_cast<double>(cursor_ - originFrame_) * 1e9 /
+                       static_cast<double>(firstHostNs - originHost_);
         if (measuredRate < nominalRate * 0.995 || measuredRate > nominalRate * 1.005) {
             originHost_ = firstHostNs;
             originFrame_ = cursor_;

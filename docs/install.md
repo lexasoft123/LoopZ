@@ -91,9 +91,26 @@ launchctl bootout "gui/$(id -u)/com.lexasoft.loopz.engine"
 ```
 
 Then remove the prototype with `sudo python3 scripts/uninstall_local.py`.
-The prototype uses ad-hoc development signing. Developer ID signing,
-notarization, a distributable installer and automatic login registration are
-separate release gates.
+The installed prototype uses ad-hoc development signing. To give future engine
+builds a stable identity, staging accepts an existing Apple Development or
+Developer ID certificate name/fingerprint through `--engine-signing-identity`
+or `LOOPZ_ENGINE_SIGNING_IDENTITY`. The option applies only to the engine;
+driver, broker and checker retain their existing signing policy. Set the
+environment variable to the chosen identity once, then stage normally.
+
+Certificate staging requires an Apple team identifier and a designated
+requirement that is not tied to a code hash. The manifest records both. The
+broker still pins the exact staged helper code hash; its authentication is
+unchanged. No certificate is created, imported or selected automatically.
+The installed helper has not yet been switched to certificate signing.
+
+Use the same signing certificate class, team, bundle ID and installation path
+across development builds. Switching from ad-hoc signing can require one more
+initial approval. Apple's [signing requirements guidance](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements)
+explains why ad-hoc identities are specific to a code version and why stable
+designated requirements matter for saved privacy grants. Certificate signing
+does not itself grant microphone access. Notarization, a distributable
+installer and automatic login registration remain separate release gates.
 
 ## Timestamped stability check
 

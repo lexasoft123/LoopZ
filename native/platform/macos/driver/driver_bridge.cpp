@@ -1,5 +1,5 @@
 #include "driver_bridge.h"
-#include <loopz/bridge.hpp>
+#include <loopz/macos/bridge.hpp>
 #include <dispatch/dispatch.h>
 #include <mach/mach_time.h>
 #include <algorithm>

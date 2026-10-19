@@ -1,5 +1,5 @@
 #pragma once
-#include <loopz/timeline.hpp>
+#include <loopz/macos/driver_protocol.hpp>
 #include <atomic>
 #include <memory>
 #include <string>

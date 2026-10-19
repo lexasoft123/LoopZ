@@ -2,12 +2,13 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <numbers>
 #include <cstdint>
 #include <algorithm>
 
 namespace loopz::probe {
 // A time-coded, channel-specific marker. The code changes every 10 ms and
-// never repeats on the time scale of this test. Its clock is Mach host time.
+// never repeats on the time scale of this test. Its clock is the caller's monotonic host-time domain.
 inline double marker(uint64_t ns, unsigned channel) noexcept {
     uint64_t x = ns / 10000000 + 0x9e3779b97f4a7c15ULL * (channel + 1);
     x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
@@ -50,10 +51,12 @@ class StreamCheck {
             const uint64_t time = ns + static_cast<uint64_t>((i + 0.5) * 1e9 / rate);
             const double value[2]{left[i], right[i]};
             for (unsigned c = 0; c < 2; ++c) {
-                const double angle = 2 * M_PI * frequencies[c] * sampleTime / rate +
-                                     2 * M_PI * frequencies[c] * i / rate;
-                const double other = 2 * M_PI * frequencies[1 - c] * sampleTime / rate +
-                                     2 * M_PI * frequencies[1 - c] * i / rate;
+                const double angle =
+                    2 * std::numbers::pi_v<double> * frequencies[c] * sampleTime / rate +
+                    2 * std::numbers::pi_v<double> * frequencies[c] * i / rate;
+                const double other =
+                    2 * std::numbers::pi_v<double> * frequencies[1 - c] * sampleTime / rate +
+                    2 * std::numbers::pi_v<double> * frequencies[1 - c] * i / rate;
                 window.real[c] += value[c] * std::cos(angle);
                 window.imag[c] += value[c] * std::sin(angle);
                 window.crossReal[c] += value[c] * std::cos(other);
@@ -80,10 +83,10 @@ class StreamCheck {
             auto& window = queue_[read_.load(std::memory_order_relaxed) % queue_.size()];
             bool good = true;
             for (unsigned c = 0; c < 2; ++c) {
-                const double amplitude =
-                    2 * std::hypot(window.real[c], window.imag[c]) / window.frames;
-                const double cross =
-                    2 * std::hypot(window.crossReal[c], window.crossImag[c]) / window.frames;
+                const double amplitude = 2 * std::hypot(window.real[c], window.imag[c]) /
+                                         static_cast<double>(window.frames);
+                const double cross = 2 * std::hypot(window.crossReal[c], window.crossImag[c]) /
+                                     static_cast<double>(window.frames);
                 minimumAmplitude = std::min(minimumAmplitude, amplitude);
                 maximumCross = std::max(maximumCross, cross);
                 good &= amplitude > 0.07 && amplitude < 0.13 && cross < 0.01;

@@ -4,7 +4,7 @@
 #import <CoreAudio/AudioHardwareTapping.h>
 #import <CoreAudio/CATapDescription.h>
 #include <AudioUnit/AudioUnit.h>
-#include <loopz/capture.hpp>
+#include <loopz/macos/capture.hpp>
 #include <zcore/device/audio_host.h>
 #include <mach/mach_time.h>
 #include <array>

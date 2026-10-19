@@ -1,7 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
-#include <loopz/bridge.hpp>
-#include <loopz/capture.hpp>
+#include <loopz/macos/bridge.hpp>
+#include <loopz/macos/capture.hpp>
 #include <loopz/graph.hpp>
 #include <zcore/device/audio_host.h>
 #include <mach/mach_time.h>
