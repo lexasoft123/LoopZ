@@ -141,8 +141,12 @@ OSStatus propertySize(const Device* device, AudioObjectID object,
                 return noErr;
             }
             break;
-        case kAudioDevicePropertyRelatedDevices:
         case kAudioDevicePropertyTransportType:
+            // Legacy clients, including Zoom, classify each endpoint using
+            // the selected IO scope. Transport describes the whole device.
+            bytes = sizeof(UInt32);
+            return noErr;
+        case kAudioDevicePropertyRelatedDevices:
         case kAudioDevicePropertyClockDomain:
         case kAudioDevicePropertyDeviceIsAlive:
         case kAudioDevicePropertyDeviceIsRunning:

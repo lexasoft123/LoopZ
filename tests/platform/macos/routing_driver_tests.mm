@@ -448,6 +448,15 @@ void publicationAndIO() {
     publish(pool, document);
     const auto list = devices();
     assert(list.size() == 3 && list[0] != list[1]);
+    // Zoom queries transport on the input scope while classifying devices.
+    // A global-only answer makes a valid microphone disappear from its list.
+    for (const auto object : list) {
+        for (const auto scope : {kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyScopeInput,
+                                 kAudioObjectPropertyScopeOutput}) {
+            assert(property<UInt32>(object, kAudioDevicePropertyTransportType, scope) ==
+                   kAudioDeviceTransportTypeVirtual);
+        }
+    }
     const auto timing = driverTiming;
     const auto custom = property<std::array<AudioServerPlugInCustomPropertyInfo, 2>>(
         list[0], kAudioObjectPropertyCustomPropertyInfoList);
