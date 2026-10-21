@@ -18,7 +18,7 @@ bool validMeasuredRate(double value) noexcept {
 void silence(RoutingOutput output, uint32_t frames) noexcept {
     for (auto* plane : output.channels)
         if (plane)
-            std::fill_n(plane, std::min(frames, output.capacityFrames), 0);
+            std::fill_n(plane, std::min(frames, output.capacityFrames), 0.0f);
 }
 struct FrameTag {
     std::atomic<uint64_t> frame{UINT64_MAX}, revision{0};
@@ -81,13 +81,13 @@ struct AudioHistory::Impl {
                 diagnostics->unavailable(position, revision & 1, capacity);
             return {false, 0};
         }
-        const auto available = tag.available.load();
+        const auto frameAvailable = tag.available.load();
         for (uint32_t channel = 0; channel < destination.size(); ++channel)
             destination[channel] = std::bit_cast<float>(samples[slot * channels + channel].load());
         const bool valid = tag.frame.load() == position && tag.revision.load() == revision;
         if (!valid && diagnostics)
             diagnostics->unavailable(position, true, capacity);
-        return {valid, available};
+        return {valid, frameAvailable};
     }
     static ResampleFrame readFrame(const void* context, uint64_t position,
                                    std::span<float> values) noexcept {
@@ -291,7 +291,8 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
         return AudioReadResult{frames, online};
     };
     silence(output, frames);
-    std::fill_n(availableFrames.begin(), std::min<size_t>(frames, availableFrames.size()), 0);
+    std::fill_n(availableFrames.begin(), std::min<size_t>(frames, availableFrames.size()),
+                uint8_t{0});
     if (!frames || frames > kBlock || frames > output.capacityFrames || output.channels.empty() ||
         (!availableFrames.empty() && availableFrames.size() < frames) ||
         output.channels.size() > channels() || !validMeasuredRate(rate) ||
@@ -363,7 +364,8 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
     }
     if (self.generation.load() != generation || !self.online.load()) {
         silence(output, frames);
-        std::fill_n(availableFrames.begin(), std::min<size_t>(frames, availableFrames.size()), 0);
+        std::fill_n(availableFrames.begin(), std::min<size_t>(frames, availableFrames.size()),
+                    uint8_t{0});
         return failed(AudioHistoryMissingReason::GenerationChanged, false);
     }
     if (self.diagnostics) {

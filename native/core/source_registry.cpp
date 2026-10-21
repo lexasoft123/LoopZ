@@ -10,7 +10,7 @@ namespace {
 void silence(RoutingOutput output, uint32_t frames) noexcept {
     for (auto* plane : output.channels)
         if (plane)
-            std::fill_n(plane, std::min(frames, output.capacityFrames), 0);
+            std::fill_n(plane, std::min(frames, output.capacityFrames), 0.0f);
 }
 class ManagedSource final : public AudioSource {
   public:

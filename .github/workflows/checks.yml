@@ -20,7 +20,7 @@ jobs:
       - run: npm test && npm run format:check && npm run build
         working-directory: interface
   macos:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

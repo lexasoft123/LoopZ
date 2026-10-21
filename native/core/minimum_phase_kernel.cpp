@@ -37,7 +37,7 @@ void transform(std::vector<std::complex<double>>& values, bool inverse) {
     }
     if (inverse)
         for (auto& value : values)
-            value /= count;
+            value /= static_cast<double>(count);
 }
 double besselI0(double value) {
     double sum = 1, term = 1;

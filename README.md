@@ -76,7 +76,7 @@ prove a clean-Mac installation or every third-party recording app.
 
 ## Develop
 
-Requires CMake 3.24+, a C++20 compiler, Python 3, Node.js, and an Xcode SDK on macOS.
+Requires CMake 3.24+, a C++20 compiler, Python 3, Node.js, and Xcode 26 or newer on macOS.
 The pinned SingZ core snapshot and UI archive are included; a sibling SingZ
 checkout is not required.
 

@@ -14,7 +14,7 @@ int main() {
     uint32_t cases = 0;
     for (const auto frames : {0U,  1U,  2U,  3U,  4U,   7U,   8U,   15U,  16U,  31U,
                               32U, 63U, 64U, 65U, 127U, 128U, 255U, 256U, 257U, 513U})
-        for (const auto offsets :
+        for (const auto& offsets :
              {std::pair{0U, 768U}, std::pair{0U, 0U}, std::pair{0U, 1U}, std::pair{1U, 0U}})
             for (const auto initial : {0U, 1U, UINT32_MAX - 3, UINT32_MAX})
                 for (const bool counted : {false, true}) {

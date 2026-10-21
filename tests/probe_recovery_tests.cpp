@@ -22,7 +22,8 @@ struct Feed {
         for (uint32_t channel = 0; channel < channels; ++channel)
             for (uint32_t offset = 0; offset < 64; ++offset) {
                 const auto time = host + static_cast<uint64_t>((offset + 0.5) * 1e9 / 48000);
-                samples[channel][offset] = silence ? 0 : marker(time - 4750000, channel);
+                samples[channel][offset] =
+                    silence ? 0.0f : static_cast<float>(marker(time - 4750000, channel));
             }
         if (badChannel >= 0)
             samples[badChannel][17] = nonfinite ? std::numeric_limits<float>::quiet_NaN() : 0;

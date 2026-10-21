@@ -9,9 +9,9 @@ uint32_t sampleCaptureMix(std::span<const CaptureBuffer* const> captures, uint64
                           double rate, float* left, float* right, uint32_t frames,
                           CaptureMixReader& reader) noexcept {
     if (left)
-        std::fill_n(left, std::min(frames, kBlock), 0);
+        std::fill_n(left, std::min(frames, kBlock), 0.0f);
     if (right)
-        std::fill_n(right, std::min(frames, kBlock), 0);
+        std::fill_n(right, std::min(frames, kBlock), 0.0f);
     if (!left || !right || !frames || frames > kBlock || captures.empty() ||
         captures.size() > kMaximumRoutingSources ||
         std::any_of(captures.begin(), captures.end(), [](const auto* capture) {

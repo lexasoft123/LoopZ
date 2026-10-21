@@ -12,9 +12,25 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import publish_release
 import notarize_image
+import build_release
+from types import SimpleNamespace
 
 
 class DistributionTests(unittest.TestCase):
+    def test_packaging_refuses_a_newer_macos_minimum_before_signing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            build = folder / "build"
+            build.mkdir()
+            (build / "CMakeCache.txt").write_text("CMAKE_BUILD_TYPE:STRING=Release\n")
+            output = folder / "release"
+            with patch.object(
+                build_release, "run", return_value=SimpleNamespace(stdout="minos 26.0\n")
+            ):
+                with self.assertRaisesRegex(ValueError, "target macOS 14.2"):
+                    build_release.build(build, output, {})
+            self.assertFalse(output.exists())
+
     def test_publish_refuses_unnotarized_image_before_github(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary)

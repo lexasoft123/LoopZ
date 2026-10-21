@@ -50,7 +50,7 @@ struct CausalResampler::Impl {
                                    std::span<float> destination) noexcept {
         const auto& self = *static_cast<const Impl*>(context);
         if (position < self.padding) {
-            std::fill(destination.begin(), destination.end(), 0);
+            std::fill(destination.begin(), destination.end(), 0.0f);
             return {true, self.channels};
         }
         if (position < self.begin || position >= self.end)

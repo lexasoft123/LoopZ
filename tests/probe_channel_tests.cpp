@@ -20,7 +20,7 @@ void sineProfiles() {
                 if (scenario == 3 && first == 96000 && frame >= 10 && frame < 13)
                     left[frame] = 0;
             }
-            check->append(left.data(), right.data(), left.size(),
+            check->append(left.data(), right.data(), static_cast<uint32_t>(left.size()),
                           10000000000ULL + first * 1000000000ULL / 48000,
                           static_cast<double>(first), true);
             check->consume();

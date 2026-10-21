@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.24)
+# Initialize before project(): Darwin platform detection otherwise caches an
+# empty deployment target and silently builds for the SDK's host OS version.
+if((CMAKE_HOST_APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Darwin") AND
+   (NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL ""))
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "14.2" CACHE STRING "Minimum macOS" FORCE)
+endif()
 project(LoopZ VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -11,7 +17,6 @@ if(LOOPZ_BUILD_MACOS_BACKEND)
   if(NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     message(FATAL_ERROR "The macOS backend requires an Apple target; use -DLOOPZ_BUILD_MACOS_BACKEND=OFF for the portable core")
   endif()
-  set(CMAKE_OSX_DEPLOYMENT_TARGET "14.2" CACHE STRING "Minimum macOS")
   enable_language(OBJCXX)
 endif()
 include(CTest)

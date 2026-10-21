@@ -257,7 +257,8 @@ struct RoutingGraph::Impl {
                 }
                 continue;
             }
-            auto& matrix = matrices.emplace_back(source.channels * configuration.outputChannels, 0);
+            auto& matrix =
+                matrices.emplace_back(source.channels * configuration.outputChannels, 0.0f);
             for (const auto& wire : source.connections)
                 matrix[wire.outputChannel * source.channels + wire.sourceChannel] =
                     source.enabled && !source.muted ? wire.gain * source.gain : 0;

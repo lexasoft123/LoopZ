@@ -18,7 +18,7 @@ int main() {
         sample = (int(random() % 2001) - 1000) / 1000.f;
     // Both directions matter: independently opened clients have arbitrary origins.
     for (int lag : {-173, 0, 1197}) {
-        std::fill(recording.begin(), recording.end(), 0);
+        std::fill(recording.begin(), recording.end(), 0.0f);
         for (int i = 0; i < int(reference.size()); ++i)
             if (i + lag >= 0 && i + lag < int(recording.size()))
                 recording[i + lag] = reference[i] * 0.5f;
@@ -26,7 +26,7 @@ int main() {
         assert(match.lagFrames == lag && match.correlation > 0.99999);
     }
     assert(std::abs(matchWaveforms(reference, unrelated, 12000, 12000, 0, 2400).correlation) < 0.1);
-    std::fill(recording.begin(), recording.end(), 0);
+    std::fill(recording.begin(), recording.end(), 0.0f);
     assert(matchWaveforms(reference, recording, 12000, 12000, 0, 2400).correlation == 0);
 
     const auto waveform = [](double frame) {
@@ -36,7 +36,7 @@ int main() {
         return float(value / 19);
     };
     for (size_t i = 0; i < reference.size(); ++i) {
-        reference[i] = waveform(i);
+        reference[i] = waveform(static_cast<double>(i));
         recording[i] = waveform(double(i) - 127.375) * 0.5f;
     }
     const auto fractional = matchWaveforms(reference, recording, 12000, 12000, 0, 2400);
@@ -48,7 +48,7 @@ int main() {
         return waveform(frame) + float(8 * std::sin(2.8 * frame));
     };
     for (size_t i = 0; i < reference.size(); ++i) {
-        reference[i] = noisyWave(i);
+        reference[i] = noisyWave(static_cast<double>(i));
         recording[i] = noisyWave(double(i) - 127.375) * 0.5f;
     }
     const auto cleanReference = matchingBand(reference), cleanRecording = matchingBand(recording);
@@ -70,7 +70,7 @@ int main() {
         };
         const auto lag = 137.375 + seed * .03125;
         for (size_t i = 0; i < reference.size(); ++i) {
-            reference[i] = narrowBand(i);
+            reference[i] = narrowBand(static_cast<double>(i));
             recording[i] = narrowBand(double(i) - lag);
         }
         const auto aliasSafe = matchWaveforms(reference, recording, 6000, 12000, 0, 1200);

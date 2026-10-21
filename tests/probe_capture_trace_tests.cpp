@@ -53,7 +53,7 @@ int main() {
     for (unsigned index = 0; index < 3; ++index) {
         const auto& span = trace->zeros()[index];
         assert(span.capturedFrame == index + 3 && span.frames == 1);
-        assert(span.channels == (index == 0 ? 1 : index == 1 ? 3 : 2));
+        assert(span.channels == (index == 0 ? 1U : index == 1 ? 3U : 2U));
         assert(span.hostNs == base + uint64_t((index + 3) * 1e9 / 48000));
         assert(span.receivedNs == base + 1000 && span.callback == 0 && span.renderFlags == 16);
     }

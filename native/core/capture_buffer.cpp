@@ -38,13 +38,14 @@ CaptureBuffer::ClockSnapshot CaptureBuffer::clock() const noexcept {
 uint32_t CaptureBuffer::sample(uint64_t firstHostNs, double outputRate, float* left, float* right,
                                uint32_t frames, ReaderState* reader,
                                std::span<uint8_t> availableFrames) const noexcept {
-    std::fill_n(availableFrames.begin(), std::min<size_t>(frames, availableFrames.size()), 0);
+    std::fill_n(availableFrames.begin(), std::min<size_t>(frames, availableFrames.size()),
+                uint8_t{0});
     if (!left || !right || !frames || frames > kBlock) {
         // This API accepts at most one DSP block; never clear an unchecked size.
         if (left)
-            std::fill_n(left, std::min(frames, kBlock), 0);
+            std::fill_n(left, std::min(frames, kBlock), 0.0f);
         if (right)
-            std::fill_n(right, std::min(frames, kBlock), 0);
+            std::fill_n(right, std::min(frames, kBlock), 0.0f);
         return frames;
     }
     AudioReadCursor cursor;

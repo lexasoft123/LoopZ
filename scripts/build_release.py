@@ -49,6 +49,23 @@ def sign(path, identifier, environment, engine=False):
 
 
 def build(build_dir, output, config):
+    cache = (build_dir / "CMakeCache.txt").read_text()
+    if "CMAKE_BUILD_TYPE:STRING=Release" not in cache:
+        raise ValueError("Distribution requires a Release build")
+    binaries = [
+        "LoopZ.app/Contents/MacOS/LoopZ",
+        "LoopZ.app/Contents/MacOS/LoopZLogin",
+        "LoopZ Engine.app/Contents/MacOS/LoopZ Engine",
+        "LoopZSetup",
+        "routing-migration/LoopZAudio.driver/Contents/MacOS/LoopZAudio",
+        "loopz-routing-broker",
+        "loopz-config",
+        "loopz-routing-install-check",
+    ]
+    for binary in binaries:
+        metadata = run(["/usr/bin/xcrun", "vtool", "-show-build", build_dir / binary]).stdout
+        if not any(line.strip() == "minos 14.2" for line in metadata.splitlines()):
+            raise ValueError("Every shipped executable must target macOS 14.2")
     architecture = run(
         ["/usr/bin/lipo", "-archs", build_dir / "LoopZ.app/Contents/MacOS/LoopZ"]
     ).stdout.strip()
@@ -165,6 +182,7 @@ def build(build_dir, output, config):
             "version": VERSION,
             "tag": tag,
             "architecture": architecture,
+            "minimumMacOS": "14.2",
             "artifact": str(dmg.resolve()),
             "sha256": hashlib.sha256(dmg.read_bytes()).hexdigest(),
             "createdAt": datetime.now(timezone.utc).isoformat(),

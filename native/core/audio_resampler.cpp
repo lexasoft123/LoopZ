@@ -37,7 +37,8 @@ uint32_t AudioResampler::read(ResamplePosition read, ResampleOutput output, uint
                               ReadFrame provider, const void* context,
                               std::span<uint8_t> availableFrames) const noexcept {
     silence(output, frames);
-    std::fill_n(availableFrames.begin(), std::min<size_t>(frames, availableFrames.size()), 0);
+    std::fill_n(availableFrames.begin(), std::min<size_t>(frames, availableFrames.size()),
+                uint8_t{0});
     if (!provider || !frames || frames > kMaximumFrames || frames > output.capacityFrames ||
         (!availableFrames.empty() && availableFrames.size() < frames) || !output.stride ||
         output.stride > kMaximumRoutingChannels || output.channels.empty() ||

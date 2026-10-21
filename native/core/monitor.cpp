@@ -14,7 +14,7 @@ constexpr uint32_t kMaximumCallbackFrames = 16384;
 void clear(RoutingOutput output, uint32_t frames) noexcept {
     for (auto* channel : output.channels)
         if (channel)
-            std::fill_n(channel, std::min(frames, output.capacityFrames), 0);
+            std::fill_n(channel, std::min(frames, output.capacityFrames), 0.0f);
 }
 } // namespace
 MonitorBus::MonitorBus(uint32_t channels, uint32_t renderRate, uint32_t capacityFrames)
@@ -220,7 +220,7 @@ MonitorRenderResult MonitorProgram::render(uint64_t firstOutputHostNs, double ou
             if (channel < self.outputChannels)
                 std::copy_n(self.output[channel].data(), count, output.channels[channel] + offset);
             else
-                std::fill_n(output.channels[channel] + offset, count, 0);
+                std::fill_n(output.channels[channel] + offset, count, 0.0f);
         }
         self.meter.publish({{self.outputRead.data(), self.outputChannels}, kBlock}, count);
     }

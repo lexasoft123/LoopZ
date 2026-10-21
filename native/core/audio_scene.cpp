@@ -32,7 +32,7 @@ struct PlanarBlock {
     }
     void clear(uint32_t frames) noexcept {
         for (uint32_t channel = 0; channel < channels; ++channel)
-            std::fill_n(writable[channel], frames, 0);
+            std::fill_n(writable[channel], frames, 0.0f);
     }
     void sanitize(uint32_t frames) noexcept {
         for (uint32_t channel = 0; channel < channels; ++channel)

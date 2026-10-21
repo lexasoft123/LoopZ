@@ -62,7 +62,7 @@ export function ReleaseUpdates({ value }) {
         checking: "Checking for updates…",
         current: "You have the latest version.",
         available: "A newer version is available.",
-        unpublished: "The first release is not published yet.",
+        unpublished: "No stable release is published yet.",
         error: "Update check failed. Try again later.",
     };
     return (
