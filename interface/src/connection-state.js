@@ -1,4 +1,8 @@
-const nativeKinds = { app: "application", hardware: "input-device" };
+import { t } from "./i18n.js";
+const nativeKinds = {
+    app: "application",
+    hardware: "input-device",
+};
 const condition = (kind, label, detail = "", action = null) => ({
     kind,
     label,
@@ -6,7 +10,6 @@ const condition = (kind, label, detail = "", action = null) => ({
     action,
     available: ["available", "idle", "disabled"].includes(kind),
 });
-
 export function microphoneAccess(permission) {
     switch (permission) {
         case "authorized":
@@ -21,7 +24,6 @@ export function microphoneAccess(permission) {
             return "The current microphone permission could not be checked. Review LoopZ Engine’s access in Privacy & Security.";
     }
 }
-
 function unavailableState(state) {
     if (!state.connected || !state.transportReady || state.meterExpired)
         return condition(
@@ -43,7 +45,6 @@ function unavailableState(state) {
         );
     return null;
 }
-
 function virtualCondition(state, source, context) {
     const target = state.devices.find(
         (device) => device.id === source.deviceId,
@@ -56,7 +57,7 @@ function virtualCondition(state, source, context) {
         );
     const show = (device) => ({
         kind: "select-device",
-        label: "Show device",
+        label: t("Show device"),
         device,
     });
     if (!target.enabled)
@@ -69,7 +70,10 @@ function virtualCondition(state, source, context) {
     // Native virtual input stays online while a failed physical/app branch
     // supplies silence. Follow saved signal edges to expose that partial loss,
     // without interpreting quiet samples or a monitor failure as input loss.
-    const walk = context || { active: new Set(), checked: new Map() };
+    const walk = context || {
+        active: new Set(),
+        checked: new Map(),
+    };
     if (walk.active.has(target.id))
         return condition(
             "unknown",
@@ -102,24 +106,24 @@ function virtualCondition(state, source, context) {
                   ? issue.action
                   : show(target.id),
           )
-        : condition("available", "Available");
+        : condition("available", t("Available"));
     walk.checked.set(target.id, result);
     return result;
 }
-
 export function sourceCondition(state, source, context) {
-    if (!source.enabled) return condition("disabled", "Disabled");
+    if (!source.enabled) return condition("disabled", t("Disabled"));
     const unavailable = unavailableState(state);
     if (unavailable) return unavailable;
     if (source.kind === "virtual")
         return virtualCondition(state, source, context);
-    if (source.kind === "pass") return condition("available", "Available");
+    if (source.kind === "pass") return condition("available", t("Available"));
     const status = state.snapshot?.runtime?.sources?.find(
         (item) =>
             item.kind === nativeKinds[source.kind] &&
             item.selector === source.selector,
     );
-    if (status?.demanded === false) return condition("idle", "Ready when used");
+    if (status?.demanded === false)
+        return condition("idle", t("Ready when used"));
     // Permission is current metadata. It takes precedence over a capture's last
     // successful status while the control owner is closing a revoked stream.
     if (
@@ -134,23 +138,32 @@ export function sourceCondition(state, source, context) {
                 ? "Microphone access restricted"
                 : "Microphone access required",
             microphoneAccess(state.permissions?.microphone),
-            { kind: "settings", label: "Review access" },
+            {
+                kind: "settings",
+                label: t("Review access"),
+            },
         );
     if (status?.connected && status.complete)
-        return condition("available", "Available");
+        return condition("available", t("Available"));
     if (status?.connected && source.kind === "app")
         return condition(
             "partial",
             "Application audio incomplete",
             "Some application processes are not connected. LoopZ keeps trying while connected audio continues.",
-            { kind: "retry", label: "Retry now" },
+            {
+                kind: "retry",
+                label: t("Retry now"),
+            },
         );
     if (status?.connected)
         return condition(
             "partial",
             "Some channels unavailable",
             "The input has fewer available channels than this source needs. Available channels keep working; the remaining connections stay saved.",
-            { kind: "source-options", label: "Review source" },
+            {
+                kind: "source-options",
+                label: "Review source",
+            },
         );
     return condition(
         "waiting",
@@ -160,19 +173,23 @@ export function sourceCondition(state, source, context) {
         source.kind === "app"
             ? "Open the application and review any audio-recording permission request. LoopZ reconnects automatically."
             : "Reconnect or select the input device. LoopZ keeps trying and retains its saved connections.",
-        status?.demanded ? { kind: "retry", label: "Retry now" } : null,
+        status?.demanded
+            ? {
+                  kind: "retry",
+                  label: t("Retry now"),
+              }
+            : null,
     );
 }
-
 export function monitorCondition(state, monitor) {
-    if (!monitor.enabled) return condition("disabled", "Monitor disabled");
+    if (!monitor.enabled) return condition("disabled", t("Monitor disabled"));
     const unavailable = unavailableState(state);
     if (unavailable) return unavailable;
     const status = state.snapshot?.runtime?.monitors?.find(
         (item) => item.device === monitor.owner && item.monitor === monitor.id,
     );
     return status?.connected && status.complete
-        ? condition("available", "Available")
+        ? condition("available", t("Available"))
         : condition(
               "waiting",
               "Waiting for output device",

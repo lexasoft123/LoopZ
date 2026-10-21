@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 import React, { useEffect, useState } from "react";
 import { Banner, Button } from "@singz/ui";
 import {
@@ -5,7 +6,6 @@ import {
     endpointWiresRemoved,
     endpointLayout,
 } from "./model.js";
-
 export default function EndpointEditor({
     state,
     device,
@@ -73,12 +73,12 @@ export default function EndpointEditor({
                 )}
             <label className="lz-field">
                 {kind === "monitor"
-                    ? "Output device"
+                    ? t("Output device")
                     : node.kind === "app"
-                      ? "Application"
+                      ? t("Application")
                       : node.kind === "virtual"
-                        ? "Virtual device"
-                        : "Input device"}
+                        ? t("Virtual device")
+                        : t("Input device")}
                 <select
                     aria-label={
                         kind === "monitor"
@@ -130,12 +130,14 @@ export default function EndpointEditor({
                         }
                     }}
                 >
-                    Choose another application…
+                    {t("Choose another application\u2026")}
                 </Button>
             )}
             {adjustable ? (
                 <label className="lz-field">
-                    {kind === "monitor" ? "Monitor channels" : "Input channels"}
+                    {kind === "monitor"
+                        ? "Monitor channels"
+                        : t("Input channels")}
                     <select
                         aria-label={
                             kind === "monitor"
@@ -148,13 +150,16 @@ export default function EndpointEditor({
                             setConfirmation(null);
                         }}
                     >
-                        {Array.from({ length: 64 }, (_, i) => i + 1).map(
-                            (value) => (
-                                <option key={value} value={value}>
-                                    {value} channel{value === 1 ? "" : "s"}
-                                </option>
-                            ),
-                        )}
+                        {Array.from(
+                            {
+                                length: 64,
+                            },
+                            (_, i) => i + 1,
+                        ).map((value) => (
+                            <option key={value} value={value}>
+                                {value} channel{value === 1 ? "" : "s"}
+                            </option>
+                        ))}
                     </select>
                 </label>
             ) : (

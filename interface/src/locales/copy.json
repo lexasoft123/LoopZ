@@ -1,0 +1,322 @@
+{
+    "Settings": ["Настройки", "设置"],
+    "Appearance": ["Внешний вид", "外观"],
+    "Virtual devices": ["Виртуальные устройства", "虚拟设备"],
+    "New virtual device": ["Новое виртуальное устройство", "新建虚拟设备"],
+    "+ New virtual device": [
+        "+ Новое виртуальное устройство",
+        "+ 新建虚拟设备"
+    ],
+    "Sources": ["Источники", "音源"],
+    "Output channels": ["Выходные каналы", "输出通道"],
+    "Monitors": ["Мониторинг", "监听"],
+    "Routing": ["Маршрутизация", "路由"],
+    "Connections": ["Соединения", "连接"],
+    "Saved": ["Сохранено", "已保存"],
+    "Saving…": ["Сохранение…", "正在保存…"],
+    "Undo": ["Отменить", "撤销"],
+    "Redo": ["Повторить", "重做"],
+    "Done": ["Готово", "完成"],
+    "Cancel": ["Отмена", "取消"],
+    "Delete": ["Удалить", "删除"],
+    "Disabled": ["Выключено", "已停用"],
+    "Connected": ["Подключено", "已连接"],
+    "Reconnecting": ["Переподключение", "正在重新连接"],
+    "Unavailable": ["Недоступно", "不可用"],
+    "Available": ["Доступно", "可用"],
+    "On": ["Вкл.", "开"],
+    "Off": ["Выкл.", "关"],
+    "Add source": ["Добавить источник", "添加音源"],
+    "Add monitor": ["Добавить мониторинг", "添加监听"],
+    "Add a source": ["Добавить источник", "添加音源"],
+    "Add a monitor": ["Добавить мониторинг", "添加监听"],
+    "Add your first source": ["Добавьте первый источник", "添加第一个音源"],
+    "Pass-through": ["Сквозной канал", "直通"],
+    "Apps using this device as output": [
+        "Приложения с этим устройством вывода",
+        "使用此设备输出的应用"
+    ],
+    "Input device": ["Устройство ввода", "输入设备"],
+    "Input devices": ["Устройства ввода", "输入设备"],
+    "Input channels": ["Входные каналы", "输入通道"],
+    "Output device": ["Устройство вывода", "输出设备"],
+    "Output": ["Выход", "输出"],
+    "Source": ["Источник", "音源"],
+    "Monitor": ["Мониторинг", "监听"],
+    "Device": ["Устройство", "设备"],
+    "Device name": ["Имя устройства", "设备名称"],
+    "Device enabled": ["Устройство включено", "启用设备"],
+    "Device gain": ["Уровень устройства", "设备增益"],
+    "Device options": ["Параметры устройства", "设备选项"],
+    "Show devices": ["Показать устройства", "显示设备"],
+    "Show device": ["Показать устройство", "显示设备"],
+    "No virtual devices": ["Нет виртуальных устройств", "没有虚拟设备"],
+    "Create device": ["Создать устройство", "创建设备"],
+    "Create your first device": [
+        "Создайте первое устройство",
+        "创建第一个设备"
+    ],
+    "Your mix starts here.": ["Здесь начинается ваш микс.", "从这里开始混音。"],
+    "Connect your sound.": ["Соедините свой звук.", "连接您的声音。"],
+    "Create a device to combine apps and inputs.": [
+        "Создайте устройство для объединения приложений и входов.",
+        "创建设备以混合应用和输入。"
+    ],
+    "Combine apps and inputs into a device you can choose in your recording app.": [
+        "Объедините приложения и входы в устройство для записи.",
+        "将应用和输入混合为录音软件可选的设备。"
+    ],
+    "Duplicate device": ["Дублировать устройство", "复制设备"],
+    "Rename device": ["Переименовать устройство", "重命名设备"],
+    "Rename virtual device": [
+        "Переименовать виртуальное устройство",
+        "重命名虚拟设备"
+    ],
+    "Delete device…": ["Удалить устройство…", "删除设备…"],
+    "Save name": ["Сохранить имя", "保存名称"],
+    "Sample rate": ["Частота дискретизации", "采样率"],
+    "Channel count": ["Число каналов", "通道数"],
+    "Channels": ["Каналы", "通道"],
+    "Stereo": ["Стерео", "立体声"],
+    "Safety limiter": ["Защитный лимитер", "安全限制器"],
+    "Configure output channels": ["Настроить выходные каналы", "配置输出通道"],
+    "Edit connections": ["Изменить соединения", "编辑连接"],
+    "Edit connections without dragging": [
+        "Изменить соединения без перетаскивания",
+        "无需拖动即可编辑连接"
+    ],
+    "Edit channel connections": ["Изменить соединения каналов", "编辑通道连接"],
+    "Edit monitor connections": [
+        "Изменить соединения мониторинга",
+        "编辑监听连接"
+    ],
+    "Channel connections": ["Соединения каналов", "通道连接"],
+    "Remove connection": ["Удалить соединение", "移除连接"],
+    "Disconnect": ["Отключить", "断开"],
+    "Connect here": ["Подключить сюда", "连接到此处"],
+    "From": ["Откуда", "来源"],
+    "To": ["Куда", "目标"],
+    "Position": ["Положение", "位置"],
+    "Previous": ["Назад", "上一个"],
+    "Next": ["Далее", "下一个"],
+    "Move up": ["Выше", "上移"],
+    "Move down": ["Ниже", "下移"],
+    "All connections": ["Все соединения", "全部连接"],
+    "All pairs": ["Все пары", "全部通道对"],
+    "Selected connection": ["Выбранное соединение", "所选连接"],
+    "Filter connections": ["Фильтр соединений", "筛选连接"],
+    "Application": ["Приложение", "应用"],
+    "Applications": ["Приложения", "应用"],
+    "Virtual device": ["Виртуальное устройство", "虚拟设备"],
+    "Search apps and devices…": [
+        "Поиск приложений и устройств…",
+        "搜索应用和设备…"
+    ],
+    "Search output devices…": ["Поиск устройств вывода…", "搜索输出设备…"],
+    "No matching sources.": ["Источники не найдены.", "没有匹配的音源。"],
+    "Choose another application…": [
+        "Выбрать другое приложение…",
+        "选择其他应用…"
+    ],
+    "Choose": ["Выбрать", "选择"],
+    "Include in this mix": ["Добавить в этот микс", "包含在此混音中"],
+    "Include source in this mix": [
+        "Добавить источник в микс",
+        "在混音中包含此音源"
+    ],
+    "Mute original playback": [
+        "Отключить исходное воспроизведение",
+        "静音原始播放"
+    ],
+    "Mute original app playback": [
+        "Отключить исходный звук приложения",
+        "静音应用原始播放"
+    ],
+    "Remove source…": ["Удалить источник…", "移除音源…"],
+    "Remove monitor…": ["Удалить мониторинг…", "移除监听…"],
+    "Source options": ["Параметры источника", "音源选项"],
+    "Monitor options": ["Параметры мониторинга", "监听选项"],
+    "Enable monitor": ["Включить мониторинг", "启用监听"],
+    "Monitor enabled": ["Мониторинг включён", "监听已启用"],
+    "Monitor disabled": ["Мониторинг выключен", "监听已停用"],
+    "Monitor waiting": ["Мониторинг ожидает", "监听等待中"],
+    "Listen here. Record anywhere.": [
+        "Слушайте здесь. Записывайте где угодно.",
+        "在此监听，随处录音。"
+    ],
+    "Connected sources sum at each output.": [
+        "Источники суммируются на каждом выходе.",
+        "连接的音源在各输出通道叠加。"
+    ],
+    "Meters show post-gain signal.": [
+        "Индикаторы показывают сигнал после регулировки уровня.",
+        "电平表显示增益后的信号。"
+    ],
+    "Enabled · pre-gain meters": [
+        "Включено · индикаторы до уровня",
+        "已启用 · 增益前电平"
+    ],
+    "Ready when used": ["Готово к использованию", "使用时就绪"],
+    "Ready when used · connections retained": [
+        "Готово · соединения сохранены",
+        "使用时就绪 · 保留连接"
+    ],
+    "Disabled · connections retained": [
+        "Выключено · соединения сохранены",
+        "已停用 · 保留连接"
+    ],
+    "Close this window to leave": [
+        "Закройте окно, чтобы оставить",
+        "关闭此窗口以保持"
+    ],
+    "your engine running.": ["аудиодвижок работающим.", "音频引擎运行。"],
+    "Buffer size": ["Размер буфера", "缓冲区大小"],
+    "Hardware buffer": ["Аппаратный буфер", "硬件缓冲区"],
+    "Hardware buffer size": ["Размер аппаратного буфера", "硬件缓冲区大小"],
+    "Choose a buffer size": ["Выберите размер буфера", "选择缓冲区大小"],
+    "Mixed buffer sizes": ["Разные размеры буфера", "缓冲区大小不一致"],
+    "Low latency": ["Малая задержка", "低延迟"],
+    "Balanced": ["Сбалансированный", "均衡"],
+    "Lower CPU": ["Меньше нагрузка", "更低 CPU 占用"],
+    "Applying to all used devices…": [
+        "Применение ко всем используемым устройствам…",
+        "正在应用到所有使用中的设备…"
+    ],
+    "Waiting to apply saved buffer": [
+        "Ожидается применение сохранённого буфера",
+        "等待应用已保存的缓冲区"
+    ],
+    "Your choice will apply when you add a hardware input or monitor.": [
+        "Настройка применится при добавлении входа или мониторинга.",
+        "添加硬件输入或监听后将应用此设置。"
+    ],
+    "One saved choice restores when the Engine restarts, a device reconnects, or you add another input or monitor.": [
+        "Настройка сохраняется после перезапуска, переподключения и добавления устройств.",
+        "引擎重启、设备重连或添加输入及监听后，都会恢复此设置。"
+    ],
+    "Applies immediately to all hardware inputs and monitors used by your mixes. Smaller buffers reduce audio latency and use more CPU. Changing this can briefly interrupt other apps using these devices.": [
+        "Применяется сразу ко всем входам и мониторам ваших миксов. Малый буфер снижает задержку, но увеличивает нагрузку. Изменение может ненадолго прервать звук в других приложениях.",
+        "立即应用到混音使用的所有硬件输入和监听。较小的缓冲区降低延迟，但增加 CPU 占用。更改可能短暂中断其他应用的音频。"
+    ],
+    "Target latency is for one hardware buffer at the devices’ current sample rates. Total sound delay also includes device and routing processing.": [
+        "Целевая задержка указана для одного буфера при текущей частоте. Полная задержка включает обработку в устройствах и маршрутизацию.",
+        "目标延迟是设备当前采样率下单个硬件缓冲区的时长。总延迟还包括设备和路由处理。"
+    ],
+    "Audio driver": ["Аудиодрайвер", "音频驱动"],
+    "Audio service": ["Аудиослужба", "音频服务"],
+    "Audio engine": ["Аудиодвижок", "音频引擎"],
+    "Background routing": ["Фоновая маршрутизация", "后台路由"],
+    "Automatic recovery": ["Автовосстановление", "自动恢复"],
+    "Start routing at login": ["Запускать при входе", "登录时启动路由"],
+    "Microphone & input devices": [
+        "Микрофон и устройства ввода",
+        "麦克风和输入设备"
+    ],
+    "Application audio": ["Звук приложений", "应用音频"],
+    "Open settings": ["Открыть настройки", "打开设置"],
+    "Open login settings": ["Настройки входа", "打开登录设置"],
+    "Enable microphone access": ["Разрешить микрофон", "启用麦克风权限"],
+    "Waiting for macOS…": ["Ожидание macOS…", "正在等待 macOS…"],
+    "Retry now": ["Повторить", "立即重试"],
+    "Review access": ["Проверить доступ", "检查权限"],
+    "Review setup": ["Проверить установку", "检查设置"],
+    "Setup needed": ["Нужна настройка", "需要设置"],
+    "Installed": ["Установлено", "已安装"],
+    "Not installed": ["Не установлено", "未安装"],
+    "Needs repair": ["Нужно восстановление", "需要修复"],
+    "Checking": ["Проверка", "正在检查"],
+    "Could not check": ["Не удалось проверить", "无法检查"],
+    "Connected. Your graph is saved by the engine.": [
+        "Подключено. Схема сохранена аудиодвижком.",
+        "已连接。音频引擎已保存路由图。"
+    ],
+    "Reconnecting automatically. Saved settings stay with the engine.": [
+        "Автоматическое подключение. Настройки сохранены в аудиодвижке.",
+        "正在自动重连。已保存的设置保留在引擎中。"
+    ],
+    "Checking background recovery.": [
+        "Проверка фонового восстановления.",
+        "正在检查后台恢复。"
+    ],
+    "Checking login startup.": [
+        "Проверка запуска при входе.",
+        "正在检查登录启动。"
+    ],
+    "Allow LoopZ in System Settings → General → Login Items & Extensions.": [
+        "Разрешите LoopZ в Системных настройках → Основные → Объекты входа и расширения.",
+        "请在系统设置 → 通用 → 登录项与扩展中允许 LoopZ。"
+    ],
+    "macOS controls system audio-recording access. Reconnects do not request it again.": [
+        "Доступ к записи системного звука управляется macOS. При переподключении повторный запрос не нужен.",
+        "macOS 管理系统音频录制权限。重新连接不会再次请求。"
+    ],
+    "Microphone access is granted. Saved inputs reconnect automatically.": [
+        "Доступ к микрофону разрешён. Сохранённые входы подключаются автоматически.",
+        "已获得麦克风权限。已保存的输入将自动重连。"
+    ],
+    "Action could not be completed": [
+        "Не удалось выполнить действие",
+        "无法完成操作"
+    ],
+    "Change not saved": ["Изменение не сохранено", "更改未保存"],
+    "Review current routing": ["Проверить текущую схему", "检查当前路由"],
+    "Keyboard shortcuts": ["Сочетания клавиш", "键盘快捷键"],
+    "Keyboard & connections": ["Клавиши и соединения", "键盘与连接"],
+    "No signal": ["Нет сигнала", "无信号"],
+    "Updates": ["Обновления", "更新"],
+    "Check for updates": ["Проверить обновления", "检查更新"],
+    "Checking for updates…": ["Проверка обновлений…", "正在检查更新…"],
+    "Download update": ["Скачать обновление", "下载更新"],
+    "Automatically check for updates": [
+        "Проверять обновления автоматически",
+        "自动检查更新"
+    ],
+    "You have the latest version.": [
+        "У вас последняя версия.",
+        "您使用的是最新版本。"
+    ],
+    "The first release is not published yet.": [
+        "Первый выпуск ещё не опубликован.",
+        "第一个版本尚未发布。"
+    ],
+    "Update check failed. Try again later.": [
+        "Не удалось проверить обновления. Повторите позже.",
+        "检查更新失败。请稍后重试。"
+    ],
+    "Update checks are unavailable in this environment.": [
+        "Проверка обновлений недоступна в этой среде.",
+        "此环境中无法检查更新。"
+    ],
+    "A newer version is available.": [
+        "Доступна новая версия.",
+        "有新版本可用。"
+    ],
+    "App downloads are separate from driver installation.": [
+        "Приложение обновляется отдельно от драйвера.",
+        "应用下载与驱动安装相互独立。"
+    ],
+    "Language": ["Язык", "语言"],
+    "Follow system": ["Как в системе", "跟随系统"],
+    "Automatic": ["Авто", "自动"],
+    "Match system": ["Как в системе", "跟随系统"],
+    "Atelier": ["Ателье", "工作室"],
+    "Night Studio": ["Ночная студия", "夜间工作室"],
+    "Set up audio": ["Настроить звук", "设置音频"],
+    "Install audio components": ["Установить аудиокомпоненты", "安装音频组件"],
+    "Installing audio components…": [
+        "Установка аудиокомпонентов…",
+        "正在安装音频组件…"
+    ],
+    "Install the driver and background service once. macOS will ask for administrator authorization.": [
+        "Установите драйвер и фоновую службу один раз. macOS запросит права администратора.",
+        "只需安装一次驱动和后台服务。macOS 将请求管理员授权。"
+    ],
+    "Audio setup could not finish.": [
+        "Не удалось завершить настройку звука.",
+        "无法完成音频设置。"
+    ],
+    "Audio components installed. Reconnecting…": [
+        "Аудиокомпоненты установлены. Подключение…",
+        "音频组件已安装。正在重新连接…"
+    ]
+}

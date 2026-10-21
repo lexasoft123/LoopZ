@@ -1,6 +1,6 @@
+import { t } from "./i18n.js";
 import React, { useRef } from "react";
 import { Button } from "@singz/ui";
-
 export default function OrderControls({
     state,
     device,
@@ -19,9 +19,11 @@ export default function OrderControls({
               ? device.sources
               : device.monitors;
     const index = items.findIndex((item) => item.id === node.id);
-    const label = { device: "Device", source: "Source", monitor: "Monitor" }[
-        kind
-    ];
+    const label = {
+        device: t("Device"),
+        source: t("Source"),
+        monitor: t("Monitor"),
+    }[kind];
     const move = async (offset, origin) => {
         const focused = document.activeElement === origin;
         await send({
@@ -48,7 +50,9 @@ export default function OrderControls({
                         : alternate && !alternate.disabled
                           ? alternate
                           : group.current;
-                target.focus({ preventScroll: true });
+                target.focus({
+                    preventScroll: true,
+                });
             });
     };
     return (
@@ -62,7 +66,8 @@ export default function OrderControls({
             <div>
                 <strong>{label} order</strong>
                 <p role="status" aria-live="polite">
-                    Position {index + 1} of {items.length}
+                    {t("Position") + " "}
+                    {index + 1} of {items.length}
                 </p>
             </div>
             <div className="lz-order-actions">
@@ -73,7 +78,7 @@ export default function OrderControls({
                     aria-label={`Move ${node.name} up`}
                     onClick={(event) => move(-1, event.currentTarget)}
                 >
-                    Move up
+                    {t("Move up")}
                 </Button>
                 <Button
                     ref={down}
@@ -84,7 +89,7 @@ export default function OrderControls({
                     aria-label={`Move ${node.name} down`}
                     onClick={(event) => move(1, event.currentTarget)}
                 >
-                    Move down
+                    {t("Move down")}
                 </Button>
             </div>
         </div>

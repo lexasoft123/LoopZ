@@ -91,3 +91,9 @@ body {
 html[data-loopz-native="true"] .lz-titlebar {
     padding-left: 88px;
 }
+
+/* Kit popovers must remain visible above the routing workspace. */
+.lz-titlebar .lang {
+    position: relative;
+    z-index: 30;
+}

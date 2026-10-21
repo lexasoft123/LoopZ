@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 import React, { useRef, useState } from "react";
 import { Button, Chip, StatusDot, Badge, LinkButton } from "@singz/ui";
 import { Icon } from "@singz/ui/icons";
@@ -11,7 +12,6 @@ import {
     sourceAmplitude,
     monitorAmplitude,
 } from "./model.js";
-
 import { Gain } from "./components/Gain.jsx";
 import { Switch } from "./components/Switch.jsx";
 import { GearIcon, SpeakerState } from "./components/ControlIcons.jsx";
@@ -45,7 +45,7 @@ export function Meter({ level = 0, label = "Signal level" }) {
             aria-valuemin={-60}
             aria-valuemax={0}
             aria-valuenow={db}
-            aria-valuetext={amplitude ? `${db} decibels` : "No signal"}
+            aria-valuetext={amplitude ? `${db} decibels` : t("No signal")}
             data-updating={updating ? "true" : "false"}
             data-silent={amplitude === 0}
             data-clipping={amplitude >= 1}
@@ -113,11 +113,18 @@ function Socket({
             }
             title={
                 compatible
-                    ? "Connect here"
+                    ? t("Connect here")
                     : `${label || kind} channel ${channel}`
             }
             data-od-id={`socket-${kind}-${id}-${channel}`}
-            onClick={() => onSocket({ key, kind, id, channel })}
+            onClick={() =>
+                onSocket({
+                    key,
+                    kind,
+                    id,
+                    channel,
+                })
+            }
             aria-label={`${label || kind} channel ${channel}`}
             aria-pressed={selection?.key === key}
         >
@@ -140,44 +147,63 @@ function SourceNode({
     const recover = (event) => {
         switch (condition.action?.kind) {
             case "settings":
-                open({ kind: "settings" }, event.currentTarget);
+                open(
+                    {
+                        kind: "settings",
+                    },
+                    event.currentTarget,
+                );
                 break;
             case "source-options":
-                open({ kind: "source", id: s.id }, event.currentTarget);
+                open(
+                    {
+                        kind: "source",
+                        id: s.id,
+                    },
+                    event.currentTarget,
+                );
                 break;
             case "select-device":
-                send({ type: "select", id: condition.action.device });
+                send({
+                    type: "select",
+                    id: condition.action.device,
+                });
                 break;
             case "retry":
-                send({ type: "recover" });
+                send({
+                    type: "recover",
+                });
                 break;
         }
     };
     const rows = (start, end) =>
-        Array.from({ length: end - start + 1 }, (_, i) => i + start).map(
-            (ch) => (
-                <div className="lz-channel-row" key={ch}>
-                    <span className="lz-channel-label">
-                        {ch}
-                        {s.channels === 2 ? (ch === 1 ? " · L" : " · R") : ""}
-                    </span>
-                    <Meter
-                        level={sourceAmplitude(state, s, ch)}
-                        label={`${s.name} channel ${ch} pre-gain meter`}
-                    />
-                    <Socket
-                        kind="source"
-                        label={`${s.name} source`}
-                        id={s.id}
-                        channel={ch}
-                        side="right"
-                        selection={selection}
-                        onSocket={onSocket}
-                        connected={s.routes[ch - 1]?.length > 0}
-                    />
-                </div>
-            ),
-        );
+        Array.from(
+            {
+                length: end - start + 1,
+            },
+            (_, i) => i + start,
+        ).map((ch) => (
+            <div className="lz-channel-row" key={ch}>
+                <span className="lz-channel-label">
+                    {ch}
+                    {s.channels === 2 ? (ch === 1 ? " · L" : " · R") : ""}
+                </span>
+                <Meter
+                    level={sourceAmplitude(state, s, ch)}
+                    label={`${s.name} channel ${ch} pre-gain meter`}
+                />
+                <Socket
+                    kind="source"
+                    label={`${s.name} source`}
+                    id={s.id}
+                    channel={ch}
+                    side="right"
+                    selection={selection}
+                    onSocket={onSocket}
+                    connected={s.routes[ch - 1]?.length > 0}
+                />
+            </div>
+        ));
     return (
         <article className="lz-node lz-source" data-od-id={`source-${s.id}`}>
             <div className="lz-node-heading">
@@ -188,7 +214,7 @@ function SourceNode({
                         {s.kind === "app"
                             ? "Application · stereo"
                             : s.kind === "pass"
-                              ? "Apps using this device as output"
+                              ? t("Apps using this device as output")
                               : s.kind === "virtual"
                                 ? `Virtual device · ${s.channels} channels`
                                 : `Input device · ${s.channels} channel${s.channels > 1 ? "s" : ""}`}
@@ -198,7 +224,13 @@ function SourceNode({
                     checked={s.enabled}
                     label={`${s.name} enabled`}
                     onChange={(enabled) =>
-                        send({ type: "source", id: s.id, patch: { enabled } })
+                        send({
+                            type: "source",
+                            id: s.id,
+                            patch: {
+                                enabled,
+                            },
+                        })
                     }
                 />
                 <Button
@@ -206,7 +238,13 @@ function SourceNode({
                     icon
                     aria-label={`${s.name} options`}
                     onClick={(event) =>
-                        open({ kind: "source", id: s.id }, event.currentTarget)
+                        open(
+                            {
+                                kind: "source",
+                                id: s.id,
+                            },
+                            event.currentTarget,
+                        )
                     }
                 >
                     <GearIcon />
@@ -221,7 +259,9 @@ function SourceNode({
                         send({
                             type: "source",
                             id: s.id,
-                            patch: { muted: !s.muted },
+                            patch: {
+                                muted: !s.muted,
+                            },
                         })
                     }
                 >
@@ -231,7 +271,13 @@ function SourceNode({
                     value={s.gain}
                     label={`${s.name} gain`}
                     onChange={(gain) =>
-                        send({ type: "source", id: s.id, patch: { gain } })
+                        send({
+                            type: "source",
+                            id: s.id,
+                            patch: {
+                                gain,
+                            },
+                        })
                     }
                 />
             </div>
@@ -258,12 +304,12 @@ function SourceNode({
                     {!available
                         ? `${status} · wiring saved`
                         : condition.kind === "idle"
-                          ? "Ready when used · connections retained"
+                          ? t("Ready when used \xB7 connections retained")
                           : s.kind === "app"
-                            ? `Original playback muted: ${s.muteOriginal ? "On" : "Off"}`
+                            ? `Original playback muted: ${s.muteOriginal ? t("On") : t("Off")}`
                             : s.enabled
-                              ? "Enabled · pre-gain meters"
-                              : "Disabled · connections retained"}
+                              ? t("Enabled \xB7 pre-gain meters")
+                              : t("Disabled \xB7 connections retained")}
                 </span>
                 {!available && condition.action && (
                     <LinkButton
@@ -295,9 +341,10 @@ function OutputPair({
         >
             <div className="lz-pair-title">
                 <h3>
-                    Channels {start}–{start + 1}
+                    {t("Channels") + " "}
+                    {start}–{start + 1}
                 </h3>
-                <Badge caps={false}>Stereo</Badge>
+                <Badge caps={false}>{t("Stereo")}</Badge>
                 {state.canRemoveOutputPair && d.channels > 2 && (
                     <Button
                         size="sm"
@@ -394,14 +441,20 @@ function MonitorNode({
                         {waiting ||
                             (m.enabled
                                 ? "Available · stereo"
-                                : "Monitor disabled")}
+                                : t("Monitor disabled"))}
                     </p>
                 </div>
                 <Switch
                     checked={m.enabled}
                     label={`${m.name} enabled`}
                     onChange={(enabled) =>
-                        send({ type: "monitor", id: m.id, patch: { enabled } })
+                        send({
+                            type: "monitor",
+                            id: m.id,
+                            patch: {
+                                enabled,
+                            },
+                        })
                     }
                 />
                 <Button
@@ -409,7 +462,13 @@ function MonitorNode({
                     icon
                     aria-label={`${m.name} options`}
                     onClick={(event) =>
-                        open({ kind: "monitor", id: m.id }, event.currentTarget)
+                        open(
+                            {
+                                kind: "monitor",
+                                id: m.id,
+                            },
+                            event.currentTarget,
+                        )
                     }
                 >
                     <GearIcon />
@@ -423,7 +482,9 @@ function MonitorNode({
                         send({
                             type: "monitor",
                             id: m.id,
-                            patch: { muted: !m.muted },
+                            patch: {
+                                muted: !m.muted,
+                            },
                         })
                     }
                 >
@@ -433,7 +494,13 @@ function MonitorNode({
                     value={m.gain}
                     label={`${m.name} gain`}
                     onChange={(gain) =>
-                        send({ type: "monitor", id: m.id, patch: { gain } })
+                        send({
+                            type: "monitor",
+                            id: m.id,
+                            patch: {
+                                gain,
+                            },
+                        })
                     }
                 />
             </div>
@@ -601,7 +668,7 @@ function Wires({
         };
     }, [geometry, selection, availability]);
     return (
-        <svg className="lz-wires" aria-label="Channel connections">
+        <svg className="lz-wires" aria-label={t("Channel connections")}>
             {paths.map((p) => (
                 <g
                     key={p.key}
@@ -639,7 +706,6 @@ function Wires({
         </svg>
     );
 }
-
 export function Routing({
     state,
     device: d,
@@ -695,7 +761,13 @@ export function Routing({
     const removeWire = async (wire) => {
         if (!state.canEdit || state.saving) return;
         const graph = graphRef.current;
-        if (!(await send({ ...wire.action, mode: "remove" }))) return;
+        if (
+            !(await send({
+                ...wire.action,
+                mode: "remove",
+            }))
+        )
+            return;
         // The user may have changed view or device while the engine saved.
         if (
             !graph ||
@@ -811,7 +883,11 @@ export function Routing({
         if (!state.canEdit || state.saving) return;
         if (
             !same &&
-            !(await send({ ...action, mode: "add", previous: g.rewire }))
+            !(await send({
+                ...action,
+                mode: "add",
+                previous: g.rewire,
+            }))
         )
             return;
         setSelectedWire(null);
@@ -827,7 +903,10 @@ export function Routing({
     }
     return (
         <ConnectionTargets.Provider
-            value={{ start: drag?.socket || selection, target: drag?.target }}
+            value={{
+                start: drag?.socket || selection,
+                target: drag?.target,
+            }}
         >
             <div
                 className="lz-graph"
@@ -870,17 +949,17 @@ export function Routing({
                         className="lz-wire-inspector"
                         data-od-id="selected-connection"
                         role="group"
-                        aria-label="Selected connection"
+                        aria-label={t("Selected connection")}
                     >
                         <span>{selectedWire.label}</span>
                         <Button
                             size="sm"
                             onClick={() => removeWire(selectedWire)}
                         >
-                            Remove connection
+                            {t("Remove connection")}
                         </Button>
                         <Button size="sm" onClick={dismissWire}>
-                            Done
+                            {t("Done")}
                         </Button>
                     </div>
                 )}
@@ -900,15 +979,18 @@ export function Routing({
                 <section className="lz-sources" data-od-id="sources">
                     <div className="lz-column-heading">
                         <span className="eyebrow">
-                            Sources <span>{d.sources.length}</span>
+                            {t("Sources") + " "}
+                            <span>{d.sources.length}</span>
                         </span>
                         <Button
                             size="sm"
                             icon
-                            aria-label="Add source"
+                            aria-label={t("Add source")}
                             onClick={(event) =>
                                 open(
-                                    { kind: "add-source" },
+                                    {
+                                        kind: "add-source",
+                                    },
                                     event.currentTarget,
                                 )
                             }
@@ -922,7 +1004,7 @@ export function Routing({
                             data-od-id="empty-source-block"
                         >
                             <Icon name="interval" size={30} />
-                            <h2>Your mix starts here.</h2>
+                            <h2>{t("Your mix starts here.")}</h2>
                             <p>
                                 Add an app, microphone or virtual device. Your
                                 output settings are ready.
@@ -931,12 +1013,14 @@ export function Routing({
                                 variant="primary"
                                 onClick={(event) =>
                                     open(
-                                        { kind: "add-source" },
+                                        {
+                                            kind: "add-source",
+                                        },
                                         event.currentTarget,
                                     )
                                 }
                             >
-                                Add your first source
+                                {t("Add your first source")}
                             </Button>
                         </div>
                     )}
@@ -958,16 +1042,21 @@ export function Routing({
                         <br />
                         <LinkButton
                             onClick={(event) =>
-                                open({ kind: "mapping" }, event.currentTarget)
+                                open(
+                                    {
+                                        kind: "mapping",
+                                    },
+                                    event.currentTarget,
+                                )
                             }
                         >
-                            Edit connections without dragging
+                            {t("Edit connections without dragging")}
                         </LinkButton>
                     </p>
                 </section>
                 <section className="lz-outputs" data-od-id="outputs">
                     <div className="lz-column-heading">
-                        <span className="eyebrow">Output channels</span>
+                        <span className="eyebrow">{t("Output channels")}</span>
                     </div>
                     <div className="lz-first-pair">
                         <OutputPair
@@ -989,7 +1078,9 @@ export function Routing({
                                 {d.channels / 2 - 1} more stereo pairs
                             </summary>
                             {Array.from(
-                                { length: d.channels / 2 - 1 },
+                                {
+                                    length: d.channels / 2 - 1,
+                                },
                                 (_, i) => (
                                     <details
                                         key={i}
@@ -998,7 +1089,8 @@ export function Routing({
                                         }
                                     >
                                         <summary>
-                                            Channels {i * 2 + 3}–{i * 2 + 4}
+                                            {t("Channels") + " "}
+                                            {i * 2 + 3}–{i * 2 + 4}
                                         </summary>
                                         <OutputPair
                                             start={i * 2 + 3}
@@ -1015,23 +1107,26 @@ export function Routing({
                         </details>
                     )}
                     <p className="lz-canvas-note">
-                        Connected sources sum at each output.
+                        {t("Connected sources sum at each output.")}
                         <br />
-                        Meters show post-gain signal.
+                        {t("Meters show post-gain signal.")}
                     </p>
                 </section>
                 <section className="lz-monitors" data-od-id="monitors">
                     <div className="lz-column-heading">
                         <span className="eyebrow">
-                            Monitors <span>{d.monitors.length}</span>
+                            {t("Monitors") + " "}
+                            <span>{d.monitors.length}</span>
                         </span>
                         <Button
                             size="sm"
                             icon
-                            aria-label="Add monitor"
+                            aria-label={t("Add monitor")}
                             onClick={(event) =>
                                 open(
-                                    { kind: "add-monitor" },
+                                    {
+                                        kind: "add-monitor",
+                                    },
                                     event.currentTarget,
                                 )
                             }
@@ -1054,10 +1149,11 @@ export function Routing({
                         ))}
                     </div>
                     <p className="lz-canvas-note">
-                        Listen here. Record anywhere.
+                        {t("Listen here. Record anywhere.")}
                         <br />
-                        Choose <strong>{d.name}</strong> as the input in your
-                        recording app.
+                        {t("Choose") + " "}
+                        <strong>{d.name}</strong> as the input in your recording
+                        app.
                     </p>
                 </section>
             </div>
@@ -1110,14 +1206,14 @@ export function ConnectionList({ device: d, send, open, state }) {
                 <label>
                     Show{" "}
                     <select
-                        aria-label="Filter connections"
+                        aria-label={t("Filter connections")}
                         value={filter}
                         onChange={(event) => {
                             setFilter(event.target.value);
                             setPage(0);
                         }}
                     >
-                        <option value="">All connections</option>
+                        <option value="">{t("All connections")}</option>
                         {[
                             ...d.sources.map((s) => ["source", s]),
                             ...d.monitors.map((m) => ["monitor", m]),
@@ -1134,17 +1230,22 @@ export function ConnectionList({ device: d, send, open, state }) {
                 <Button
                     size="sm"
                     onClick={(event) =>
-                        open({ kind: "mapping" }, event.currentTarget)
+                        open(
+                            {
+                                kind: "mapping",
+                            },
+                            event.currentTarget,
+                        )
                     }
                 >
-                    Edit connections
+                    {t("Edit connections")}
                 </Button>
             </div>
             <table>
                 <thead>
                     <tr>
-                        <th>From</th>
-                        <th>To</th>
+                        <th>{t("From")}</th>
+                        <th>{t("To")}</th>
                         <th>Status</th>
                         <th>Action</th>
                     </tr>
@@ -1175,7 +1276,7 @@ export function ConnectionList({ device: d, send, open, state }) {
                                     {row.kind === "source"
                                         ? sourceStatus(state, row.node)
                                         : state.monitorFaults[row.node.id] ||
-                                          "Connected"}
+                                          t("Connected")}
                                 </td>
                                 <td>
                                     <Button
@@ -1191,7 +1292,7 @@ export function ConnectionList({ device: d, send, open, state }) {
                                             })
                                         }
                                     >
-                                        Disconnect
+                                        {t("Disconnect")}
                                     </Button>
                                 </td>
                             </tr>
@@ -1207,14 +1308,14 @@ export function ConnectionList({ device: d, send, open, state }) {
                     disabled={!current}
                     onClick={() => setPage(current - 1)}
                 >
-                    Previous
+                    {t("Previous")}
                 </Button>
                 <Button
                     size="sm"
                     disabled={current + 1 >= pages}
                     onClick={() => setPage(current + 1)}
                 >
-                    Next
+                    {t("Next")}
                 </Button>
             </div>
         </div>

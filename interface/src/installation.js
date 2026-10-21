@@ -1,10 +1,10 @@
+import { t } from "./i18n.js";
 const components = [
     ["engine", "Audio engine"],
     ["driver", "Audio driver"],
     ["service", "Audio service"],
 ];
 const states = new Set(["installed", "missing", "invalid", "unknown"]);
-
 export function installationComponents(state) {
     const setup = state.installation;
     if (!setup) return [];
@@ -17,11 +17,11 @@ export function installationComponents(state) {
                   ? component.state
                   : "unknown";
         const labels = {
-            unchecked: "Checking",
-            installed: "Installed",
-            missing: "Not installed",
-            invalid: "Needs repair",
-            unknown: "Could not check",
+            unchecked: t("Checking"),
+            installed: t("Installed"),
+            missing: t("Not installed"),
+            invalid: t("Needs repair"),
+            unknown: t("Could not check"),
         };
         return {
             id,
@@ -37,7 +37,6 @@ export function installationComponents(state) {
         };
     });
 }
-
 export function installationCondition(state) {
     const components = installationComponents(state);
     if (!components.length || components.some((c) => c.status === "unchecked"))

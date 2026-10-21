@@ -1,6 +1,6 @@
+import { t } from "./i18n.js";
 import { bufferLatencyLabel } from "./hardware-buffer-model.js";
 import React, { useEffect, useState } from "react";
-
 const sizes = [16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
 export function bufferChoices(device) {
     const minimum = device?.minimumBufferFrames;
@@ -14,7 +14,6 @@ export function bufferChoices(device) {
         return [];
     return sizes.filter((frames) => frames >= minimum && frames <= maximum);
 }
-
 export default function HardwareBufferSettings({
     inventory,
     transport,
@@ -27,7 +26,11 @@ export default function HardwareBufferSettings({
         const preference = (inventory.bufferPreferences || []).find(
             (item) => item.uid === uid,
         );
-        return { uid, device, preference };
+        return {
+            uid,
+            device,
+            preference,
+        };
     });
     const connected = targets.filter((target) => target.device);
     const choices = sizes.filter((size) =>
@@ -59,7 +62,9 @@ export default function HardwareBufferSettings({
             const result = await transport({
                 version: 1,
                 operation: "device-buffer",
-                buffer: { frames: value },
+                buffer: {
+                    frames: value,
+                },
             });
             if (!result?.ok)
                 throw new Error(
@@ -80,18 +85,20 @@ export default function HardwareBufferSettings({
         }
     };
     return (
-        <section aria-label="Hardware buffer" className="lz-hardware-buffer">
-            <strong>Hardware buffer</strong>
+        <section
+            aria-label={t("Hardware buffer")}
+            className="lz-hardware-buffer"
+        >
+            <strong>{t("Hardware buffer")}</strong>
             <p>
-                Applies immediately to all hardware inputs and monitors used by
-                your mixes. Smaller buffers reduce audio latency and use more
-                CPU. Changing this can briefly interrupt other apps using these
-                devices.
+                {t(
+                    "Applies immediately to all hardware inputs and monitors used by your mixes. Smaller buffers reduce audio latency and use more CPU. Changing this can briefly interrupt other apps using these devices.",
+                )}
             </p>
             <label className="lz-field">
-                Buffer size
+                {t("Buffer size")}
                 <select
-                    aria-label="Hardware buffer size"
+                    aria-label={t("Hardware buffer size")}
                     value={frames}
                     disabled={
                         busy ||
@@ -105,8 +112,8 @@ export default function HardwareBufferSettings({
                     {!frames && (
                         <option value={0} disabled>
                             {actual.length > 1
-                                ? "Mixed buffer sizes"
-                                : "Choose a buffer size"}
+                                ? t("Mixed buffer sizes")
+                                : t("Choose a buffer size")}
                         </option>
                     )}
                     {!!frames && !choices.includes(frames) && (
@@ -125,11 +132,13 @@ export default function HardwareBufferSettings({
                 </select>
             </label>
             <p>
-                Target latency is for one hardware buffer at the devices’
-                current sample rates. Total sound delay also includes device and
-                routing processing.
+                {t(
+                    "Target latency is for one hardware buffer at the devices\u2019 current sample rates. Total sound delay also includes device and routing processing.",
+                )}
             </p>
-            {busy && <p role="status">Applying to all used devices…</p>}
+            {busy && (
+                <p role="status">{t("Applying to all used devices\u2026")}</p>
+            )}
             <ul>
                 {targets.map(({ uid, device, preference }) => (
                     <li key={uid}>
@@ -138,23 +147,25 @@ export default function HardwareBufferSettings({
                             ? `${saved} frames`
                             : device
                               ? `${device.bufferFrames} frames`
-                              : "Unavailable"}
+                              : t("Unavailable")}
                         {saved > 0 &&
                             !preference?.applied &&
-                            ` · ${preference?.error || "Waiting to apply saved buffer"}`}
+                            ` · ${preference?.error || t("Waiting to apply saved buffer")}`}
                     </li>
                 ))}
             </ul>
             {!targets.length && (
                 <p>
-                    Your choice will apply when you add a hardware input or
-                    monitor.
+                    {t(
+                        "Your choice will apply when you add a hardware input or monitor.",
+                    )}
                 </p>
             )}
             {inventory.bufferSettingsPersistence && (
                 <p>
-                    One saved choice restores when the Engine restarts, a device
-                    reconnects, or you add another input or monitor.
+                    {t(
+                        "One saved choice restores when the Engine restarts, a device reconnects, or you add another input or monitor.",
+                    )}
                 </p>
             )}
             {inventory.bufferSettingsError && (

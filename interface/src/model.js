@@ -1,8 +1,8 @@
+import { t } from "./i18n.js";
 import { sourceCondition, monitorCondition } from "./connection-state.js";
 import { normalizeAppearance } from "./appearance.js";
 import { supportedSampleRates, initialDeviceRate } from "./sample-rates.js";
 import { outputPairRemoval } from "./output-pairs.js";
-
 export const dbToAmplitude = (db) => (db <= -60 ? 0 : 10 ** (db / 20));
 export const amplitudeToDb = (gain) =>
     gain > 0 ? Math.max(-60, 20 * Math.log10(gain)) : -60;
@@ -23,23 +23,25 @@ const cachedName = (names, key) =>
     names && Object.hasOwn(names, key) && typeof names[key] === "string"
         ? names[key]
         : undefined;
-
 function routes(connections, count, monitor = false) {
-    return Array.from({ length: count }, (_, channel) =>
-        connections
-            .filter(
-                (wire) =>
-                    (monitor ? wire.outputChannel : wire.sourceChannel) ===
-                    channel,
-            )
-            .map(
-                (wire) =>
-                    (monitor ? wire.sourceChannel : wire.outputChannel) + 1,
-            )
-            .sort((a, b) => a - b),
+    return Array.from(
+        {
+            length: count,
+        },
+        (_, channel) =>
+            connections
+                .filter(
+                    (wire) =>
+                        (monitor ? wire.outputChannel : wire.sourceChannel) ===
+                        channel,
+                )
+                .map(
+                    (wire) =>
+                        (monitor ? wire.sourceChannel : wire.outputChannel) + 1,
+                )
+                .sort((a, b) => a - b),
     );
 }
-
 export function project(
     envelope,
     preferences = {},
@@ -48,7 +50,10 @@ export function project(
 ) {
     const snapshot = envelope?.snapshot;
     const document = snapshot?.document;
-    const inventory = envelope?.inventory || { applications: [], devices: [] };
+    const inventory = envelope?.inventory || {
+        applications: [],
+        devices: [],
+    };
     const rawDevices = document?.devices || [];
     const devices =
         cachedDevices ||
@@ -66,7 +71,7 @@ export function project(
                 const kind = kinds[binding.kind];
                 const name =
                     kind === "pass"
-                        ? "Pass-through"
+                        ? t("Pass-through")
                         : kind === "virtual"
                           ? rawDevices.find((d) => d.id === binding.selector)
                                 ?.name || "Missing virtual device"
@@ -204,7 +209,6 @@ export function project(
         background: envelope?.background || {},
     };
 }
-
 function telemetry(state, device) {
     const current =
         state.connected &&
@@ -249,10 +253,10 @@ export function sourceLive(state, source) {
     )?.online;
 }
 export function health(state, device) {
-    if (!state.connected) return "Reconnecting";
+    if (!state.connected) return t("Reconnecting");
     if (!state.transportReady || state.meterExpired)
         return "Status unavailable";
-    if (!device.enabled) return "Disabled";
+    if (!device.enabled) return t("Disabled");
     if (state.service === "driver") return "Waiting for audio service";
     if (state.pending) return "Applying changes";
     if (device.sources.some((s) => !sourceCondition(state, s).available))
@@ -265,14 +269,18 @@ export function health(state, device) {
                 device.monitors.find((d) => d.id === m.monitor)?.enabled,
         )
     )
-        return "Monitor waiting";
-    return "Routing";
+        return t("Monitor waiting");
+    return t("Routing");
 }
 export function dependencies(state, deviceId) {
     return state.devices.flatMap((d) =>
         d.sources
             .filter((s) => s.kind === "virtual" && s.deviceId === deviceId)
-            .map((s) => ({ device: d.id, name: d.name, source: s.id })),
+            .map((s) => ({
+                device: d.id,
+                name: d.name,
+                source: s.id,
+            })),
     );
 }
 export function affectedWires(device, count) {
@@ -305,10 +313,8 @@ export function wouldCycle(devices, from, target, seen = new Set()) {
             ) || false
     );
 }
-
 export const endpointLayout = (node) =>
     JSON.stringify([node.selector, node.channels, node.connections]);
-
 export function endpointChoices(state, device, node, kind, extraApp) {
     let items;
     if (kind === "monitor")
@@ -363,7 +369,6 @@ export function endpointChoices(state, device, node, kind, extraApp) {
         });
     return [...choices.values()];
 }
-
 export function endpointWiresRemoved(node, kind, channels) {
     return node.connections.filter(
         (wire) =>
@@ -371,7 +376,6 @@ export function endpointWiresRemoved(node, kind, channels) {
             channels,
     ).length;
 }
-
 export function commandsFor(state, action) {
     const d = state.devices.find(
         (x) => x.id === (action.device || state.selected),
@@ -446,7 +450,11 @@ export function commandsFor(state, action) {
                             : action.kind === "source"
                               ? "reorderSources"
                               : "reorderMonitors",
-                    ...(action.kind === "device" ? {} : { device: d.id }),
+                    ...(action.kind === "device"
+                        ? {}
+                        : {
+                              device: d.id,
+                          }),
                     ids,
                 },
             ];
@@ -480,7 +488,10 @@ export function commandsFor(state, action) {
                     device: r.device,
                     source: r.source,
                 })),
-                { type: "deleteDevice", device: d.id },
+                {
+                    type: "deleteDevice",
+                    device: d.id,
+                },
             ];
         }
         case "remove-output-pair": {
@@ -503,7 +514,11 @@ export function commandsFor(state, action) {
         }
         case "channels":
             return [
-                { type: "resizeDevice", device: d.id, channels: action.count },
+                {
+                    type: "resizeDevice",
+                    device: d.id,
+                    channels: action.count,
+                },
             ];
         case "device":
             return [
@@ -515,7 +530,9 @@ export function commandsFor(state, action) {
                               device: d.id,
                               controls: controls(action.patch),
                               ...("limiter" in action.patch
-                                  ? { safetyLimiter: action.patch.limiter }
+                                  ? {
+                                        safetyLimiter: action.patch.limiter,
+                                    }
                                   : {}),
                           },
                       ]
@@ -551,13 +568,19 @@ export function commandsFor(state, action) {
                     source: source().id,
                     controls: controls(action.patch),
                     ...("muteOriginal" in action.patch
-                        ? { muteOriginal: action.patch.muteOriginal }
+                        ? {
+                              muteOriginal: action.patch.muteOriginal,
+                          }
                         : {}),
                 },
             ];
         case "remove-source":
             return [
-                { type: "removeSource", device: d.id, source: source().id },
+                {
+                    type: "removeSource",
+                    device: d.id,
+                    source: source().id,
+                },
             ];
         case "source-endpoint": {
             const node = source();
@@ -625,7 +648,11 @@ export function commandsFor(state, action) {
             ];
         case "remove-monitor":
             return [
-                { type: "removeMonitor", device: d.id, monitor: monitor().id },
+                {
+                    type: "removeMonitor",
+                    device: d.id,
+                    monitor: monitor().id,
+                },
             ];
         case "monitor-endpoint": {
             const node = monitor();
@@ -716,7 +743,11 @@ export function commandsFor(state, action) {
             )
                 connections = [
                     ...connections,
-                    { sourceChannel: from, outputChannel: to, gain },
+                    {
+                        sourceChannel: from,
+                        outputChannel: to,
+                        gain,
+                    },
                 ];
             return [
                 ...preceding,

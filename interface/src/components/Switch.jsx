@@ -1,3 +1,4 @@
+import { t } from "../i18n.js";
 import React from "react";
 // Local kit extension: @singz/ui 1.9.5 has no web Switch export.
 // Uses the shipped control material and semantic colors without restyling kit primitives.
@@ -15,7 +16,7 @@ export function Switch({
             aria-checked={checked}
             aria-label={label}
             disabled={disabled}
-            title={`${label}: ${checked ? "On" : "Off"}`}
+            title={`${label}: ${checked ? t("On") : t("Off")}`}
             className="lz-switch"
             onClick={() => onChange(!checked)}
             {...props}

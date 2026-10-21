@@ -1,4 +1,9 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, {
+    useEffect,
+    useRef,
+    useState,
+    useSyncExternalStore,
+} from "react";
 import {
     Button,
     Chip,
@@ -18,13 +23,17 @@ import {
 } from "./Routing.jsx";
 import Dialogs from "./Dialogs.jsx";
 import { LoopZMark } from "./components/LoopZMark.jsx";
+import { Language } from "./components/Language.jsx";
+import { getLocale, subscribeLocale, t } from "./i18n.js";
+import { useReleaseUpdates } from "./ReleaseUpdates.jsx";
 import useAppearance from "./useAppearance.js";
 import { Switch } from "./components/Switch.jsx";
 import { GearIcon } from "./components/ControlIcons.jsx";
 import { installationCondition } from "./installation.js";
 import { backupRecoveryNotice } from "./document-recovery.js";
-
 export default function App({ state, send, transport, refresh }) {
+    useSyncExternalStore(subscribeLocale, getLocale);
+    const releaseUpdates = useReleaseUpdates(transport);
     const palette = useAppearance(state.theme);
     const [view, setView] = useState("routing");
     const [modal, setModal] = useState(null);
@@ -45,11 +54,21 @@ export default function App({ state, send, transport, refresh }) {
     );
     const open = (next, invoker) => {
         returnFocus.current = invoker || document.activeElement;
-        send({ type: "clear-error" });
-        setModal({ device: state.selected, ...next });
+        send({
+            type: "clear-error",
+        });
+        setModal({
+            device: state.selected,
+            ...next,
+        });
     };
     const moveHistory = async (direction) => {
-        if (await send({ type: direction })) setSelection(null);
+        if (
+            await send({
+                type: direction,
+            })
+        )
+            setSelection(null);
     };
     useEffect(() => {
         let active = true;
@@ -148,7 +167,9 @@ export default function App({ state, send, transport, refresh }) {
                 ["n", ","].includes(event.key)
             ) {
                 event.preventDefault();
-                open({ kind: event.key === "n" ? "create" : "settings" });
+                open({
+                    kind: event.key === "n" ? "create" : "settings",
+                });
             }
         };
         window.addEventListener("keydown", key);
@@ -200,7 +221,12 @@ export default function App({ state, send, transport, refresh }) {
             );
             return;
         }
-        if (await send({ ...action, mode: "add" })) {
+        if (
+            await send({
+                ...action,
+                mode: "add",
+            })
+        ) {
             setSelection(null);
             setMessage("Connection saved.");
         }
@@ -223,6 +249,19 @@ export default function App({ state, send, transport, refresh }) {
                         <strong>LoopZ</strong>
                     </div>
                     <div className="lz-title-actions">
+                        <Language compact />
+                        {releaseUpdates.updates?.state === "available" && (
+                            <Button
+                                size="sm"
+                                disabled={releaseUpdates.busy}
+                                onClick={() =>
+                                    releaseUpdates.action("open-update")
+                                }
+                            >
+                                {t("Download update")}{" "}
+                                {releaseUpdates.updates.version}
+                            </Button>
+                        )}
                         {state.history.supported && (
                             <>
                                 <Button
@@ -233,7 +272,7 @@ export default function App({ state, send, transport, refresh }) {
                                     }
                                     onClick={() => moveHistory("undo")}
                                 >
-                                    Undo
+                                    {t("Undo")}
                                 </Button>
                                 <Button
                                     size="sm"
@@ -243,7 +282,7 @@ export default function App({ state, send, transport, refresh }) {
                                     }
                                     onClick={() => moveHistory("redo")}
                                 >
-                                    Redo
+                                    {t("Redo")}
                                 </Button>
                             </>
                         )}
@@ -251,7 +290,7 @@ export default function App({ state, send, transport, refresh }) {
                             size="sm"
                             icon
                             className="lz-sidebar-trigger"
-                            aria-label="Show devices"
+                            aria-label={t("Show devices")}
                             onClick={() => setSidebar(!sidebar)}
                         >
                             ☰
@@ -268,24 +307,30 @@ export default function App({ state, send, transport, refresh }) {
                                 })
                             }
                         >
-                            Appearance
+                            {t("Appearance")}
                         </Button>
                         <Button
                             size="sm"
                             onClick={(event) =>
-                                open({ kind: "settings" }, event.currentTarget)
+                                open(
+                                    {
+                                        kind: "settings",
+                                    },
+                                    event.currentTarget,
+                                )
                             }
                         >
-                            <Icon name="settings" size={15} /> Settings
+                            <Icon name="settings" size={15} />
+                            {" " + t("Settings")}
                         </Button>
                     </div>
                 </header>
                 <aside
                     className={`lz-sidebar ${sidebar ? "open" : ""}`}
-                    aria-label="Virtual devices"
+                    aria-label={t("Virtual devices")}
                 >
                     <div className="lz-sidebar-heading">
-                        <span className="eyebrow">Virtual devices</span>
+                        <span className="eyebrow">{t("Virtual devices")}</span>
                         <span>{state.devices.length} / 32</span>
                     </div>
                     <nav className="lz-device-list">
@@ -302,7 +347,10 @@ export default function App({ state, send, transport, refresh }) {
                                             : undefined
                                     }
                                     onClick={() => {
-                                        send({ type: "select", id: device.id });
+                                        send({
+                                            type: "select",
+                                            id: device.id,
+                                        });
                                         setSidebar(false);
                                     }}
                                     aria-label={`Select ${device.name}`}
@@ -347,7 +395,9 @@ export default function App({ state, send, transport, refresh }) {
                                             send({
                                                 type: "device",
                                                 device: device.id,
-                                                patch: { enabled },
+                                                patch: {
+                                                    enabled,
+                                                },
                                             })
                                         }
                                     />
@@ -363,15 +413,20 @@ export default function App({ state, send, transport, refresh }) {
                                 state.devices.length >= 32
                             }
                             onClick={(event) =>
-                                open({ kind: "create" }, event.currentTarget)
+                                open(
+                                    {
+                                        kind: "create",
+                                    },
+                                    event.currentTarget,
+                                )
                             }
                         >
-                            + New virtual device
+                            {t("+ New virtual device")}
                         </Button>
                         <p>
-                            Close this window to leave
+                            {t("Close this window to leave")}
                             <br />
-                            your engine running.
+                            {t("your engine running.")}
                         </p>
                     </div>
                 </aside>
@@ -392,12 +447,14 @@ export default function App({ state, send, transport, refresh }) {
                                     <LinkButton
                                         onClick={(event) =>
                                             open(
-                                                { kind: "settings" },
+                                                {
+                                                    kind: "settings",
+                                                },
                                                 event.currentTarget,
                                             )
                                         }
                                     >
-                                        Review setup
+                                        {t("Review setup")}
                                     </LinkButton>
                                 }
                             >
@@ -409,7 +466,7 @@ export default function App({ state, send, transport, refresh }) {
                                 heading={
                                     state.background.detail &&
                                     !state.background.managed
-                                        ? "Audio engine"
+                                        ? t("Audio engine")
                                         : "Connecting to LoopZ"
                                 }
                                 icon={<Icon name="replay" size={20} />}
@@ -419,12 +476,14 @@ export default function App({ state, send, transport, refresh }) {
                                         <LinkButton
                                             onClick={(event) =>
                                                 open(
-                                                    { kind: "settings" },
+                                                    {
+                                                        kind: "settings",
+                                                    },
                                                     event.currentTarget,
                                                 )
                                             }
                                         >
-                                            Review setup
+                                            {t("Review setup")}
                                         </LinkButton>
                                     ) : undefined
                                 }
@@ -492,10 +551,12 @@ export default function App({ state, send, transport, refresh }) {
                                             <Button
                                                 size="sm"
                                                 icon
-                                                aria-label="Device options"
+                                                aria-label={t("Device options")}
                                                 onClick={(event) =>
                                                     open(
-                                                        { kind: "device" },
+                                                        {
+                                                            kind: "device",
+                                                        },
                                                         event.currentTarget,
                                                     )
                                                 }
@@ -511,11 +572,13 @@ export default function App({ state, send, transport, refresh }) {
                                     <div className="lz-header-controls">
                                         <Switch
                                             checked={d.enabled}
-                                            label="Device enabled"
+                                            label={t("Device enabled")}
                                             onChange={(enabled) =>
                                                 send({
                                                     type: "device",
-                                                    patch: { enabled },
+                                                    patch: {
+                                                        enabled,
+                                                    },
                                                 })
                                             }
                                         />
@@ -526,10 +589,13 @@ export default function App({ state, send, transport, refresh }) {
                                 <SegmentedControl
                                     aria-label="Workspace view"
                                     options={[
-                                        { value: "routing", label: "Routing" },
+                                        {
+                                            value: "routing",
+                                            label: t("Routing"),
+                                        },
                                         {
                                             value: "connections",
-                                            label: "Connections",
+                                            label: t("Connections"),
                                         },
                                     ]}
                                     value={view}
@@ -552,18 +618,18 @@ export default function App({ state, send, transport, refresh }) {
                                             size="sm"
                                             onClick={() => setSelection(null)}
                                         >
-                                            Cancel
+                                            {t("Cancel")}
                                         </Button>
                                     </div>
                                 )}
                                 <span className="lz-saved">
                                     {state.saving
-                                        ? "Saving…"
+                                        ? t("Saving\u2026")
                                         : !state.transportReady
                                           ? "Waiting for current state"
                                           : state.pending
                                             ? "Saved · awaiting activation"
-                                            : "Saved"}
+                                            : t("Saved")}
                                 </span>
                             </div>
                             <div className="lz-scroll">
@@ -599,12 +665,14 @@ export default function App({ state, send, transport, refresh }) {
                             <LoopZMark size={48} />
                             <h2>
                                 {state.connected
-                                    ? "Connect your sound."
+                                    ? t("Connect your sound.")
                                     : "Your audio workspace"}
                             </h2>
                             <p>
                                 {state.canEdit || state.canCreate
-                                    ? "Create a device to combine apps and inputs."
+                                    ? t(
+                                          "Create a device to combine apps and inputs.",
+                                      )
                                     : state.connected
                                       ? "Your routing document needs attention before editing."
                                       : state.background.detail ||
@@ -615,12 +683,14 @@ export default function App({ state, send, transport, refresh }) {
                                 disabled={!(state.canEdit || state.canCreate)}
                                 onClick={(event) =>
                                     open(
-                                        { kind: "create" },
+                                        {
+                                            kind: "create",
+                                        },
                                         event.currentTarget,
                                     )
                                 }
                             >
-                                Create your first device
+                                {t("Create your first device")}
                             </Button>
                         </div>
                     )}
@@ -642,10 +712,10 @@ export default function App({ state, send, transport, refresh }) {
                         />
                         <span>
                             {!state.connected
-                                ? "Reconnecting"
+                                ? t("Reconnecting")
                                 : d
                                   ? health(state, d)
-                                  : "No virtual devices"}
+                                  : t("No virtual devices")}
                         </span>
                     </div>
                     <div className="lz-footer-actions">
@@ -653,20 +723,27 @@ export default function App({ state, send, transport, refresh }) {
                             <LinkButton
                                 onClick={(event) =>
                                     open(
-                                        { kind: "mapping" },
+                                        {
+                                            kind: "mapping",
+                                        },
                                         event.currentTarget,
                                     )
                                 }
                             >
-                                Edit connections
+                                {t("Edit connections")}
                             </LinkButton>
                         )}
                         <Button
                             size="sm"
                             icon
-                            aria-label="Keyboard shortcuts"
+                            aria-label={t("Keyboard shortcuts")}
                             onClick={(event) =>
-                                open({ kind: "shortcuts" }, event.currentTarget)
+                                open(
+                                    {
+                                        kind: "shortcuts",
+                                    },
+                                    event.currentTarget,
+                                )
                             }
                         >
                             ⌘
@@ -676,12 +753,16 @@ export default function App({ state, send, transport, refresh }) {
             </div>
             {modal && (
                 <Dialogs
+                    releaseUpdates={releaseUpdates}
                     modal={modal}
                     state={state}
                     send={send}
                     close={() => setModal(null)}
                     setModal={(next) =>
-                        setModal({ device: modal.device, ...next })
+                        setModal({
+                            device: modal.device,
+                            ...next,
+                        })
                     }
                     returnFocus={returnFocus}
                     transport={transport}

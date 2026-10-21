@@ -1,3 +1,7 @@
+import { AudioSetup } from "./AudioSetup.jsx";
+import { t } from "./i18n.js";
+import { Language } from "./components/Language.jsx";
+import { ReleaseUpdates } from "./ReleaseUpdates.jsx";
 import { Switch } from "./components/Switch.jsx";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
@@ -19,7 +23,6 @@ import { initialDeviceRate, sampleRateLabel } from "./sample-rates.js";
 import OutputPairRemoval from "./OutputPairRemoval.jsx";
 import HardwareBufferSettings from "./HardwareBufferSettings.jsx";
 import { installationComponents } from "./installation.js";
-
 function ModalFocus({ returnFocus, kind }) {
     const currentKind = useRef(kind);
     useEffect(() => {
@@ -59,7 +62,9 @@ function ModalFocus({ returnFocus, kind }) {
                                 '[aria-label="Configure output channels"]',
                             )
                           : null;
-                    target?.focus({ preventScroll: true });
+                    target?.focus({
+                        preventScroll: true,
+                    });
                 }
             });
         };
@@ -75,8 +80,8 @@ function ModalFocus({ returnFocus, kind }) {
     }, [kind]);
     return null;
 }
-
 export default function Dialogs({
+    releaseUpdates,
     modal,
     state,
     send,
@@ -111,7 +116,13 @@ export default function Dialogs({
         setLocalError("");
     }, [modal.kind]);
     const commit = async (action) => {
-        if (await send({ device: modal.device, ...action })) close();
+        if (
+            await send({
+                device: modal.device,
+                ...action,
+            })
+        )
+            close();
     };
     const openPrivacy = async (pane) => {
         setLocalError("");
@@ -145,7 +156,9 @@ export default function Dialogs({
                 );
             setMicrophoneNotice(
                 result.microphone === "authorized"
-                    ? "Microphone access is granted. Saved inputs reconnect automatically."
+                    ? t(
+                          "Microphone access is granted. Saved inputs reconnect automatically.",
+                      )
                     : !result.completed
                       ? "The microphone request did not finish. Review any macOS dialog, then try again."
                       : "Microphone access is still off. You can review it in Privacy & Security.",
@@ -183,25 +196,25 @@ export default function Dialogs({
         }
     };
     const titles = {
-        create: "New virtual device",
-        rename: "Rename virtual device",
-        device: "Device options",
-        "add-source": "Add a source",
-        source: source?.name || "Source options",
-        "add-monitor": "Add a monitor",
-        monitor: monitor?.name || "Monitor options",
-        mapping: "Edit connections",
-        channels: "Output channels",
+        create: t("New virtual device"),
+        rename: t("Rename virtual device"),
+        device: t("Device options"),
+        "add-source": t("Add a source"),
+        source: source?.name || t("Source options"),
+        "add-monitor": t("Add a monitor"),
+        monitor: monitor?.name || t("Monitor options"),
+        mapping: t("Edit connections"),
+        channels: t("Output channels"),
         confirmChannels: "Remove connected channels?",
         removePair: `Remove channels ${modal.start}–${modal.start + 1}?`,
         delete: "Delete this item?",
-        settings: "Settings",
-        shortcuts: "Keyboard & connections",
+        settings: t("Settings"),
+        shortcuts: t("Keyboard & connections"),
     };
     const writable =
         !state.saving &&
         (state.canEdit || (modal.kind === "create" && state.canCreate));
-    const cancel = <Button onClick={close}>Cancel</Button>;
+    const cancel = <Button onClick={close}>{t("Cancel")}</Button>;
     let content, actions;
     if (!["create", "settings", "shortcuts"].includes(modal.kind) && !d)
         content = (
@@ -246,19 +259,24 @@ export default function Dialogs({
                                   channels: count,
                                   rate,
                               }
-                            : { type: "rename", name },
+                            : {
+                                  type: "rename",
+                                  name,
+                              },
                     );
                 }}
             >
                 <p className="modal-body">
                     {modal.kind === "create"
-                        ? "Combine apps and inputs into a device you can choose in your recording app."
+                        ? t(
+                              "Combine apps and inputs into a device you can choose in your recording app.",
+                          )
                         : "The new name appears in apps using this device."}
                 </p>
                 <label className="lz-field">
-                    Device name
+                    {t("Device name")}
                     <input
-                        aria-label="Device name"
+                        aria-label={t("Device name")}
                         value={name}
                         onChange={(event) => setName(event.target.value)}
                         maxLength={128}
@@ -267,7 +285,7 @@ export default function Dialogs({
                 </label>
                 {modal.kind === "create" && (
                     <label className="lz-field">
-                        Sample rate
+                        {t("Sample rate")}
                         <select
                             aria-label="New device sample rate"
                             value={rate}
@@ -288,14 +306,16 @@ export default function Dialogs({
                 )}
                 {modal.kind === "create" && (
                     <label className="lz-field">
-                        Output channels
+                        {t("Output channels")}
                         <select
                             aria-label="New device channel count"
                             value={count}
                             onChange={(event) => setCount(+event.target.value)}
                         >
                             {Array.from(
-                                { length: 32 },
+                                {
+                                    length: 32,
+                                },
                                 (_, i) => (i + 1) * 2,
                             ).map((n) => (
                                 <option key={n} value={n}>
@@ -317,8 +337,8 @@ export default function Dialogs({
                         }
                     >
                         {modal.kind === "create"
-                            ? "Create device"
-                            : "Save name"}
+                            ? t("Create device")
+                            : t("Save name")}
                     </Button>
                 </ModalActions>
             </form>
@@ -333,11 +353,23 @@ export default function Dialogs({
                     writable={writable}
                     send={send}
                 />
-                <Button onClick={() => setModal({ kind: "rename" })}>
-                    Rename device
+                <Button
+                    onClick={() =>
+                        setModal({
+                            kind: "rename",
+                        })
+                    }
+                >
+                    {t("Rename device")}
                 </Button>
-                <Button onClick={() => setModal({ kind: "channels" })}>
-                    Configure output channels
+                <Button
+                    onClick={() =>
+                        setModal({
+                            kind: "channels",
+                        })
+                    }
+                >
+                    {t("Configure output channels")}
                 </Button>
                 <Button
                     disabled={!writable}
@@ -349,15 +381,18 @@ export default function Dialogs({
                         })
                     }
                 >
-                    Duplicate device
+                    {t("Duplicate device")}
                 </Button>
                 <Button
                     variant="danger"
                     onClick={() =>
-                        setModal({ kind: "delete", target: "device" })
+                        setModal({
+                            kind: "delete",
+                            target: "device",
+                        })
                     }
                 >
-                    Delete device…
+                    {t("Delete device\u2026")}
                 </Button>
             </div>
         );
@@ -374,17 +409,19 @@ export default function Dialogs({
                     a source is disabled or unavailable.
                 </p>
                 <div className="lz-setting-row">
-                    <strong>Include in this mix</strong>
+                    <strong>{t("Include in this mix")}</strong>
                     <Switch
                         checked={source.enabled}
-                        label="Include source in this mix"
+                        label={t("Include source in this mix")}
                         disabled={!writable}
                         onChange={(enabled) =>
                             send({
                                 type: "source",
                                 device: d.id,
                                 id: source.id,
-                                patch: { enabled },
+                                patch: {
+                                    enabled,
+                                },
                             })
                         }
                     />
@@ -392,7 +429,7 @@ export default function Dialogs({
                 {source.kind === "app" && (
                     <div className="lz-setting-row">
                         <div>
-                            <strong>Mute original playback</strong>
+                            <strong>{t("Mute original playback")}</strong>
                             <p>
                                 Capture the app here while silencing its
                                 original output.
@@ -400,14 +437,16 @@ export default function Dialogs({
                         </div>
                         <Switch
                             checked={source.muteOriginal}
-                            label="Mute original app playback"
+                            label={t("Mute original app playback")}
                             disabled={!writable}
                             onChange={(muteOriginal) =>
                                 send({
                                     type: "source",
                                     device: d.id,
                                     id: source.id,
-                                    patch: { muteOriginal },
+                                    patch: {
+                                        muteOriginal,
+                                    },
                                 })
                             }
                         />
@@ -443,7 +482,7 @@ export default function Dialogs({
                             })
                         }
                     >
-                        Edit channel connections
+                        {t("Edit channel connections")}
                     </Button>
                     <Button
                         variant="danger"
@@ -455,7 +494,7 @@ export default function Dialogs({
                             })
                         }
                     >
-                        Remove source…
+                        {t("Remove source\u2026")}
                     </Button>
                 </div>
             </>
@@ -476,7 +515,7 @@ export default function Dialogs({
                 selector: app.bundle,
                 kind: "app",
                 channels: 2,
-                group: "Applications",
+                group: t("Applications"),
             })),
             ...state.inventory.devices
                 .filter((x) => x.inputChannels > 0)
@@ -485,7 +524,7 @@ export default function Dialogs({
                     selector: input.uid,
                     kind: "hardware",
                     channels: Math.min(64, input.inputChannels),
-                    group: "Input devices",
+                    group: t("Input devices"),
                 })),
             ...state.devices
                 .filter((x) => x.id !== d.id)
@@ -494,16 +533,16 @@ export default function Dialogs({
                     selector: device.id,
                     kind: "virtual",
                     channels: device.channels,
-                    group: "Virtual devices",
+                    group: t("Virtual devices"),
                 })),
             ...(!d.sources.some((s) => s.kind === "pass")
                 ? [
                       {
-                          name: "Pass-through",
+                          name: t("Pass-through"),
                           selector: "",
                           kind: "pass",
                           channels: d.channels,
-                          group: "Pass-through",
+                          group: t("Pass-through"),
                       },
                   ]
                 : []),
@@ -523,7 +562,7 @@ export default function Dialogs({
                     <span className="sr-only">Search sources</span>
                     <input
                         aria-label="Search sources"
-                        placeholder="Search apps and devices…"
+                        placeholder={t("Search apps and devices\u2026")}
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
                     />
@@ -547,13 +586,13 @@ export default function Dialogs({
                         }
                     }}
                 >
-                    Choose another application…
+                    {t("Choose another application\u2026")}
                 </Button>
                 {[
-                    "Applications",
-                    "Input devices",
-                    "Virtual devices",
-                    "Pass-through",
+                    t("Applications"),
+                    t("Input devices"),
+                    t("Virtual devices"),
+                    t("Pass-through"),
                 ].map((group) => {
                     const groupItems = items.filter(
                         (x) =>
@@ -610,7 +649,7 @@ export default function Dialogs({
                 })}
                 {!items.some((x) =>
                     x.name.toLowerCase().includes(query.toLowerCase()),
-                ) && <p>No matching sources.</p>}
+                ) && <p>{t("No matching sources.")}</p>}
             </>
         );
     } else if (modal.kind === "channels") {
@@ -621,19 +660,22 @@ export default function Dialogs({
                     preserved.
                 </p>
                 <label className="lz-field">
-                    Channel count
+                    {t("Channel count")}
                     <select
                         aria-label="Output channel count"
                         value={count}
                         onChange={(event) => setCount(+event.target.value)}
                     >
-                        {Array.from({ length: 32 }, (_, i) => (i + 1) * 2).map(
-                            (n) => (
-                                <option key={n} value={n}>
-                                    {n} channels · {n / 2} pairs
-                                </option>
-                            ),
-                        )}
+                        {Array.from(
+                            {
+                                length: 32,
+                            },
+                            (_, i) => (i + 1) * 2,
+                        ).map((n) => (
+                            <option key={n} value={n}>
+                                {n} channels · {n / 2} pairs
+                            </option>
+                        ))}
                     </select>
                 </label>
             </>
@@ -647,8 +689,16 @@ export default function Dialogs({
                     onClick={() => {
                         const wires = affectedWires(d, count);
                         if (count < d.channels && wires)
-                            setModal({ kind: "confirmChannels", count, wires });
-                        else commit({ type: "channels", count });
+                            setModal({
+                                kind: "confirmChannels",
+                                count,
+                                wires,
+                            });
+                        else
+                            commit({
+                                type: "channels",
+                                count,
+                            });
                     }}
                 >
                     Apply channels
@@ -682,7 +732,10 @@ export default function Dialogs({
                     variant="danger"
                     disabled={!writable}
                     onClick={() =>
-                        commit({ type: "channels", count: modal.count })
+                        commit({
+                            type: "channels",
+                            count: modal.count,
+                        })
                     }
                 >
                     Remove channels
@@ -691,8 +744,14 @@ export default function Dialogs({
         );
     } else if (modal.kind === "mapping") {
         const nodes = [
-            ...d.sources.map((s) => ({ ...s, routeKind: "source" })),
-            ...d.monitors.map((m) => ({ ...m, routeKind: "monitor" })),
+            ...d.sources.map((s) => ({
+                ...s,
+                routeKind: "source",
+            })),
+            ...d.monitors.map((m) => ({
+                ...m,
+                routeKind: "monitor",
+            })),
         ];
         const active =
             nodes.find(
@@ -747,7 +806,9 @@ export default function Dialogs({
                                 }
                             >
                                 {Array.from(
-                                    { length: active.channels },
+                                    {
+                                        length: active.channels,
+                                    },
                                     (_, i) => (
                                         <option key={i} value={i + 1}>
                                             {i + 1}
@@ -758,7 +819,9 @@ export default function Dialogs({
                         </label>
                         <div className="lz-route-options">
                             {Array.from(
-                                { length: d.channels },
+                                {
+                                    length: d.channels,
+                                },
                                 (_, i) => i + 1,
                             ).map((n) => (
                                 <label key={n}>
@@ -786,7 +849,8 @@ export default function Dialogs({
                                             })
                                         }
                                     />
-                                    Output {n}
+                                    {t("Output") + " "}
+                                    {n}
                                 </label>
                             ))}
                         </div>
@@ -794,7 +858,7 @@ export default function Dialogs({
                 )}
             </>
         );
-        actions = <Button onClick={close}>Done</Button>;
+        actions = <Button onClick={close}>{t("Done")}</Button>;
     } else if (modal.kind === "add-monitor")
         content = (
             <>
@@ -811,7 +875,7 @@ export default function Dialogs({
                     <span className="sr-only">Search monitors</span>
                     <input
                         aria-label="Search monitors"
-                        placeholder="Search output devices…"
+                        placeholder={t("Search output devices\u2026")}
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
                     />
@@ -857,7 +921,7 @@ export default function Dialogs({
             <>
                 <div className="lz-setting-row">
                     <div>
-                        <strong>Enable monitor</strong>
+                        <strong>{t("Enable monitor")}</strong>
                         <p>
                             Keeps the mix active independently of recording
                             apps.
@@ -865,14 +929,16 @@ export default function Dialogs({
                     </div>
                     <Switch
                         checked={monitor.enabled}
-                        label="Monitor enabled"
+                        label={t("Monitor enabled")}
                         disabled={!writable}
                         onChange={(enabled) =>
                             send({
                                 type: "monitor",
                                 device: d.id,
                                 id: monitor.id,
-                                patch: { enabled },
+                                patch: {
+                                    enabled,
+                                },
                             })
                         }
                     />
@@ -905,7 +971,7 @@ export default function Dialogs({
                             })
                         }
                     >
-                        Edit monitor connections
+                        {t("Edit monitor connections")}
                     </Button>
                     <Button
                         variant="danger"
@@ -917,7 +983,7 @@ export default function Dialogs({
                             })
                         }
                     >
-                        Remove monitor…
+                        {t("Remove monitor\u2026")}
                     </Button>
                 </div>
             </>
@@ -964,13 +1030,24 @@ export default function Dialogs({
                         })
                     }
                 >
-                    Delete {modal.target}
+                    {t("Delete") + " "}
+                    {modal.target}
                 </Button>
             </>
         );
     } else if (modal.kind === "settings")
         content = (
             <>
+                <div className="lz-setting-row">
+                    <strong>{t("Language")}</strong>
+                    <Language />
+                </div>
+                {releaseUpdates && <ReleaseUpdates value={releaseUpdates} />}
+                <AudioSetup
+                    state={state}
+                    transport={transport}
+                    refresh={refresh}
+                />
                 {installationComponents(state).map((component) => (
                     <div className="lz-setting-row" key={component.id}>
                         <div>
@@ -987,12 +1064,16 @@ export default function Dialogs({
                 />
                 <div className="lz-setting-row">
                     <div>
-                        <strong>Audio engine</strong>
+                        <strong>{t("Audio engine")}</strong>
                         <p>
                             {state.connected
-                                ? "Connected. Your graph is saved by the engine."
+                                ? t(
+                                      "Connected. Your graph is saved by the engine.",
+                                  )
                                 : state.background.detail ||
-                                  "Reconnecting automatically. Saved settings stay with the engine."}
+                                  t(
+                                      "Reconnecting automatically. Saved settings stay with the engine.",
+                                  )}
                         </p>
                     </div>
                     <Button
@@ -1000,31 +1081,33 @@ export default function Dialogs({
                         disabled={backgroundBusy}
                         onClick={() => backgroundAction("retry-session")}
                     >
-                        Retry now
+                        {t("Retry now")}
                     </Button>
                 </div>
                 <div className="lz-setting-row">
                     <div>
-                        <strong>Background routing</strong>
+                        <strong>{t("Background routing")}</strong>
                         <p>
                             {state.background.detail ||
-                                "Checking background recovery."}
+                                t("Checking background recovery.")}
                         </p>
                     </div>
                     <Badge caps={false}>
                         {state.background.managed
-                            ? "Automatic recovery"
-                            : "Setup needed"}
+                            ? t("Automatic recovery")
+                            : t("Setup needed")}
                     </Badge>
                 </div>
                 <div className="lz-setting-row">
                     <div>
-                        <strong>Start routing at login</strong>
+                        <strong>{t("Start routing at login")}</strong>
                         <p>
                             {state.background.login?.requiresApproval
-                                ? "Allow LoopZ in System Settings → General → Login Items & Extensions."
+                                ? t(
+                                      "Allow LoopZ in System Settings \u2192 General \u2192 Login Items & Extensions.",
+                                  )
                                 : state.background.login?.detail ||
-                                  "Checking login startup."}
+                                  t("Checking login startup.")}
                         </p>
                         {state.background.login?.requiresApproval && (
                             <Button
@@ -1034,24 +1117,26 @@ export default function Dialogs({
                                     backgroundAction("login-settings")
                                 }
                             >
-                                Open login settings
+                                {t("Open login settings")}
                             </Button>
                         )}
                     </div>
                     <Switch
                         checked={!!state.background.login?.registered}
-                        label="Start routing at login"
+                        label={t("Start routing at login")}
                         disabled={
                             backgroundBusy || !state.background.login?.available
                         }
                         onChange={(enabled) =>
-                            backgroundAction("login", { enabled })
+                            backgroundAction("login", {
+                                enabled,
+                            })
                         }
                     />
                 </div>
                 <div className="lz-setting-row">
                     <div>
-                        <strong>Microphone & input devices</strong>
+                        <strong>{t("Microphone & input devices")}</strong>
                         <p>{microphoneAccess(state.permissions.microphone)}</p>
                         {microphoneNotice && (
                             <p role="status">{microphoneNotice}</p>
@@ -1068,41 +1153,50 @@ export default function Dialogs({
                         >
                             {microphoneBusy ||
                             state.permissionSetup.microphonePending
-                                ? "Waiting for macOS…"
-                                : "Enable microphone access"}
+                                ? t("Waiting for macOS\u2026")
+                                : t("Enable microphone access")}
                         </Button>
                     ) : (
                         <Button
                             size="sm"
                             onClick={() => openPrivacy("microphone")}
                         >
-                            Open settings
+                            {t("Open settings")}
                         </Button>
                     )}
                 </div>
                 <div className="lz-setting-row">
                     <div>
-                        <strong>Application audio</strong>
+                        <strong>{t("Application audio")}</strong>
                         <p>
-                            macOS controls system audio-recording access.
-                            Reconnects do not request it again.
+                            {t(
+                                "macOS controls system audio-recording access. Reconnects do not request it again.",
+                            )}
                         </p>
                     </div>
                     <Button size="sm" onClick={() => openPrivacy("audio")}>
-                        Open settings
+                        {t("Open settings")}
                     </Button>
                 </div>
                 <div className="lz-setting-row">
-                    <strong>Appearance</strong>
+                    <strong>{t("Appearance")}</strong>
                     <SegmentedControl
-                        aria-label="Appearance"
-                        options={appearanceOptions}
+                        aria-label={t("Appearance")}
+                        options={appearanceOptions.map((option) => ({
+                            ...option,
+                            label: t(option.label),
+                        }))}
                         value={state.theme}
-                        onChange={(value) => send({ type: "theme", value })}
+                        onChange={(value) =>
+                            send({
+                                type: "theme",
+                                value,
+                            })
+                        }
                     />
                 </div>
                 <ModalActions>
-                    <Button onClick={close}>Done</Button>
+                    <Button onClick={close}>{t("Done")}</Button>
                 </ModalActions>
             </>
         );
@@ -1161,20 +1255,22 @@ export default function Dialogs({
                     tone="danger"
                     heading={
                         state.uncertain
-                            ? "Review current routing"
+                            ? t("Review current routing")
                             : modal.kind === "settings"
-                              ? "Action could not be completed"
-                              : "Change not saved"
+                              ? t("Action could not be completed")
+                              : t("Change not saved")
                     }
                     footer={
                         state.uncertain ? (
                             <Button
                                 onClick={async () => {
                                     close();
-                                    await send({ type: "acknowledge" });
+                                    await send({
+                                        type: "acknowledge",
+                                    });
                                 }}
                             >
-                                Review current routing
+                                {t("Review current routing")}
                             </Button>
                         ) : undefined
                     }

@@ -1,4 +1,5 @@
 #include "desktop.hpp"
+#include "release_updates.hpp"
 #include <loopz/macos/device_inventory.hpp>
 #include "session.hpp"
 #include "login.hpp"
@@ -85,6 +86,7 @@ struct Worker {
     std::atomic<bool> running{true};
     std::atomic<unsigned> pending{0};
     std::atomic<bool> requestingMicrophone{false};
+    std::atomic<bool> installingAudio{false};
     std::unique_ptr<EditorConnection> connection;
     DeviceInventory inventory;
     SessionSupervisor session;
@@ -199,6 +201,64 @@ void refreshInstallation(std::shared_ptr<Worker> state, uint64_t now) {
             CFGetTypeID((__bridge CFTypeRef)version) == CFBooleanGetTypeID() ||
             [version doubleValue] != 1 || ![operation isKindOfClass:NSString.class]) {
             reply(nil, @"Unsupported desktop message");
+            return;
+        }
+        if ([operation isEqual:@"audio-setup"]) {
+            const auto state = _worker;
+            if (body.count != 2 || state->installingAudio.exchange(true)) {
+                reply(failure(@"busy", @"Audio setup is already running."), nil);
+                return;
+            }
+            NSString* helper = @"/Applications/LoopZ.app/Contents/Library/Helpers/LoopZSetup";
+            if (![NSFileManager.defaultManager isExecutableFileAtPath:helper]) {
+                state->installingAudio.store(false);
+                reply(failure(@"unavailable", @"Install the complete LoopZ download in "
+                                              @"Applications before setting up audio."),
+                      nil);
+                return;
+            }
+            dispatch_async(state->setupQueue, ^{
+                @autoreleasepool {
+                    // Fixed executable and no caller-supplied command or arguments.
+                    NSAppleScript* script = [[NSAppleScript alloc]
+                        initWithSource:@"do shell script "
+                                       @"\"'/Applications/LoopZ.app/Contents/Library/Helpers/"
+                                       @"LoopZSetup'\" with administrator privileges"];
+                    NSDictionary* error = nil;
+                    const BOOL success = [script executeAndReturnError:&error] != nil;
+                    NSString* detail = error[NSAppleScriptErrorMessage]
+                                           ?: @"Audio setup was cancelled or could not finish.";
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        state->installingAudio.store(false);
+                        if (success)
+                            reply(@{@"ok" : @YES}, nil);
+                        else
+                            reply(failure(@"failed", detail), nil);
+                    });
+                }
+            });
+            return;
+        }
+        if ([@[ @"updates", @"check-updates", @"open-update", @"automatic-updates" ]
+                containsObject:operation]) {
+            const bool setting = [operation isEqual:@"automatic-updates"];
+            if (body.count != (setting ? 3 : 2) ||
+                (setting &&
+                 (![body[@"enabled"] isKindOfClass:NSNumber.class] ||
+                  CFGetTypeID((__bridge CFTypeRef)body[@"enabled"]) != CFBooleanGetTypeID()))) {
+                reply(nil, @"Invalid update request");
+                return;
+            }
+            LZReleaseUpdates* updates = LZReleaseUpdates.shared;
+            if (setting)
+                [updates setAutomatic:[body[@"enabled"] boolValue]];
+            if ([operation isEqual:@"check-updates"])
+                [updates check];
+            if ([operation isEqual:@"open-update"] && ![updates openRelease]) {
+                reply(failure(@"unavailable", @"The release page could not be opened."), nil);
+                return;
+            }
+            reply([updates snapshot], nil);
             return;
         }
         const bool editing = [operation isEqual:@"edit"] || [operation isEqual:@"initialize"];

@@ -91,6 +91,7 @@ if(LOOPZ_BUILD_MACOS_BACKEND)
   add_executable(loopz-webkit-engine-tests webkit_engine_tests.mm
     ../../native/platform/macos/desktop/editing_actions.mm
     ../../native/platform/macos/desktop/bridge.mm
+    ../../native/platform/macos/desktop/release_updates.mm
     ../../native/platform/macos/desktop/resources.mm
     ../../native/platform/macos/desktop/login.mm)
   loopz_macos_objc(loopz-webkit-engine-tests)
@@ -141,4 +142,16 @@ if(LOOPZ_BUILD_MACOS_BACKEND)
   set_tests_properties(loopz-editor-cli PROPERTIES TIMEOUT 15)
   add_test(NAME loopz-desktop-model COMMAND "${LOOPZ_NODE_EXECUTABLE}" --test
     "${PROJECT_SOURCE_DIR}/interface/tests/model.test.mjs")
+endif()
+if(LOOPZ_BUILD_MACOS_BACKEND)
+  add_executable(loopz-release-updates-tests release_updates_tests.mm
+    ../../native/platform/macos/desktop/release_updates.mm)
+  loopz_macos_objc(loopz-release-updates-tests)
+  loopz_test_target(loopz-release-updates-tests)
+  target_link_libraries(loopz-release-updates-tests PRIVATE "-framework AppKit")
+  add_test(NAME loopz-release-updates COMMAND loopz-release-updates-tests)
+endif()
+if(LOOPZ_BUILD_MACOS_BACKEND)
+  add_test(NAME loopz-audio-setup-contract COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/audio_setup_contract_tests.py" "$<TARGET_FILE:loopz-audio-setup>")
 endif()

@@ -2,7 +2,8 @@ find_program(LOOPZ_NODE_EXECUTABLE node REQUIRED)
 file(GLOB_RECURSE LOOPZ_INTERFACE_SOURCES CONFIGURE_DEPENDS
   "${PROJECT_SOURCE_DIR}/interface/src/*.jsx"
   "${PROJECT_SOURCE_DIR}/interface/src/*.js"
-  "${PROJECT_SOURCE_DIR}/interface/src/*.css")
+  "${PROJECT_SOURCE_DIR}/interface/src/*.css"
+  "${PROJECT_SOURCE_DIR}/interface/src/*.json")
 set(LOOPZ_INTERFACE_OUTPUT "${PROJECT_BINARY_DIR}/interface")
 add_custom_command(
   OUTPUT "${LOOPZ_INTERFACE_OUTPUT}/index.html" "${LOOPZ_INTERFACE_OUTPUT}/loopz.js" "${LOOPZ_INTERFACE_OUTPUT}/loopz.css"
@@ -31,7 +32,8 @@ add_executable(loopz-desktop MACOSX_BUNDLE
   bridge.mm
   resources.mm
   login.mm
-  diagnostics.mm)
+  diagnostics.mm
+  release_updates.mm)
 target_sources(loopz-desktop PRIVATE editing_actions.mm)
 loopz_macos_objc(loopz-desktop)
 target_link_libraries(loopz-desktop PRIVATE loopz_editor_service loopz_desktop_permissions loopz_desktop_setup "-framework WebKit" "-framework Security" "-framework UniformTypeIdentifiers" "-framework ServiceManagement")
@@ -56,3 +58,9 @@ add_custom_command(TARGET loopz-desktop POST_BUILD
     "$<TARGET_BUNDLE_DIR:loopz-desktop>/Contents/Resources/LoopZ.icns"
   COMMAND /usr/bin/codesign --force --sign - --timestamp=none "$<TARGET_BUNDLE_DIR:loopz-desktop>"
   VERBATIM)
+
+# One-shot signed setup tool; the release packager embeds it with its sealed payload.
+add_executable(loopz-audio-setup audio_setup_main.mm)
+loopz_macos_objc(loopz-audio-setup)
+set_target_properties(loopz-audio-setup PROPERTIES OUTPUT_NAME "LoopZSetup")
+target_link_libraries(loopz-audio-setup PRIVATE "-framework Foundation" "-framework Security")

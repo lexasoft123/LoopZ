@@ -293,10 +293,11 @@ if(LOOPZ_BUILD_MACOS_BACKEND)
     ../native/platform/macos/probe/routing_io_check.mm
     ../native/platform/macos/probe/routing_recovery_check.mm
     ../native/platform/macos/probe/routing_signal_check.mm
+    ../native/platform/macos/probe/routing_timing_check.mm
     platform/macos/recovery_bridge.mm)
   loopz_macos_objc(loopz-engine-recovery-test-host)
   loopz_test_target(loopz-engine-recovery-test-host)
-  target_link_libraries(loopz-engine-recovery-test-host PRIVATE LoopZ::Core loopz_macos_headers loopz_capture loopz_routing_runtime_cli
+  target_link_libraries(loopz-engine-recovery-test-host PRIVATE LoopZ::Core loopz_macos_headers loopz_capture loopz_routing_runtime_cli loopz_virtual_input_probe
     SingZ::zcore_device "-framework Foundation" "-framework AppKit"
     "-framework AVFoundation" "-framework CoreAudio")
   add_test(NAME loopz-engine-recovery COMMAND "${Python3_EXECUTABLE}"
@@ -363,4 +364,8 @@ if(LOOPZ_BUILD_MACOS_BACKEND)
   add_test(NAME loopz-signing COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/signing_tests.py")
   add_test(NAME loopz-routing-staging COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/routing_staging_tests.py")
   add_test(NAME loopz-routing-install COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/routing_install_tests.py")
+endif()
+if(LOOPZ_BUILD_MACOS_BACKEND)
+  add_test(NAME loopz-release-distribution COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/release_distribution_tests.py")
 endif()

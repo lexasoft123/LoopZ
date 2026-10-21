@@ -1,3 +1,4 @@
+import { t } from "../i18n.js";
 import React from "react";
 import { Button, Chip } from "@singz/ui";
 import { Switch } from "./Switch.jsx";
@@ -20,7 +21,7 @@ export function OutputControls({
         >
             <div className="lz-output-control-heading">
                 <strong>Device output</strong>
-                <span>All pairs</span>
+                <span>{t("All pairs")}</span>
             </div>
             <div className="lz-output-gain-row">
                 <Chip
@@ -30,31 +31,43 @@ export function OutputControls({
                         d.muted ? "Unmute device output" : "Mute device output"
                     }
                     onClick={() =>
-                        send({ type: "device", patch: { muted: !d.muted } })
+                        send({
+                            type: "device",
+                            patch: {
+                                muted: !d.muted,
+                            },
+                        })
                     }
                 >
                     <SpeakerState muted={d.muted} />
                 </Chip>
                 <Gain
                     value={d.gain}
-                    label="Device gain"
+                    label={t("Device gain")}
                     onChange={(gain) =>
-                        send({ type: "device", patch: { gain } })
+                        send({
+                            type: "device",
+                            patch: {
+                                gain,
+                            },
+                        })
                     }
                 />
             </div>
             <div className="lz-output-setting">
-                <label htmlFor="sample-rate">Sample rate</label>
+                <label htmlFor="sample-rate">{t("Sample rate")}</label>
                 <span className="lz-rate-control">
                     <select
                         id="sample-rate"
-                        aria-label="Sample rate"
+                        aria-label={t("Sample rate")}
                         className="lz-rate"
                         value={d.rate}
                         onChange={(e) =>
                             send({
                                 type: "device",
-                                patch: { rate: +e.target.value },
+                                patch: {
+                                    rate: +e.target.value,
+                                },
                             })
                         }
                     >
@@ -73,12 +86,17 @@ export function OutputControls({
                 </span>
             </div>
             <div className="lz-output-setting">
-                <span>Safety limiter</span>
+                <span>{t("Safety limiter")}</span>
                 <Switch
                     checked={d.limiter}
-                    label="Safety limiter"
+                    label={t("Safety limiter")}
                     onChange={(limiter) =>
-                        send({ type: "device", patch: { limiter } })
+                        send({
+                            type: "device",
+                            patch: {
+                                limiter,
+                            },
+                        })
                     }
                     data-od-id="limiter-switch"
                 />
@@ -88,11 +106,16 @@ export function OutputControls({
                 <Button
                     size="sm"
                     icon
-                    aria-label="Configure output channels"
-                    title="Configure output channels"
+                    aria-label={t("Configure output channels")}
+                    title={t("Configure output channels")}
                     data-od-id="configure-channels"
                     onClick={(event) =>
-                        open({ kind: "channels" }, event.currentTarget)
+                        open(
+                            {
+                                kind: "channels",
+                            },
+                            event.currentTarget,
+                        )
                     }
                 >
                     <GearIcon />
