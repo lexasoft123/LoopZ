@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>AssociatedBundleIdentifiers</key><array><string>com.lexasoft.loopz.editor</string></array>
+  <key>Label</key><string>com.lexasoft.loopz.setup</string>
+  <key>BundleProgram</key><string>Contents/Library/Helpers/LoopZSetup</string>
+  <key>ProgramArguments</key><array><string>LoopZSetup</string><string>--service</string></array>
+  <key>MachServices</key><dict><key>com.lexasoft.loopz.setup</key><true/></dict>
+  <key>ProcessType</key><string>Background</string>
+</dict></plist>

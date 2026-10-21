@@ -1,6 +1,7 @@
 """Release publication refuses unnotarized or mismatched artifacts before network use."""
 
 import json
+import hashlib
 from pathlib import Path
 import subprocess
 import sys
@@ -39,12 +40,16 @@ class DistributionTests(unittest.TestCase):
             record = {
                 "artifact": str(image),
                 "commit": "a" * 40,
-                "tag": "v0.1.0",
+                "tag": "v" + build_release.VERSION,
                 "notarized": False,
             }
-            (output / "LoopZ-0.1.0-arm64.json").write_text(json.dumps(record))
+            (output / f"LoopZ-{build_release.VERSION}-arm64.json").write_text(json.dumps(record))
             with (
-                patch.object(sys, "argv", ["publish", "--tag", "v0.1.0", "--output", str(output)]),
+                patch.object(
+                    sys,
+                    "argv",
+                    ["publish", "--tag", "v" + build_release.VERSION, "--output", str(output)],
+                ),
                 patch.object(subprocess, "check_output", return_value="a" * 40),
                 patch.object(subprocess, "run") as run,
             ):
@@ -55,13 +60,47 @@ class DistributionTests(unittest.TestCase):
     def test_publish_refuses_artifact_from_another_commit(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary)
-            (output / "LoopZ-0.1.0-arm64.json").write_text(json.dumps({"commit": "a" * 40}))
+            (output / f"LoopZ-{build_release.VERSION}-arm64.json").write_text(
+                json.dumps({"commit": "a" * 40})
+            )
             with (
-                patch.object(sys, "argv", ["publish", "--tag", "v0.1.0", "--output", str(output)]),
+                patch.object(
+                    sys,
+                    "argv",
+                    ["publish", "--tag", "v" + build_release.VERSION, "--output", str(output)],
+                ),
                 patch.object(subprocess, "check_output", return_value="b" * 40),
                 patch.object(subprocess, "run") as run,
             ):
                 with self.assertRaisesRegex(SystemExit, "another commit"):
+                    publish_release.main()
+                run.assert_not_called()
+
+    def test_publish_refuses_artifact_from_dirty_sources(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            image = output / "LoopZ.dmg"
+            image.write_bytes(b"candidate")
+            record = {
+                "artifact": str(image),
+                "commit": "a" * 40,
+                "tag": "v" + build_release.VERSION,
+                "notarized": True,
+                "sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
+                "sourceDirty": True,
+                "firstInstallVerified": True,
+            }
+            (output / f"LoopZ-{build_release.VERSION}-arm64.json").write_text(json.dumps(record))
+            with (
+                patch.object(
+                    sys,
+                    "argv",
+                    ["publish", "--tag", "v" + build_release.VERSION, "--output", str(output)],
+                ),
+                patch.object(subprocess, "check_output", return_value="a" * 40),
+                patch.object(subprocess, "run") as run,
+            ):
+                with self.assertRaisesRegex(SystemExit, "notarized"):
                     publish_release.main()
                 run.assert_not_called()
 

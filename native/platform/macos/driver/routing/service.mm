@@ -1,3 +1,4 @@
+#include <loopz/macos/audio_host_identity.hpp>
 #include "state.hpp"
 #include <loopz/macos/routing_service.hpp>
 #include <Security/Security.h>
@@ -9,9 +10,6 @@
 
 namespace loopz::macos::hal {
 namespace {
-constexpr char kAudioHostRequirement[] =
-    "anchor apple and (identifier \"com.apple.audio.coreaudiod\" or identifier "
-    "\"com.apple.audio.Core-Audio-Driver-Service.helper\")";
 bool audioHost() {
     const auto* audio = getpwnam("_coreaudiod");
     if (!audio || (geteuid() != 0 && geteuid() != audio->pw_uid))

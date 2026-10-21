@@ -1,10 +1,12 @@
 #include "desktop.hpp"
 #include "release_updates.hpp"
+#include "audio_maintenance_service.hpp"
 #include <loopz/macos/device_inventory.hpp>
 #include "session.hpp"
 #include "login.hpp"
 #include <loopz/macos/capture.hpp>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import <ServiceManagement/ServiceManagement.h>
 
 #include <atomic>
 #include <algorithm>
@@ -205,7 +207,13 @@ void refreshInstallation(std::shared_ptr<Worker> state, uint64_t now) {
         }
         if ([operation isEqual:@"audio-setup"]) {
             const auto state = _worker;
-            if (body.count != 2 || state->installingAudio.exchange(true)) {
+            NSString* action = body[@"action"] ?: @"install";
+            if ((body.count != 2 && body.count != 3) || (body.count == 3 && !body[@"action"]) ||
+                ![@[ @"install", @"update", @"repair", @"activate" ] containsObject:action]) {
+                reply(nil, @"Invalid audio maintenance request");
+                return;
+            }
+            if (state->installingAudio.exchange(true)) {
                 reply(failure(@"busy", @"Audio setup is already running."), nil);
                 return;
             }
@@ -219,24 +227,25 @@ void refreshInstallation(std::shared_ptr<Worker> state, uint64_t now) {
             }
             dispatch_async(state->setupQueue, ^{
                 @autoreleasepool {
-                    // Fixed executable and no caller-supplied command or arguments.
-                    NSAppleScript* script = [[NSAppleScript alloc]
-                        initWithSource:@"do shell script "
-                                       @"\"'/Applications/LoopZ.app/Contents/Library/Helpers/"
-                                       @"LoopZSetup'\" with administrator privileges"];
-                    NSDictionary* error = nil;
-                    const BOOL success = [script executeAndReturnError:&error] != nil;
-                    NSString* detail = error[NSAppleScriptErrorMessage]
-                                           ?: @"Audio setup was cancelled or could not finish.";
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        state->installingAudio.store(false);
-                        if (success)
-                            reply(@{@"ok" : @YES}, nil);
-                        else
-                            reply(failure(@"failed", detail), nil);
+                    NSDictionary* result = requestAudioMaintenance(action);
+                    dispatch_async(state->queue, ^{
+                        state->nextInstallationCheck = 0;
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            state->installingAudio.store(false);
+                            reply(result, nil);
+                        });
                     });
                 }
             });
+            return;
+        }
+        if ([operation isEqual:@"audio-maintenance-settings"]) {
+            if (body.count != 2) {
+                reply(nil, @"Invalid audio settings request");
+                return;
+            }
+            [SMAppService openSystemSettingsLoginItems];
+            reply(@{@"ok" : @YES}, nil);
             return;
         }
         if ([@[ @"updates", @"check-updates", @"open-update", @"automatic-updates" ]
@@ -449,6 +458,12 @@ void refreshInstallation(std::shared_ptr<Worker> state, uint64_t now) {
             reply(nil, @"The editor is closing");
             return;
         }
+        if (state->installingAudio.load() && ![operation isEqual:@"state"]) {
+            reply(
+                failure(@"busy", @"Wait for audio maintenance to finish before changing routing."),
+                nil);
+            return;
+        }
         if (state->pending.fetch_add(1) >= 8) {
             state->pending.fetch_sub(1);
             reply(nil, @"LoopZ is busy; wait for the current operation");
@@ -466,7 +481,8 @@ void refreshInstallation(std::shared_ptr<Worker> state, uint64_t now) {
                         state->connection->poll();
                         const auto now = loopz::hostNowNs() / 1000000;
                         refreshInstallation(state, now);
-                        state->session.poll(now, !state->connection->connected());
+                        if (!state->installingAudio.load())
+                            state->session.poll(now, !state->connection->connected());
                         NSMutableDictionary* inventory =
                             [state->inventory.snapshot(now) mutableCopy];
                         id snapshot = state->connection->snapshot().empty()

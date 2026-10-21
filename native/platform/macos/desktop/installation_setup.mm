@@ -58,6 +58,19 @@ bool signedCode(const fs::path& path, const std::string& identifier, bool protec
         CFRelease(code);
     return status == errSecSuccess;
 }
+NSData* codeDigest(const fs::path& path) {
+    SecStaticCodeRef code = nullptr;
+    CFDictionaryRef information = nullptr;
+    const auto status = SecStaticCodeCreateWithPath(
+        (__bridge CFURLRef)[NSURL fileURLWithPath:text(path.string())], kSecCSDefaultFlags, &code);
+    if (!status)
+        SecCodeCopySigningInformation(code, kSecCSSigningInformation, &information);
+    NSDictionary* values = CFBridgingRelease(information);
+    if (code)
+        CFRelease(code);
+    id hash = values[(__bridge NSString*)kSecCodeInfoUnique];
+    return [hash isKindOfClass:NSData.class] ? hash : nil;
+}
 bool daemonDefinition(const fs::path& path) {
     if (!protectedTree(path) || fs::file_size(path) > 65536)
         return false;
@@ -69,6 +82,7 @@ bool daemonDefinition(const fs::path& path) {
                                                           format:nil
                                                            error:nil];
     NSDictionary* expected = @{
+        @"AssociatedBundleIdentifiers" : @[ @"com.lexasoft.loopz.editor" ],
         @"Label" : @"com.lexasoft.loopz.routing",
         @"ProgramArguments" : @[
             @"/Library/Application Support/LoopZ/loopz-routing-broker", @"--engine-requirement",
@@ -80,7 +94,10 @@ bool daemonDefinition(const fs::path& path) {
         @"ProcessType" : @"Background",
         @"ThrottleInterval" : @3
     };
-    return [value isKindOfClass:NSDictionary.class] && [value isEqual:expected];
+    NSMutableDictionary* legacy = [expected mutableCopy];
+    [legacy removeObjectForKey:@"AssociatedBundleIdentifiers"];
+    return [value isKindOfClass:NSDictionary.class] &&
+           ([value isEqual:expected] || [value isEqual:legacy]);
 }
 InstallationComponent entry(const fs::path& path, bool directory, const char* missing,
                             const char* invalid) {
@@ -209,12 +226,43 @@ InstallationProbe makeInstallationProbe(InstallationPaths paths, InstallationCod
     };
 }
 InstallationProbe productionInstallationProbe() {
-    return makeInstallationProbe({"/Applications/LoopZ Engine.app",
-                                  "/Library/Audio/Plug-Ins/HAL/LoopZAudio.driver",
-                                  "/Library/Audio/Plug-Ins/HAL/LoopZRoutingAudio.driver",
-                                  "/Library/Application Support/LoopZ/loopz-routing-broker",
-                                  "/Library/LaunchDaemons/com.lexasoft.loopz.routing.plist"},
-                                 signedCode, daemonDefinition);
+    auto probe = makeInstallationProbe({"/Applications/LoopZ Engine.app",
+                                        "/Library/Audio/Plug-Ins/HAL/LoopZAudio.driver",
+                                        "/Library/Audio/Plug-Ins/HAL/LoopZRoutingAudio.driver",
+                                        "/Library/Application Support/LoopZ/loopz-routing-broker",
+                                        "/Library/LaunchDaemons/com.lexasoft.loopz.routing.plist"},
+                                       signedCode, daemonDefinition);
+    return [probe = std::move(probe)] {
+        auto result = probe();
+        result.activationRequired =
+            fs::exists("/Library/Application Support/LoopZ/restart-required") ||
+            fs::exists("/Library/Application Support/LoopZ/activation-required.plist");
+        const fs::path app = NSBundle.mainBundle.bundlePath.UTF8String ?: "";
+        const auto payload = app / "Contents/Resources/AudioComponents";
+        result.maintenanceAvailable =
+            app == "/Applications/LoopZ.app" &&
+            fs::is_regular_file(app / "Contents/Library/Helpers/LoopZSetup") &&
+            fs::is_directory(payload);
+        if (result.maintenanceAvailable) {
+            for (const auto& pair : std::array<std::pair<fs::path, fs::path>, 3>{
+                     {{payload / "LoopZ Engine.app", "/Applications/LoopZ Engine.app"},
+                      {payload / "LoopZAudio.driver",
+                       "/Library/Audio/Plug-Ins/HAL/LoopZAudio.driver"},
+                      {payload / "loopz-routing-broker",
+                       "/Library/Application Support/LoopZ/loopz-routing-broker"}}}) {
+                NSData* bundled = codeDigest(pair.first);
+                NSData* installed = codeDigest(pair.second);
+                if (bundled && installed && ![bundled isEqual:installed])
+                    result.updateAvailable = true;
+            }
+        }
+        if (fs::exists("/Library/Application Support/LoopZ/maintenance.plist") ||
+            fs::exists("/Library/Application Support/LoopZ/maintenance-session.plist"))
+            result.components[2] = {
+                InstallationState::Invalid,
+                "An interrupted audio update needs recovery. Choose Repair audio in Settings."};
+        return result;
+    };
 }
 NSDictionary* installationJSON(const InstallationSnapshot& snapshot) {
     NSMutableDictionary* components = [NSMutableDictionary dictionary];
@@ -226,6 +274,12 @@ NSDictionary* installationJSON(const InstallationSnapshot& snapshot) {
         components[names[index]] =
             @{@"state" : stateName(item.state), @"detail" : text(item.detail)};
     }
-    return @{@"checked" : @(checked), @"components" : components};
+    return @{
+        @"checked" : @(checked),
+        @"components" : components,
+        @"updateAvailable" : @(snapshot.updateAvailable),
+        @"maintenanceAvailable" : @(snapshot.maintenanceAvailable),
+        @"activationRequired" : @(snapshot.activationRequired)
+    };
 }
 } // namespace loopz::macos

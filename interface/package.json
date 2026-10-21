@@ -1,6 +1,6 @@
 {
     "name": "loopz-desktop-interface",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "private": true,
     "type": "module",
     "scripts": {
@@ -11,7 +11,8 @@
         "test:webkit:engine": "node scripts/test-webkit-engine.mjs",
         "test:webkit:persistence": "node scripts/test-webkit-persistence.mjs",
         "format": "prettier --write src scripts tests",
-        "format:check": "prettier --check src scripts tests"
+        "format:check": "prettier --check src scripts tests",
+        "test:browser:maintenance": "node tests/audio-maintenance.browser.mjs"
     },
     "dependencies": {
         "@singz/ui": "file:packages/singz-ui-1.9.5.tgz",

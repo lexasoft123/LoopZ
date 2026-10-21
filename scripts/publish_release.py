@@ -11,7 +11,7 @@ from build_release import ROOT, VERSION
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag", required=True)
-    parser.add_argument("--output", type=Path, default=ROOT / "artifacts/release-0.1.0")
+    parser.add_argument("--output", type=Path, default=ROOT / "artifacts/release-0.2.0")
     parser.add_argument("--prerelease", action="store_true")
     args = parser.parse_args()
     if args.tag != "v" + VERSION:
@@ -35,6 +35,7 @@ def main():
         artifact = Path(record["artifact"])
         if (
             record["tag"] != args.tag
+            or record.get("sourceDirty") is not False
             or record.get("notarized") is not True
             or hashlib.sha256(artifact.read_bytes()).hexdigest() != record["sha256"]
         ):

@@ -17,7 +17,8 @@ enum class SessionCommandOutput { Combined, StandardOutput };
 SessionCommandResult sessionCommand(const std::vector<std::string>& arguments,
                                     std::chrono::milliseconds timeout = std::chrono::seconds(5),
                                     const std::atomic<bool>* running = nullptr,
-                                    SessionCommandOutput output = SessionCommandOutput::Combined);
+                                    SessionCommandOutput output = SessionCommandOutput::Combined,
+                                    size_t maximumOutputBytes = 65536);
 struct SessionPaths {
     std::filesystem::path engine, document, directory;
     std::string label, service;

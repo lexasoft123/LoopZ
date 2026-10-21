@@ -90,6 +90,7 @@ if(LOOPZ_BUILD_MACOS_BACKEND)
   # generated scenarios, so it is not part of the headless CTest suite.
   add_executable(loopz-webkit-engine-tests webkit_engine_tests.mm
     ../../native/platform/macos/desktop/editing_actions.mm
+    ../../native/platform/macos/desktop/audio_maintenance_client.mm
     ../../native/platform/macos/desktop/bridge.mm
     ../../native/platform/macos/desktop/release_updates.mm
     ../../native/platform/macos/desktop/resources.mm
@@ -98,7 +99,7 @@ if(LOOPZ_BUILD_MACOS_BACKEND)
   loopz_test_target(loopz-webkit-engine-tests)
   target_link_libraries(loopz-webkit-engine-tests PRIVATE loopz_editor_service
     loopz_desktop_permissions loopz_desktop_setup "-framework WebKit" "-framework Security"
-    "-framework UniformTypeIdentifiers" "-framework ServiceManagement")
+    "-framework UniformTypeIdentifiers" "-framework ServiceManagement" "-framework CoreServices")
   add_executable(loopz-desktop-inventory-tests desktop_inventory_tests.mm)
   loopz_macos_objc(loopz-desktop-inventory-tests)
   loopz_test_target(loopz-desktop-inventory-tests)
@@ -154,4 +155,9 @@ endif()
 if(LOOPZ_BUILD_MACOS_BACKEND)
   add_test(NAME loopz-audio-setup-contract COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/audio_setup_contract_tests.py" "$<TARGET_FILE:loopz-audio-setup>")
+  add_executable(loopz-audio-maintenance-tests audio_maintenance_tests.mm)
+  loopz_macos_objc(loopz-audio-maintenance-tests)
+  loopz_test_target(loopz-audio-maintenance-tests)
+  target_link_libraries(loopz-audio-maintenance-tests PRIVATE loopz_audio_maintenance)
+  add_test(NAME loopz-audio-maintenance COMMAND loopz-audio-maintenance-tests)
 endif()

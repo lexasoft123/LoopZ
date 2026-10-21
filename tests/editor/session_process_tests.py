@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix="loopz-session-") as temporary:
     digest = re.search(r"^CDHash=([0-9a-f]{40})$", signed, re.MULTILINE).group(1)
     requirement = f'cdhash H"{digest}"'
     parent = root / "State"
-    parent.mkdir(mode=0o700)
+    parent.mkdir(mode=0o755)
     directory = parent / "Session"
     document = parent / "routes.json"
     marker = b'{"fixture":"do not modify"}'
@@ -95,6 +95,7 @@ with tempfile.TemporaryDirectory(prefix="loopz-session-") as temporary:
 
     try:
         ensure()
+        assert parent.stat().st_mode & 0o777 == 0o700, "Owned settings directory was not secured"
         wait_for(lambda: len(pids()) == 1)
         original = pids()[0]
         ensure()

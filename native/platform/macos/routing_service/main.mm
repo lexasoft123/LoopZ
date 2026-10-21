@@ -1,3 +1,4 @@
+#include <loopz/macos/audio_host_identity.hpp>
 #include <loopz/macos/routing_service.hpp>
 #include <SystemConfiguration/SystemConfiguration.h>
 #include <dispatch/dispatch.h>
@@ -27,9 +28,7 @@ int main(int argc, char** argv) {
             return 1;
         loopz::macos::RoutingBrokerPolicy policy;
         policy.helperRequirement = argv[2];
-        policy.driverRequirement =
-            "anchor apple and (identifier \"com.apple.audio.coreaudiod\" or identifier "
-            "\"com.apple.audio.Core-Audio-Driver-Service.helper\")";
+        policy.driverRequirement = loopz::macos::kAudioHostRequirement;
         policy.driverUID = audio->pw_uid;
         policy.consoleUser = []() -> std::optional<uint32_t> {
             uid_t uid = static_cast<uid_t>(-1);

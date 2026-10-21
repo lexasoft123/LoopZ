@@ -34,8 +34,11 @@ are future work.
    Add a monitor to hear it locally.
 
 Users do **not** need Python, Node.js, Xcode or a separate installer package.
-The first-run setup does not replace existing audio components; older development
-installations use the [guarded migration tools](docs/install.md).
+Use **Settings → Audio components** to install, update or repair the driver and
+background service. Maintenance restores saved mixes and preserves audio defaults.
+If macOS asks, allow LoopZ’s helper in **Login Items & Extensions**.
+When first-time activation is needed, **Finish audio setup** briefly interrupts
+audio in other apps while preserving your audio selections and saved mixes.
 
 ## What it does
 

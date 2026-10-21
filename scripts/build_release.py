@@ -15,7 +15,7 @@ from desktop_install import requirement
 from distribution_signing import require_distribution_signature
 from stage_signed import ROOT, certificate_password, signing_environment
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 TEAM = "USJ7H3X44X"
 
 
@@ -89,7 +89,7 @@ def build(build_dir, output, config):
         audio = app / "Contents/Resources/AudioComponents"
         audio.mkdir(parents=True)
         helper = app / "Contents/Library/Helpers/LoopZSetup"
-        helper.parent.mkdir(parents=True)
+        helper.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(build_dir / "LoopZSetup", helper)
         shutil.copytree(build_dir / "LoopZ Engine.app", audio / "LoopZ Engine.app")
         shutil.copytree(
@@ -113,6 +113,7 @@ def build(build_dir, output, config):
         resources.mkdir(exist_ok=True)
         (resources / "routing-service.json").write_text(pin)
         daemon = {
+            "AssociatedBundleIdentifiers": ["com.lexasoft.loopz.editor"],
             "Label": "com.lexasoft.loopz.routing",
             "ProgramArguments": [
                 "/Library/Application Support/LoopZ/loopz-routing-broker",
@@ -143,13 +144,13 @@ def build(build_dir, output, config):
             run([helper, "--verify-payload"])
             (image / "Applications").symlink_to("/Applications")
             (image / "Read me.txt").write_text(
-                "LoopZ 0.1.0 for macOS 14.2 or later\n\n"
+                "LoopZ 0.2.0 for macOS 14.2 or later\n\n"
                 "Drag LoopZ to Applications, then open it. On a fresh Mac, choose\n"
                 "Settings > Install audio components and authorize macOS once.\n"
                 "The driver and background service stay installed separately.\n"
                 "Python, Node.js and developer tools are not required to use LoopZ.\n\n"
                 "Existing LoopZ installations keep their driver and audio defaults.\n"
-                "This preview does not overwrite existing audio components.\n\n"
+                "Use Settings > Audio components to update or repair them.\n\n"
                 "https://github.com/lexasoft123/LoopZ\n"
             )
             run(
@@ -191,6 +192,7 @@ def build(build_dir, output, config):
             "pythonRequiredByUser": False,
             "firstInstallVerified": False,
             "commit": run(["git", "rev-parse", "HEAD"]).stdout.strip(),
+            "sourceDirty": bool(run(["git", "status", "--porcelain"]).stdout.strip()),
         }
         (output / f"LoopZ-{VERSION}-{architecture}.json").write_text(
             json.dumps(record, indent=2) + "\n"
@@ -202,7 +204,7 @@ def build(build_dir, output, config):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build", type=Path, default=ROOT / "build/editor-release")
-    parser.add_argument("--output", type=Path, default=ROOT / "artifacts/release-0.1.0")
+    parser.add_argument("--output", type=Path, default=ROOT / "artifacts/release-0.2.0")
     parser.add_argument("--config", type=Path, default=ROOT / ".local/macos-signing.json")
     args = parser.parse_args()
     build(args.build.resolve(), args.output.resolve(), json.loads(args.config.read_text()))

@@ -7,16 +7,22 @@ Windows updater or electron-builder installer.
 ## Distribution
 
 A DMG contains one signed LoopZ.app and an Applications shortcut. The app carries
-its signed first-install setup executable and sealed audio components. Choosing
-Settings → Install audio components invokes macOS administrator authorization.
-The one-shot native helper verifies the app and payload, snapshots them into
+its signed maintenance helper and sealed audio components. Choosing
+Settings → Audio components registers its helper with Apple’s SMAppService;
+macOS requires approval under Login Items & Extensions. The native helper verifies the app and payload, snapshots them into
 protected storage, verifies the snapshot again, installs the audio components,
-and starts only the LoopZ broker. It never restarts Core Audio, changes defaults,
-registers login startup or runs downloaded commands.
+and starts only the LoopZ broker. Ordinary maintenance preserves Core Audio and
+audio selections. Login startup remains a separate user choice, and the helper
+never runs downloaded commands.
 
-The initial helper refuses an existing or partial installation; it is deliberately
-separate from the existing guarded developer migration workflow. Driver upgrades
-and repair need that workflow until the product implements their native equivalent.
+Install, update and repair share a journaled transaction. A failed update restores
+the previous components; a later repair recovers an interrupted transaction.
+The helper accepts only fixed operations from the signed LoopZ app and never
+accepts caller-selected paths or commands. It reloads only a verified isolated
+LoopZ driver host; first-time activation or a change to a driver hosted inside Core Audio uses an
+explicit Finish audio setup action that briefly refreshes the audio service.
+Ordinary install, update and repair requests never refresh that service
+automatically. Saved routing resumes after verification.
 The desktop app is copied by the user and ordinary app downloads are separate
 from driver installation. Python is used only for builds, tests and release work.
 
@@ -78,5 +84,5 @@ release-download page, and never accepts executable commands or installation
 paths from release JSON.
 
 With hosted signing disabled, create and push the version tag after local
-validation, then run `python3 scripts/publish_release.py --tag v0.1.0 --output
+validation, then run `python3 scripts/publish_release.py --tag v0.2.0 --output
 <notarized-artifact-directory>` to upload the exact notarized DMG and checksums.

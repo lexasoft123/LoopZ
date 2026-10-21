@@ -318,5 +318,58 @@
     "No stable release is published yet.": [
         "Стабильный выпуск ещё не опубликован.",
         "尚未发布稳定版本。"
+    ],
+    "Audio components": ["Аудиокомпоненты", "音频组件"],
+    "Update audio components": ["Обновить аудиокомпоненты", "更新音频组件"],
+    "Repair audio": ["Восстановить звук", "修复音频"],
+    "Maintaining audio components…": [
+        "Обслуживание аудиокомпонентов…",
+        "正在维护音频组件…"
+    ],
+    "Open audio approval settings": [
+        "Открыть настройки разрешения",
+        "打开音频授权设置"
+    ],
+    "Audio maintenance could not finish.": [
+        "Не удалось завершить обслуживание звука.",
+        "无法完成音频维护。"
+    ],
+    "Audio components verified. Reconnecting your saved mixes…": [
+        "Аудиокомпоненты проверены. Подключение сохранённых миксов…",
+        "音频组件已验证。正在重新连接保存的混音…"
+    ],
+    "Move the complete LoopZ download to Applications to maintain audio components.": [
+        "Переместите полный комплект LoopZ в «Программы» для обслуживания аудиокомпонентов.",
+        "将完整的 LoopZ 下载移到“应用程序”以维护音频组件。"
+    ],
+    "Maintenance briefly stops LoopZ routing, then restores your saved mixes. Close apps using LoopZ audio before continuing. macOS will ask for administrator authorization.": [
+        "Обслуживание ненадолго остановит маршрутизацию LoopZ, затем восстановит сохранённые миксы. Закройте приложения, использующие звук LoopZ. macOS запросит права администратора.",
+        "维护会短暂停止 LoopZ 路由，然后恢复保存的混音。继续前请关闭使用 LoopZ 音频的应用。macOS 将请求管理员授权。"
+    ],
+    "Allow LoopZ in System Settings → General → Login Items & Extensions, then try again.": [
+        "Разрешите LoopZ в «Системные настройки → Основные → Объекты входа и расширения» и повторите попытку.",
+        "在“系统设置 → 通用 → 登录项与扩展”中允许 LoopZ，然后重试。"
+    ],
+    "Finish audio setup": ["Завершить настройку звука", "完成音频设置"],
+    "Audio components installed. Choose Finish audio setup to activate the driver.": [
+        "Аудиокомпоненты установлены. Выберите «Завершить настройку звука», чтобы активировать драйвер.",
+        "音频组件已安装。选择“完成音频设置”以激活驱动。"
+    ],
+    "Activating the driver briefly interrupts audio in other apps. Your saved mixes and audio selections will be restored.": [
+        "Активация драйвера ненадолго прервёт звук в других приложениях. Сохранённые миксы и выбранные аудиоустройства будут восстановлены.",
+        "激活驱动会短暂停止其他应用的音频。保存的混音和音频设备选择将会恢复。"
+    ],
+    "Once audio is connected, your saved devices will appear here.": [
+        "После подключения звука здесь появятся ваши сохранённые устройства.",
+        "音频连接后，您保存的设备将显示在这里。"
+    ],
+    "LoopZ couldn’t open its saved audio setup. Try reopening LoopZ. If this continues, contact support.": [
+        "LoopZ не удалось открыть сохранённые настройки звука. Попробуйте заново открыть LoopZ. Если проблема повторится, обратитесь в поддержку.",
+        "LoopZ 无法打开已保存的音频设置。请尝试重新打开 LoopZ。如果问题仍然存在，请联系支持。"
+    ],
+    "Audio couldn’t start": ["Не удалось запустить звук", "无法启动音频"],
+    "Your saved devices will reconnect automatically.": [
+        "Ваши сохранённые устройства подключатся автоматически.",
+        "您保存的设备将自动重新连接。"
     ]
 }

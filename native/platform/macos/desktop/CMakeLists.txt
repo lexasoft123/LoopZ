@@ -33,10 +33,11 @@ add_executable(loopz-desktop MACOSX_BUNDLE
   resources.mm
   login.mm
   diagnostics.mm
-  release_updates.mm)
+  release_updates.mm
+  audio_maintenance_client.mm)
 target_sources(loopz-desktop PRIVATE editing_actions.mm)
 loopz_macos_objc(loopz-desktop)
-target_link_libraries(loopz-desktop PRIVATE loopz_editor_service loopz_desktop_permissions loopz_desktop_setup "-framework WebKit" "-framework Security" "-framework UniformTypeIdentifiers" "-framework ServiceManagement")
+target_link_libraries(loopz-desktop PRIVATE loopz_editor_service loopz_desktop_permissions loopz_desktop_setup "-framework WebKit" "-framework Security" "-framework UniformTypeIdentifiers" "-framework ServiceManagement" "-framework CoreServices")
 set_target_properties(loopz-desktop PROPERTIES OUTPUT_NAME "LoopZ"
   MACOSX_BUNDLE_INFO_PLIST "${PROJECT_SOURCE_DIR}/packaging/desktop.plist")
 add_dependencies(loopz-desktop loopz-interface loopz-login)
@@ -59,8 +60,24 @@ add_custom_command(TARGET loopz-desktop POST_BUILD
   COMMAND /usr/bin/codesign --force --sign - --timestamp=none "$<TARGET_BUNDLE_DIR:loopz-desktop>"
   VERBATIM)
 
-# One-shot signed setup tool; the release packager embeds it with its sealed payload.
+# Managed privileged maintenance service; the packager supplies its sealed payload.
+add_library(loopz_audio_maintenance STATIC audio_maintenance.mm audio_maintenance_service.mm maintenance_files.mm maintenance_host_policy.cpp)
+loopz_macos_objc(loopz_audio_maintenance)
+target_link_libraries(loopz_audio_maintenance PUBLIC loopz_desktop_session loopz_route_store
+  "-framework Foundation" "-framework Security" "-framework CoreAudio")
 add_executable(loopz-audio-setup audio_setup_main.mm)
 loopz_macos_objc(loopz-audio-setup)
 set_target_properties(loopz-audio-setup PROPERTIES OUTPUT_NAME "LoopZSetup")
-target_link_libraries(loopz-audio-setup PRIVATE "-framework Foundation" "-framework Security")
+target_link_libraries(loopz-audio-setup PRIVATE loopz_audio_maintenance)
+
+add_dependencies(loopz-desktop loopz-audio-setup)
+set_property(TARGET loopz-desktop APPEND PROPERTY LINK_DEPENDS
+  "$<TARGET_FILE:loopz-audio-setup>" "${PROJECT_SOURCE_DIR}/packaging/audio-maintenance.plist")
+add_custom_command(TARGET loopz-desktop POST_BUILD
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_BUNDLE_DIR:loopz-desktop>/Contents/Library/Helpers"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_BUNDLE_DIR:loopz-desktop>/Contents/Library/LaunchDaemons"
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:loopz-audio-setup>" "$<TARGET_BUNDLE_DIR:loopz-desktop>/Contents/Library/Helpers/LoopZSetup"
+  COMMAND /usr/bin/codesign --force --sign - --identifier com.lexasoft.loopz.setup --timestamp=none "$<TARGET_BUNDLE_DIR:loopz-desktop>/Contents/Library/Helpers/LoopZSetup"
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${PROJECT_SOURCE_DIR}/packaging/audio-maintenance.plist" "$<TARGET_BUNDLE_DIR:loopz-desktop>/Contents/Library/LaunchDaemons/com.lexasoft.loopz.setup.plist"
+  COMMAND /usr/bin/codesign --force --sign - --timestamp=none "$<TARGET_BUNDLE_DIR:loopz-desktop>"
+  VERBATIM)

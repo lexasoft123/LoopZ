@@ -466,7 +466,7 @@ export default function App({ state, send, transport, refresh }) {
                                 heading={
                                     state.background.detail &&
                                     !state.background.managed
-                                        ? t("Audio engine")
+                                        ? t("Audio couldn’t start")
                                         : "Connecting to LoopZ"
                                 }
                                 icon={<Icon name="replay" size={20} />}
@@ -488,8 +488,10 @@ export default function App({ state, send, transport, refresh }) {
                                     ) : undefined
                                 }
                             >
-                                {state.background.detail ||
-                                    "Your saved graph stays with the audio engine. This window reconnects automatically."}
+                                {t(
+                                    state.background.detail ||
+                                        "Your saved devices will reconnect automatically.",
+                                )}
                             </Banner>
                         )}
                         {!setupIssue &&
@@ -675,8 +677,9 @@ export default function App({ state, send, transport, refresh }) {
                                       )
                                     : state.connected
                                       ? "Your routing document needs attention before editing."
-                                      : state.background.detail ||
-                                        "Waiting for the audio engine. Your saved devices will appear here."}
+                                      : t(
+                                            "Once audio is connected, your saved devices will appear here.",
+                                        )}
                             </p>
                             <Button
                                 variant="primary"

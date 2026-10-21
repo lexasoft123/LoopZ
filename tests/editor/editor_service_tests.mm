@@ -780,7 +780,7 @@ void clientFixture(const std::string& name, const std::string& phase,
             if (!client.ready())
                 return false;
             snapshot = parsed(client.snapshot());
-            return [snapshot[@"runtime"][@"restored"] boolValue];
+            return [snapshot[@"runtime"][@"restored"] boolValue] != NO;
         },
         25000);
     NSString* epoch = [snapshot[@"revision"][@"epoch"] copy];

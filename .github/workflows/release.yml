@@ -41,7 +41,7 @@ jobs:
         if: always() && vars.ENABLE_HOSTED_SIGNING == 'true'
         with:
           name: LoopZ-macOS-release
-          path: artifacts/release-0.1.0/
+          path: artifacts/release-0.2.0/
       - name: Publish tagged release
         if: startsWith(github.ref, 'refs/tags/') && vars.ENABLE_HOSTED_SIGNING == 'true'
         env:

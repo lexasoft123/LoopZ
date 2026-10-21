@@ -16,9 +16,11 @@ namespace loopz::macos {
 SessionCommandResult sessionCommand(const std::vector<std::string>& arguments,
                                     std::chrono::milliseconds timeout,
                                     const std::atomic<bool>* running,
-                                    SessionCommandOutput outputMode) {
+                                    SessionCommandOutput outputMode, size_t maximumOutputBytes) {
     if (arguments.empty() || arguments[0].empty())
         throw std::invalid_argument("Missing session command");
+    if (!maximumOutputBytes || maximumOutputBytes > 32 * 1024 * 1024)
+        throw std::invalid_argument("Invalid session response limit.");
     if (timeout <= std::chrono::milliseconds::zero() || timeout > std::chrono::seconds(70))
         throw std::invalid_argument("The command timeout must be positive and at most 70 seconds.");
     if (running && !running->load())
@@ -84,7 +86,7 @@ SessionCommandResult sessionCommand(const std::vector<std::string>& arguments,
             const auto count = read(pipes[0], buffer.data(), buffer.size());
             if (count <= 0)
                 break;
-            if (result.output.size() + static_cast<size_t>(count) > 65536) {
+            if (result.output.size() + static_cast<size_t>(count) > maximumOutputBytes) {
                 invalid = true;
                 break;
             }
@@ -112,7 +114,7 @@ SessionCommandResult sessionCommand(const std::vector<std::string>& arguments,
             const auto count = read(pipes[0], buffer.data(), buffer.size());
             if (count <= 0)
                 break;
-            if (result.output.size() + static_cast<size_t>(count) > 65536) {
+            if (result.output.size() + static_cast<size_t>(count) > maximumOutputBytes) {
                 invalid = true;
                 break;
             }

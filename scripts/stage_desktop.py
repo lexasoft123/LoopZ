@@ -67,6 +67,7 @@ def main():
         identities = {}
         reused = []
         signing_components = [
+            ("LoopZ.app/Contents/Library/Helpers/LoopZSetup", "com.lexasoft.loopz.setup", None),
             ("LoopZ.app/Contents/MacOS/LoopZLogin", "com.lexasoft.loopz.login", None),
             *components,
         ]

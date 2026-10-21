@@ -14,6 +14,38 @@
 
 namespace loopz::macos {
 namespace {
+class AudioMaintenanceLease {
+    int fd_{-1};
+
+  public:
+    explicit AudioMaintenanceLease(bool production) {
+        if (!production)
+            return;
+        constexpr auto lock = "/Library/Application Support/LoopZ/.install.lock";
+        fd_ = open(lock, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+        if (fd_ < 0 && errno != ENOENT)
+            throw std::runtime_error("LoopZ could not check audio maintenance.");
+        struct stat info{};
+        const bool valid = fd_ < 0 || (!fstat(fd_, &info) && S_ISREG(info.st_mode) &&
+                                       info.st_uid == 0 && !(info.st_mode & 0022) &&
+                                       info.st_nlink == 1 && !flock(fd_, LOCK_SH | LOCK_NB));
+        struct stat journal{};
+        const bool recovery =
+            !lstat("/Library/Application Support/LoopZ/maintenance.plist", &journal) ||
+            !lstat("/Library/Application Support/LoopZ/maintenance-session.plist", &journal);
+        if (!valid || recovery) {
+            if (fd_ >= 0)
+                close(fd_);
+            fd_ = -1;
+            throw std::runtime_error(
+                "Audio maintenance is running or needs recovery. Use Repair audio in Settings.");
+        }
+    }
+    ~AudioMaintenanceLease() {
+        if (fd_ >= 0)
+            close(fd_);
+    }
+};
 class File {
   public:
     explicit File(int value) : value_(value) {
@@ -51,12 +83,21 @@ void privateFile(int file, bool directory) {
     struct stat info{};
     if (fstat(file, &info) || info.st_uid != getuid() || (info.st_mode & 0077) ||
         (directory ? !S_ISDIR(info.st_mode) : (!S_ISREG(info.st_mode) || info.st_nlink != 1)))
-        throw std::runtime_error("LoopZ’s session files need private, user-owned permissions.");
+        throw std::runtime_error("LoopZ couldn’t open its saved audio setup. Try reopening LoopZ. "
+                                 "If this continues, contact support.");
 }
 File privateDirectory(const std::filesystem::path& path) {
     if (mkdir(path.c_str(), 0700) && errno != EEXIST)
         throw std::runtime_error("LoopZ could not create its session directory.");
     File result(open(path.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+    // Older builds and other LoopZ settings writers may create this account's
+    // directory with ordinary 0755 permissions. Tighten our own opened directory
+    // in place; never follow a link or change another account's ownership.
+    struct stat info{};
+    if (fstat(result, &info) || !S_ISDIR(info.st_mode) || info.st_uid != getuid() ||
+        ((info.st_mode & 0077) && fchmod(result, info.st_mode & 0700)))
+        throw std::runtime_error("LoopZ couldn’t open its saved audio setup. Try reopening LoopZ. "
+                                 "If this continues, contact support.");
     privateFile(result, true);
     // No copying: the returned prvalue constructs its descriptor owner in place.
     return File(fcntl(result, F_DUPFD_CLOEXEC, 0));
@@ -176,6 +217,7 @@ class Host final : public SessionHost {
         (void)definition();
     }
     SessionJob inspect() override {
+        AudioMaintenanceLease maintenance(paths_.engine == "/Applications/LoopZ Engine.app");
         const auto result = sessionCommand({"/bin/launchctl", "print", target()});
         if (result.exitCode != 0) {
             if ((result.exitCode == 113 || result.exitCode == 3) &&
@@ -226,6 +268,7 @@ class Host final : public SessionHost {
         return SessionJob::Managed;
     }
     void validateEngine() override {
+        AudioMaintenanceLease maintenance(paths_.engine == "/Applications/LoopZ Engine.app");
         staticIdentity(paths_.engine, pin_);
         const auto result = sessionCommand({executable().string(), "--runtime-capabilities"});
         NSData* data = [text(result.output) dataUsingEncoding:NSUTF8StringEncoding];
@@ -235,6 +278,7 @@ class Host final : public SessionHost {
             throw std::runtime_error("Update LoopZ Engine to enable background routing.");
     }
     void launch() override {
+        AudioMaintenanceLease maintenance(paths_.engine == "/Applications/LoopZ Engine.app");
         // The session file is deliberately outside Library/LaunchAgents.
         // Login registration is a separate, explicitly chosen SMAppService.
         auto parent = privateDirectory(paths_.directory.parent_path());

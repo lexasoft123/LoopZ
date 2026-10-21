@@ -15,6 +15,9 @@ struct InstallationComponent {
 struct InstallationSnapshot {
     // Engine, driver, protected audio service. Immutable after publication.
     std::array<InstallationComponent, 3> components;
+    bool updateAvailable{false};
+    bool maintenanceAvailable{false};
+    bool activationRequired{false};
 };
 using InstallationProbe = std::function<InstallationSnapshot()>;
 struct InstallationPaths {

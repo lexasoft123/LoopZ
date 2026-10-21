@@ -1,4 +1,5 @@
 #include "desktop.hpp"
+#include "audio_maintenance_service.hpp"
 #include "login.hpp"
 #include "editing_actions.hpp"
 #include "window_chrome.hpp"
@@ -142,6 +143,39 @@
 
 int main(int argc, char** argv) {
     @autoreleasepool {
+        if (argc == 3 && std::string_view(argv[1]) == "--audio-maintenance") {
+            if (!loopzValidateDesktopBundle())
+                return 3;
+            // Match the running app's event loop while the maintenance call
+            // runs off-main; service registration can deliver main-thread work.
+            NSApplication* maintenanceApplication = NSApplication.sharedApplication;
+            [maintenanceApplication setActivationPolicy:NSApplicationActivationPolicyAccessory];
+            [maintenanceApplication finishLaunching];
+            __block int code = 1;
+            __block bool finished = false;
+            NSString* action = @(argv[2]);
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                @autoreleasepool {
+                    NSDictionary* result = loopz::macos::requestAudioMaintenance(action);
+                    NSData* data = [NSJSONSerialization dataWithJSONObject:result
+                                                                   options:0
+                                                                     error:nil];
+                    const int status = data && [result[@"ok"] isEqual:@YES] ? 0 : 1;
+                    if (data) {
+                        std::fwrite(data.bytes, 1, data.length, stdout);
+                        std::putchar('\n');
+                    }
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        code = status;
+                        finished = true;
+                        CFRunLoopStop(CFRunLoopGetMain());
+                    });
+                }
+            });
+            while (!finished)
+                CFRunLoopRun();
+            return code;
+        }
         if (argc == 2 && std::string_view(argv[1]) == "--verify-interface")
             return loopzValidateDesktopBundle() ? 0 : 3;
         if (argc == 2 && std::string_view(argv[1]) == "--routing-status")

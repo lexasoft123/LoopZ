@@ -1,3 +1,4 @@
+#include <loopz/macos/audio_host_identity.hpp>
 #include <loopz/macos/driver_protocol.hpp>
 #include <xpc/xpc.h>
 #include <SystemConfiguration/SystemConfiguration.h>
@@ -34,10 +35,8 @@ int main(int argc, char** argv) {
                                                        XPC_CONNECTION_MACH_SERVICE_LISTENER);
     // Modern macOS isolates each HAL plug-in in Apple's signed remote driver
     // service. Older systems host it in coreaudiod itself. Authenticate only
-    // those two concrete Apple identities, with the same _coreaudiod UID gate.
-    const std::string driverRequirement =
-        "anchor apple and (identifier \"com.apple.audio.coreaudiod\" or identifier "
-        "\"com.apple.audio.Core-Audio-Driver-Service.helper\")";
+    // those concrete Apple identities, with the same _coreaudiod UID gate.
+    const std::string driverRequirement = loopz::macos::kAudioHostRequirement;
     if (argc == 5 && std::strcmp(argv[3], "--control-requirement"))
         return 2;
     const std::string helperRequirement = argv[2];
