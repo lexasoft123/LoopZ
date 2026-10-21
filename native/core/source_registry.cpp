@@ -351,8 +351,11 @@ void SourceRegistry::poll(const AudioScene* committed, uint64_t now, uint32_t su
     });
 }
 void SourceRegistry::retryNow(uint64_t now) noexcept {
-    for (auto& entry : impl_->entries)
+    for (auto& entry : impl_->entries) {
+        if (const auto source = entry->source.lock())
+            source->endpoint->invalidateHealth();
         entry->retry.retryNow(now);
+    }
 }
 void SourceRegistry::stop() noexcept {
     for (auto& entry : impl_->entries) {

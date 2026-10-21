@@ -30,6 +30,7 @@ struct ReadDiagnostics {
         missingFrames{};
     std::atomic<uint64_t> unpublishedSampleReads{0}, expiredSampleReads{0}, racingSampleReads{0},
         absentSampleReads{0};
+    std::atomic<uint64_t> maximumVerifiedClockStepNs{0}, verifiedClockSteps{0};
 
     void begin(uint32_t frames) noexcept {
         reads.fetch_add(1, std::memory_order_relaxed);
@@ -188,6 +189,16 @@ bool AudioHistory::append(RoutingInput input, uint32_t frames, uint64_t firstHos
         tag.revision.fetch_add(1);
     }
     const bool contiguous = !discontinuity && sourceFrameValid && self.previousSourceValid;
+    if (self.diagnostics && contiguous) {
+        const auto expected = frameNs(self.previousFrames, nominalRate);
+        const auto actual = firstHostNs - self.previousNs;
+        const auto error = actual > expected ? actual - expected : expected - actual;
+        // Producer-only updates; readers take independent atomic snapshots.
+        if (error > self.diagnostics->maximumVerifiedClockStepNs.load(std::memory_order_relaxed))
+            self.diagnostics->maximumVerifiedClockStepNs.store(error, std::memory_order_relaxed);
+        if (error > 2e9 / nominalRate)
+            self.diagnostics->verifiedClockSteps.fetch_add(1, std::memory_order_relaxed);
+    }
     if (!self.clock.append(self.cursor, firstHostNs, contiguous)) {
         self.online.store(false);
         self.version.fetch_add(1);
@@ -243,6 +254,9 @@ AudioHistoryReadSnapshot AudioHistory::readDiagnostics() const noexcept {
     result.enabled = true;
     result.reads = counters->reads.load(std::memory_order_relaxed);
     result.requestedFrames = counters->requestedFrames.load(std::memory_order_relaxed);
+    result.maximumVerifiedClockStepNs =
+        counters->maximumVerifiedClockStepNs.load(std::memory_order_relaxed);
+    result.verifiedClockSteps = counters->verifiedClockSteps.load(std::memory_order_relaxed);
     for (size_t index = 0; index < result.missingFrames.size(); ++index)
         result.missingFrames[index] =
             counters->missingFrames[index].load(std::memory_order_relaxed);

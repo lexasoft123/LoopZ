@@ -238,7 +238,7 @@ class Endpoint final : public SourceEndpoint {
     std::atomic<bool> ready{false};
     bool live{true}, allChannels{true}, throwOpen{false}, throwHealth{false}, retainPolicies{false};
     bool retainMutePolicies{false};
-    unsigned failures{0}, opens{0}, closes{0}, updates{0};
+    unsigned failures{0}, opens{0}, closes{0}, updates{0}, healthInvalidations{0};
     uint32_t available{UINT32_MAX};
     uint64_t* completionTime{nullptr};
     uint64_t openDelay{0};
@@ -281,6 +281,9 @@ class Endpoint final : public SourceEndpoint {
     void close() noexcept override {
         ++closes;
         ready = false;
+    }
+    void invalidateHealth() noexcept override {
+        ++healthInvalidations;
     }
     bool healthy(std::string& error) override {
         if (throwHealth)
@@ -372,6 +375,8 @@ void sharedSourcesAndPolicy() {
     registry.poll(scene.get(), 0);
     assert(registry.restored() && endpoints[0]->opens == 1 && !endpoints[0]->policy.muteOriginal);
     assert(!registry.status()[0].diagnostics);
+    registry.retryNow(0);
+    assert(endpoints[0]->healthInvalidations == 1);
     auto diagnostic = std::make_shared<SourceDiagnostics>();
     diagnostic->history.enabled = true;
     diagnostic->history.requestedFrames = 123456;

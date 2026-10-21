@@ -27,6 +27,8 @@ class SourceEndpoint : public AudioSource {
     virtual bool open(SourceOpenPolicy policy, std::string& error) = 0;
     virtual void close() noexcept = 0;
     virtual bool healthy(std::string& error) = 0;
+    // Control-domain event notification bypasses any backend health cache.
+    virtual void invalidateHealth() noexcept {}
     // Control only. Empty means timing is not verified. A summed capture must
     // report every contributing stream, or return empty for the whole source.
     virtual std::vector<InputTimingFacts> inputTiming() const {

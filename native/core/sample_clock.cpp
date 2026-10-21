@@ -33,12 +33,15 @@ double intervalRate(Anchor a, Anchor b, double nominal) noexcept {
     const auto rate = static_cast<double>(frames) * 1e9 / elapsed;
     if (supportedMeasured(rate, nominal))
         return rate;
-    // A device may correct its host-time projection by about one sample while
+    // A device may correct its host-time projection by a few samples while
     // its hardware sample counter stays continuous. Keep the measured local
     // interval for bandlimited conversion instead of replacing a whole block
     // with silence. Unproven continuity and larger clock jumps still fail.
     const auto phaseError = std::abs(static_cast<long double>(frames) * 1e9L / nominal - elapsed);
-    return b.contiguous && phaseError <= 2e9L / nominal && rate >= nominal * 0.8 &&
+    // Quad Cortex produces verified ~2.2-sample host-clock steps. Admit at
+    // most three samples in a CLOSED interval with continuous source frames;
+    // keep the slope limits and never extrapolate that corrected slope.
+    return b.contiguous && phaseError <= 3e9L / nominal && rate >= nominal * 0.8 &&
                    rate <= nominal * 1.25
                ? rate
                : 0;

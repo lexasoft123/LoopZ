@@ -144,30 +144,38 @@ void precisionAndInvalidIntervals() {
 void verifiedPhaseCorrections() {
     constexpr uint64_t origin = 1000000000;
     for (double nominal : {8000.0, 48000.0, 192000.0}) {
-        for (int sign : {-1, 1}) {
-            const auto interval = frameNs(32, nominal);
-            const auto correction = static_cast<int64_t>(1.1e9 / nominal) * sign;
-            const auto corrected = static_cast<uint64_t>(interval + correction);
-            for (bool trusted : {false, true}) {
-                SampleClockHistory clock(8);
-                assert(clock.append(0, origin));
-                assert(clock.append(32, origin + corrected, trusted));
-                const auto middle = realtime([&] {
-                    return clock.locate(clock.snapshot(), origin + corrected / 2, 0, nominal,
-                                        nominal);
-                });
-                assert(middle.valid == trusted);
-                if (trusted) {
-                    assert(middle.localClockCorrection);
-                    assert(std::abs(middle.offset - 16) < 0.001);
+        for (double samples : {1.1, 2.21}) {
+            for (int sign : {-1, 1}) {
+                const auto interval = frameNs(32, nominal);
+                const auto correction = static_cast<int64_t>(samples * 1e9 / nominal) * sign;
+                const auto corrected = static_cast<uint64_t>(interval + correction);
+                for (bool trusted : {false, true}) {
+                    SampleClockHistory clock(8);
+                    assert(clock.append(0, origin));
+                    assert(clock.append(32, origin + corrected, trusted));
+                    const auto middle = realtime([&] {
+                        return clock.locate(clock.snapshot(), origin + corrected / 2, 0, nominal,
+                                            nominal);
+                    });
+                    assert(middle.valid == trusted);
+                    if (trusted) {
+                        assert(middle.localClockCorrection);
+                        assert(std::abs(middle.offset - 16) < 0.001);
+                    }
+                    const auto tail = clock.locate(
+                        clock.snapshot(), origin + corrected + interval / 2, 0, nominal, nominal);
+                    assert(tail.valid == trusted);
+                    if (trusted)
+                        assert(!tail.localClockCorrection && tail.rate == nominal);
                 }
-                const auto tail = clock.locate(clock.snapshot(), origin + corrected + interval / 2,
-                                               0, nominal, nominal);
-                assert(tail.valid == trusted);
-                if (trusted)
-                    assert(!tail.localClockCorrection && tail.rate == nominal);
             }
         }
+        SampleClockHistory rejected(4);
+        assert(rejected.append(0, origin));
+        assert(rejected.append(32, origin + frameNs(32, nominal) + frameNs(4, nominal), true));
+        assert(!rejected
+                    .locate(rejected.snapshot(), origin + frameNs(16, nominal), 0, nominal, nominal)
+                    .valid);
         SampleClockHistory jumped(4);
         assert(jumped.append(0, origin));
         assert(jumped.append(32, origin + frameNs(64, nominal), true));

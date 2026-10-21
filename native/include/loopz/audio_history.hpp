@@ -25,6 +25,8 @@ struct AudioHistoryReadSnapshot {
     // with missingFrames. They distinguish late publication from expired data.
     uint64_t unpublishedSampleReads{}, expiredSampleReads{}, racingSampleReads{},
         absentSampleReads{};
+    // Host-clock phase steps with an authoritative continuous sample counter.
+    uint64_t maximumVerifiedClockStepNs{}, verifiedClockSteps{};
 };
 
 struct AudioHistoryStatus {

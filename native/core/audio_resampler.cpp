@@ -149,8 +149,30 @@ uint32_t AudioResampler::read(ResamplePosition read, ResampleOutput output, uint
                     target.available = target.available && value.availableChannels >= count;
                     normalization[outputFrame] += weight;
                     auto& accumulated = sums[outputFrame];
-                    for (size_t channel = 0; channel < count; ++channel)
-                        accumulated[channel] += weight * source[channel];
+                    // Common hardware layouts have fixed widths. Specializing
+                    // the independent channel sums lets the compiler vectorize
+                    // them without a per-tap dynamic loop or changing precision.
+                    const auto accumulate = [&]<size_t Channels>() {
+                        for (size_t channel = 0; channel < Channels; ++channel)
+                            accumulated[channel] += weight * source[channel];
+                    };
+                    switch (count) {
+                    case 1:
+                        accumulate.template operator()<1>();
+                        break;
+                    case 2:
+                        accumulate.template operator()<2>();
+                        break;
+                    case 8:
+                        accumulate.template operator()<8>();
+                        break;
+                    case 16:
+                        accumulate.template operator()<16>();
+                        break;
+                    default:
+                        for (size_t channel = 0; channel < count; ++channel)
+                            accumulated[channel] += weight * source[channel];
+                    }
                 }
             }
         }

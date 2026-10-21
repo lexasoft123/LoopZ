@@ -28,7 +28,9 @@ inline NSDictionary* sourceDiagnosticsJSON(const SourceDiagnostics& diagnostics)
             @"unpublishedSampleReads" : counter(history.unpublishedSampleReads),
             @"expiredSampleReads" : counter(history.expiredSampleReads),
             @"racingSampleReads" : counter(history.racingSampleReads),
-            @"absentSampleReads" : counter(history.absentSampleReads)
+            @"absentSampleReads" : counter(history.absentSampleReads),
+            @"maximumVerifiedClockStepNs" : counter(history.maximumVerifiedClockStepNs),
+            @"verifiedClockSteps" : counter(history.verifiedClockSteps)
         }
     } mutableCopy];
     if (diagnostics.stoppedDelivery) {

@@ -390,6 +390,7 @@ class InputSource final : public SourceEndpoint {
             return fail(result);
         callbackError_.store(0);
         openedAt_ = hostNowNs();
+        nextDeviceInspectionNs_ = 0;
         callbackGate_.open();
         result = AudioOutputUnitStart(unit_);
         return result ? fail(result) : true;
@@ -409,21 +410,33 @@ class InputSource final : public SourceEndpoint {
         history_.stop();
         available_ = 0;
     }
+    void invalidateHealth() noexcept override {
+        nextDeviceInspectionNs_ = 0;
+    }
     bool healthy(std::string& error) override {
-        UInt32 alive = 0;
-        double rate = 0;
         const auto current = history_.status();
         const auto last = std::max(current.lastHostNs, openedAt_);
         const auto now = hostNowNs();
+        // Callback failures, stalled capture and permission changes remain
+        // checked on every control poll. Device topology/format queries involve
+        // synchronous HAL IPC; cache only those, with an event-driven bypass.
         if (!unit_ || microphonePermission() != MicrophonePermission::Authorized ||
-            findInput(selector_) != device_ ||
-            !get(device_, kAudioDevicePropertyDeviceIsAlive, alive) || !alive ||
-            !get(device_, kAudioDevicePropertyNominalSampleRate, rate) || rate != rate_ ||
-            inputChannels(device_) != physicalChannels_ || callbackError_.load() ||
-            (now >= last && now - last > 2000000000ULL)) {
-            error = "Input permission, device, channel layout, rate or callback stream changed";
+            callbackError_.load() || (now >= last && now - last > 2000000000ULL)) {
+            error = "Input permission or callback stream changed";
             return false;
         }
+        if (now < nextDeviceInspectionNs_)
+            return true;
+        UInt32 alive = 0;
+        double rate = 0;
+        if (findInput(selector_) != device_ ||
+            !get(device_, kAudioDevicePropertyDeviceIsAlive, alive) || !alive ||
+            !get(device_, kAudioDevicePropertyNominalSampleRate, rate) || rate != rate_ ||
+            inputChannels(device_) != physicalChannels_) {
+            error = "Input device, channel layout or rate changed";
+            return false;
+        }
+        nextDeviceInspectionNs_ = now + 250000000ULL;
         return true;
     }
     AudioReadResult read(uint64_t first, double rate, RoutingOutput output, uint32_t frames,
@@ -499,7 +512,7 @@ class InputSource final : public SourceEndpoint {
     AudioDeviceID device_{0};
     uint32_t required_{0}, available_{0}, physicalChannels_{0}, maximum_{4096};
     double rate_{0};
-    uint64_t openedAt_{0};
+    uint64_t openedAt_{0}, nextDeviceInspectionNs_{0};
     std::vector<float> samples_;
     std::array<const float*, 64> planes_{};
     std::atomic<OSStatus> callbackError_{0};

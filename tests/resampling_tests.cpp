@@ -203,13 +203,13 @@ void boundariesAndPartitioning() {
 void contiguousHardwareTimestampCorrections() {
     constexpr uint64_t origin = 2000000000;
     for (double rate : {8000.0, 48000.0, 192000.0}) {
-        for (uint32_t period : {32U, 64U}) {
+        for (uint32_t period : {32U, 64U, 128U}) {
             for (int sign : {-1, 1}) {
                 for (bool verified : {false, true}) {
                     AudioHistory history(1);
-                    std::array<float, 64> input{};
+                    std::array<float, 128> input{};
                     const float* planes[]{input.data()};
-                    const auto shift = static_cast<int64_t>(1.1e9 / rate) * sign;
+                    const auto shift = static_cast<int64_t>(2.21e9 / rate) * sign;
                     for (uint64_t block = 0; block < 256; ++block) {
                         for (uint32_t frame = 0; frame < period; ++frame)
                             input[frame] =
@@ -354,8 +354,8 @@ void drift() {
         for (uint32_t block = 0; block < 600; ++block) {
             for (uint32_t channel = 0; channel < 2; ++channel)
                 for (uint32_t frame = 0; frame < 256; ++frame)
-                    input.write[channel][frame] =
-                        static_cast<float>(tone(block * 256 + frame, actualRate, 1000 + channel * 37));
+                    input.write[channel][frame] = static_cast<float>(
+                        tone(block * 256 + frame, actualRate, 1000 + channel * 37));
             latest = origin + static_cast<uint64_t>(block * 256 * 1e9L / actualRate);
             assert(realtime([&] {
                 return history.append(input.input(), 256, latest, 48000, block * 256, true);
@@ -464,7 +464,7 @@ void stridedOutputAndInvalidRequests() {
 void benchmark(bool callbackAnchors = false, double driftPpm = 0) {
     for (uint32_t channels : {2U, 8U, 64U})
         for (const auto& rates : {std::pair{48000U, 48000U}, std::pair{48000U, 44100U},
-                                 std::pair{96000U, 48000U}, std::pair{192000U, 8000U}}) {
+                                  std::pair{96000U, 48000U}, std::pair{192000U, 8000U}}) {
             Fixture fixture(channels, rates.first, 1000);
             if (callbackAnchors) {
                 fixture.history.stop();
