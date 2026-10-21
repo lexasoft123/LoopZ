@@ -30,7 +30,7 @@ are future work.
 3. Allow microphone access to capture physical inputs, and macOS audio-recording
    access to capture apps, when requested.
 4. Create a virtual device, add sources, connect their channels to outputs, and
-   choose the virtual device **by the name you gave it** in your recording app.
+   choose **LoopZ: <your device name>** in your recording app.
    Add a monitor to hear it locally.
 
 Users do **not** need Python, Node.js, Xcode or a separate installer package.
@@ -104,10 +104,10 @@ frontend formatting uses the locked Prettier version.
 ## Releases
 
 Like SingZ, releases are made from `v*` tags with versioned notes committed first.
-CI builds and tests the app, signs it through a disposable keychain, submits the
-DMG to Apple, staples the accepted ticket, and publishes the DMG and checksums.
-Forks can run checks without Apple credentials; publishing requires the signing
-secrets described in [release setup](docs/releasing.md).
+CI builds and tests the app. Releases are currently signed locally through a
+disposable keychain, submitted to Apple, stapled, and published with checksums.
+Hosted signing is optional and disabled by default; see
+[release setup](docs/releasing.md). Forks can run checks without Apple credentials.
 
 [Architecture](docs/architecture.md) · [Installation and migration](docs/install.md) ·
 [Editor contract](docs/editor-control.md) · [Validation](docs/validation.md) ·
