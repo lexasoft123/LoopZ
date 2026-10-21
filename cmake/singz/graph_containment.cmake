@@ -110,7 +110,7 @@ void copyContained(const float* source, float* destination, uint32_t frames,
     file(READ "${output}" existing)
   endif()
   if(NOT existing STREQUAL source)
-    file(WRITE "${output}" "${source}")
+    file(CONFIGURE OUTPUT "${output}" CONTENT "${source}" @ONLY NEWLINE_STYLE UNIX)
   endif()
   set(${result} "${output}" PARENT_SCOPE)
 endfunction()
