@@ -1,0 +1,26 @@
+{
+    "name": "loopz-desktop-interface",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "node scripts/build.mjs",
+        "test": "node --test tests/*.test.mjs",
+        "test:browser:endpoints": "node tests/endpoint-editor.browser.mjs",
+        "test:webkit": "node scripts/test-webkit.mjs",
+        "test:webkit:engine": "node scripts/test-webkit-engine.mjs",
+        "test:webkit:persistence": "node scripts/test-webkit-persistence.mjs",
+        "format": "prettier --write src scripts tests",
+        "format:check": "prettier --check src scripts tests"
+    },
+    "dependencies": {
+        "@singz/ui": "file:packages/singz-ui-1.9.5.tgz",
+        "react": "18.3.1",
+        "react-dom": "18.3.1"
+    },
+    "devDependencies": {
+        "esbuild": "0.25.12",
+        "playwright-core": "1.56.1",
+        "prettier": "3.6.2"
+    }
+}

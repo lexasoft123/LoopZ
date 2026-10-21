@@ -1,0 +1,88 @@
+/* LoopZ LevelMeter extension. All material and color values come from the real kit. */
+.lz-level-meter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+    --signal: 0%;
+    --level: 0;
+}
+.lz-level-track {
+    display: block;
+    position: relative;
+    height: 7px;
+    flex: 1;
+    min-width: 12px;
+    border-radius: 999px;
+    background: var(--sz-control-fill);
+    box-shadow: inset 0 0 0 1px var(--sz-control-rim);
+    overflow: hidden;
+    contain: layout paint;
+}
+.lz-level-fill {
+    position: absolute;
+    inset: 1px auto 1px 1px;
+    width: calc(100% - 2px);
+    transform: scaleX(var(--level));
+    transform-origin: left center;
+    transition: transform var(--meter-duration, 60ms) linear;
+    background: var(--sz-accent);
+    border-radius: 999px;
+    opacity: 0.82;
+}
+.lz-level-peak {
+    position: absolute;
+    inset: 1px auto 1px 1px;
+    width: calc(100% - 4px);
+    transform: translateX(var(--signal));
+    transition: transform var(--meter-duration, 60ms) linear;
+}
+.lz-level-peak::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 2px;
+    background: var(--sz-text);
+    border-radius: 999px;
+}
+.lz-level-meter[data-updating="true"][data-silent="false"] .lz-level-fill,
+.lz-level-meter[data-updating="true"][data-silent="false"] .lz-level-peak {
+    will-change: transform;
+}
+.lz-level-meter[data-updating="false"] .lz-level-fill,
+.lz-level-meter[data-updating="false"] .lz-level-peak {
+    transition: none;
+}
+.lz-level-reading {
+    font: 10px/1 var(--sz-font-mono);
+    color: var(--sz-dim);
+    min-width: 24px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.lz-level-meter[data-silent="true"] .lz-level-peak {
+    opacity: 0;
+}
+.lz-level-meter[data-clipping="true"] .lz-level-fill {
+    background: var(--sz-danger);
+}
+.lz-output-rows .lz-level-track {
+    height: 9px;
+}
+.lz-device-select .lz-level-meter {
+    margin-top: 10px;
+}
+.lz-device-select .lz-level-track {
+    height: 4px;
+}
+.lz-device-select .lz-level-reading,
+.lz-device-select .lz-level-peak {
+    display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+    .lz-level-fill,
+    .lz-level-peak {
+        transition: none;
+    }
+}

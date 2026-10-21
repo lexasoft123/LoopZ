@@ -11,12 +11,17 @@ import shutil
 import subprocess
 
 root = Path(__file__).resolve().parents[1]
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(allow_abbrev=False)
 parser.add_argument("--engine-args-json", default='["--tone", "--seconds", "120"]')
 parser.add_argument(
     "--engine-signing-identity",
     default=os.environ.get("LOOPZ_ENGINE_SIGNING_IDENTITY", "-"),
     help="Apple Development/Developer ID identity or fingerprint; defaults to ad-hoc signing",
+)
+parser.add_argument(
+    "--engine-signing-keychain",
+    default=os.environ.get("LOOPZ_ENGINE_SIGNING_KEYCHAIN") or os.environ.get("CSC_KEYCHAIN"),
+    help="Prepared signing keychain, as used by SingZ; never changes the login keychain",
 )
 args = parser.parse_args()
 if not args.engine_signing_identity.strip():
@@ -49,18 +54,33 @@ identities = {
 }
 for name, identifier in identities.items():
     signing_identity = args.engine_signing_identity if name == "LoopZ Engine.app" else "-"
+    certificate_engine = name == "LoopZ Engine.app" and signing_identity != "-"
+    signing_options = []
+    if certificate_engine:
+        if args.engine_signing_keychain:
+            signing_options.extend(["--keychain", args.engine_signing_keychain])
+        signing_options.extend(
+            [
+                "--options",
+                "runtime",
+                "--entitlements",
+                str(root / "packaging/entitlements.engine.plist"),
+            ]
+        )
     subprocess.run(
         [
             "codesign",
             "--force",
             "--sign",
             signing_identity,
-            "--timestamp=none",
+            "--timestamp" if certificate_engine else "--timestamp=none",
+            *signing_options,
             "--identifier",
             identifier,
             str(stage / name),
         ],
         check=True,
+        timeout=90,
     )
     subprocess.run(["codesign", "--verify", "--strict", str(stage / name)], check=True)
 details = subprocess.run(
@@ -74,6 +94,19 @@ team_identifier = team[1] if team and team[1] != "not set" else None
 certificate_engine = args.engine_signing_identity != "-"
 if certificate_engine and not team_identifier:
     raise SystemExit("Certificate-signed engine must have an Apple team identifier")
+engine_entitlements = {}
+if certificate_engine:
+    if not re.search(r"^CodeDirectory .*flags=\S*\(runtime\)", details, re.M):
+        raise SystemExit("Certificate-signed engine must enable Hardened Runtime")
+    entitlement_details = subprocess.run(
+        ["codesign", "-d", "--entitlements", "-", "--xml", str(stage / "LoopZ Engine.app")],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    engine_entitlements = plistlib.loads(entitlement_details.stdout.encode())
+    if engine_entitlements != {"com.apple.security.device.audio-input": True}:
+        raise SystemExit("Engine must carry exactly its Hardened Runtime microphone entitlement")
 designated_details = subprocess.run(
     ["codesign", "-d", "-r-", str(stage / "LoopZ Engine.app")],
     text=True,
@@ -144,6 +177,8 @@ hashes = {
             "engineSigning": {
                 "teamIdentifier": team_identifier,
                 "designatedRequirement": designated[1],
+                "hardenedRuntime": certificate_engine,
+                "entitlements": engine_entitlements,
             },
             "engineRequirement": requirement,
             "controlRequirement": control_requirement,

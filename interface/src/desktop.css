@@ -1,0 +1,93 @@
+body {
+    padding: 0;
+}
+.lz-window {
+    width: 100%;
+    max-width: none;
+    height: 100vh;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+.lz-editing {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
+}
+.lz-editing:disabled .lz-node-controls,
+.lz-editing:disabled .lz-header-controls {
+    opacity: 0.55;
+}
+.lz-status-note {
+    max-width: 540px;
+}
+.lz-picker-item > span {
+    min-width: 0;
+}
+.lz-picker-item strong,
+.lz-picker-item small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.lz-field select,
+.lz-field input {
+    max-width: 100%;
+}
+
+.lz-toolbar {
+    height: 56px;
+    min-height: 56px;
+    flex-wrap: nowrap;
+}
+.lz-connection-hint {
+    border: 0;
+    background: none;
+    margin: 0;
+    padding: 0;
+    font-size: 11px;
+    min-width: 0;
+    flex: 1;
+}
+.lz-connection-hint span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.lz-output-controls {
+    min-width: 0;
+    margin: 0;
+}
+.lz-wires .lz-wire-hit {
+    pointer-events: stroke;
+}
+.lz-socket {
+    touch-action: none;
+}
+.lz-recovery:empty {
+    display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+    .lz-level-fill {
+        transition: none;
+    }
+}
+.lz-connection-hint {
+    position: static;
+    inset: auto;
+}
+
+.lz-output-controls {
+    border: 0;
+    border-top: 1px solid var(--sz-line);
+}
+.lz-output-controls.standalone {
+    margin-bottom: 20px;
+    border: 1px solid var(--sz-line);
+    border-radius: 11px;
+}
+
+/* Native traffic lights share the approved header; AppKit draws no extra title bar. */
+html[data-loopz-native="true"] .lz-titlebar {
+    padding-left: 88px;
+}

@@ -104,7 +104,7 @@ def signal_checked(host, force=False):
     os.kill(host["pid"], signal.SIGKILL if force else signal.SIGTERM)
 
 
-def mapped_image(output, pid, binary, allowed_bundles):
+def mapped_image(output, pid, binary, allowed_bundles, *, allow_other_images=False):
     """Parse all lsof file records, including memory-mapped executable images."""
     records = []
     record = None
@@ -131,6 +131,8 @@ def mapped_image(output, pid, binary, allowed_bundles):
     bundles = set()
     for record in records:
         name = record.get("n", "")
+        if name.endswith(" (deleted)"):
+            name = name[: -len(" (deleted)")]
         roots = [str(HAL), "/System/Library/Audio/Plug-Ins/HAL"]
         root = next((root for root in roots if name.startswith(root + "/")), None)
         if root is None:
@@ -141,28 +143,36 @@ def mapped_image(output, pid, binary, allowed_bundles):
             raise RuntimeError("Isolated host also references another HAL root: " + name)
         if component not in allowed_bundles:
             raise RuntimeError("Isolated host also maps another HAL component: " + component)
-        if name.endswith("/Contents/MacOS/LoopZAudio") and record.get("f") in ("txt", "mem"):
+        if name.endswith("/Contents/MacOS/LoopZAudio") and record.get("f") in ("txt", "mem", "DEL"):
             if "D" not in record or "i" not in record:
                 raise RuntimeError("Mapped driver identity lacks device/inode")
             if (int(record["D"], 16), int(record["i"])) == expected:
                 found = True
+            elif not allow_other_images:
+                raise RuntimeError("Another LoopZ driver image is also mapped in this host")
     if not found:
         raise RuntimeError("Expected driver executable is not mapped in this host")
     return {"device": info.st_dev, "inode": info.st_ino, "HALBundles": sorted(bundles)}
 
 
-def inspect(pid, binary, allowed_bundles=None):
+def inspect(pid, binary, allowed_bundles=None, *, allow_other_images=False):
     before = identity(pid)
     inventory = command("/usr/sbin/lsof", "-nP", "-a", "-p", pid, "-F0pfDin")
     if inventory.stderr.strip():
         raise RuntimeError("Mapped image inventory emitted warnings")
-    image = mapped_image(inventory.stdout, pid, binary, allowed_bundles or {DRIVER.name})
+    image = mapped_image(
+        inventory.stdout,
+        pid,
+        binary,
+        allowed_bundles or {DRIVER.name},
+        allow_other_images=allow_other_images,
+    )
     if identity(pid) != before:
         raise RuntimeError("Host identity changed during inspection")
     return {**before, **image}
 
 
-def discover(binary):
+def discover(binary, *, allowed_bundles=None, allow_other_images=False):
     rows = command("/bin/ps", "-axo", "pid=,args=").stdout.decode().splitlines()
     candidates = []
     for row in rows:
@@ -171,7 +181,7 @@ def discover(binary):
             candidates.append(int(fields[0]))
     if len(candidates) != 1:
         raise RuntimeError("Cannot identify exactly one isolated LoopZ host")
-    return inspect(candidates[0], binary)
+    return inspect(candidates[0], binary, allowed_bundles, allow_other_images=allow_other_images)
 
 
 def require_idle(snapshot, uid="com.lexasoft.loopz.audio.feasibility.v1"):

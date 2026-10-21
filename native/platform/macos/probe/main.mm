@@ -1,8 +1,10 @@
+#include <loopz/sample_rates.hpp>
 #import <Foundation/Foundation.h>
 #include <CoreAudio/CoreAudio.h>
 #include <AudioUnit/AudioUnit.h>
 #include <loopz/macos/driver_protocol.hpp>
 #include <loopz/probe_signal.hpp>
+#include <loopz/probe_capture_trace.hpp>
 #include <atomic>
 #include <array>
 #include <algorithm>
@@ -12,9 +14,70 @@
 #include <chrono>
 #include <vector>
 #include <string>
+#include <string_view>
+#include <stdexcept>
+#include <csignal>
 #include <mach/mach_time.h>
+#include "multi_output_source.hpp"
+#include "input_capture_control.hpp"
+#include "input_capture_trace_json.hpp"
+#include <zcore/device/audio_input_callback_gate.h>
+#if defined(LOOPZ_EMBEDDED_PROBE)
+#include "virtual_input_check.hpp"
+#include <loopz/macos/permissions.hpp>
+#include <map>
+#include <charconv>
+#endif
 
 namespace {
+volatile std::sig_atomic_t probeStopping = 0;
+#if defined(LOOPZ_EMBEDDED_PROBE)
+class ProbeSignals {
+    using Handler = void (*)(int);
+    Handler interrupt_{SIG_DFL}, terminate_{SIG_DFL};
+    static void stop(int) {
+        probeStopping = 1;
+    }
+
+  public:
+    ProbeSignals() {
+        probeStopping = 0;
+        interrupt_ = std::signal(SIGINT, stop);
+        if (interrupt_ == SIG_ERR)
+            throw std::runtime_error("Cannot observe virtual input cancellation");
+        terminate_ = std::signal(SIGTERM, stop);
+        if (terminate_ == SIG_ERR) {
+            std::signal(SIGINT, interrupt_);
+            throw std::runtime_error("Cannot observe virtual input cancellation");
+        }
+    }
+    ~ProbeSignals() {
+        std::signal(SIGINT, interrupt_);
+        std::signal(SIGTERM, terminate_);
+    }
+};
+#endif
+bool loopzRoutingDevice(AudioDeviceID device, const std::string& uid) {
+    if (!uid.starts_with("com.lexasoft.loopz.device."))
+        return false;
+    CFStringRef model = nullptr;
+    UInt32 bytes = sizeof(model), transport = 0;
+    AudioObjectPropertyAddress address{kAudioDevicePropertyModelUID,
+                                       kAudioObjectPropertyScopeGlobal,
+                                       kAudioObjectPropertyElementMain};
+    if (AudioObjectGetPropertyData(device, &address, 0, nullptr, &bytes, &model) ||
+        bytes != sizeof(model) || !model)
+        return false;
+    const bool match = CFGetTypeID(model) == CFStringGetTypeID() &&
+                       CFEqual(model, CFSTR("com.lexasoft.loopz.device.model.v2"));
+    CFRelease(model);
+    if (!match)
+        return false;
+    address.mSelector = kAudioDevicePropertyTransportType;
+    bytes = sizeof(transport);
+    return !AudioObjectGetPropertyData(device, &address, 0, nullptr, &bytes, &transport) &&
+           bytes == sizeof(transport) && transport == kAudioDeviceTransportTypeVirtual;
+}
 const mach_timebase_info_data_t timebase = [] {
     mach_timebase_info_data_t info;
     mach_timebase_info(&info);
@@ -25,6 +88,99 @@ uint64_t nowNs() {
     return ticks / timebase.denom * timebase.numer +
            ticks % timebase.denom * timebase.numer / timebase.denom;
 }
+AudioDeviceID virtualInputDevice(const std::string& uid) {
+    CFStringRef text = CFStringCreateWithCString(nullptr, uid.c_str(), kCFStringEncodingUTF8);
+    if (!text)
+        throw std::invalid_argument("Invalid virtual input UID");
+    AudioObjectID device = 0;
+    UInt32 bytes = sizeof(device);
+    AudioObjectPropertyAddress address{kAudioHardwarePropertyTranslateUIDToDevice,
+                                       kAudioObjectPropertyScopeGlobal, 0};
+    const auto status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, sizeof(text),
+                                                   &text, &bytes, &device);
+    CFRelease(text);
+    if (status || bytes != sizeof(device) || !device)
+        throw std::invalid_argument("The requested virtual input is unavailable");
+    UInt32 transport = 0;
+    bytes = sizeof(transport);
+    address.mSelector = kAudioDevicePropertyTransportType;
+    if (AudioObjectGetPropertyData(device, &address, 0, nullptr, &bytes, &transport) ||
+        bytes != sizeof(transport) || transport != kAudioDeviceTransportTypeVirtual)
+        throw std::invalid_argument("Input comparison requires a virtual device");
+    address = {kAudioDevicePropertyStreamConfiguration, kAudioDevicePropertyScopeInput, 0};
+    if (AudioObjectGetPropertyDataSize(device, &address, 0, nullptr, &bytes) ||
+        bytes < offsetof(AudioBufferList, mBuffers) || bytes > 1024 * 1024)
+        throw std::invalid_argument("Virtual input channels are unavailable");
+    std::vector<uint64_t> storage((bytes + sizeof(uint64_t) - 1) / sizeof(uint64_t));
+    const auto capacity = bytes;
+    if (AudioObjectGetPropertyData(device, &address, 0, nullptr, &bytes, storage.data()) ||
+        bytes > capacity || bytes < offsetof(AudioBufferList, mBuffers))
+        throw std::invalid_argument("Virtual input channel data changed");
+    const auto* list = reinterpret_cast<const AudioBufferList*>(storage.data());
+    if (list->mNumberBuffers > (bytes - offsetof(AudioBufferList, mBuffers)) / sizeof(AudioBuffer))
+        throw std::invalid_argument("Invalid virtual input channel data");
+    uint64_t channels = 0;
+    for (UInt32 index = 0; index < list->mNumberBuffers; ++index)
+        channels += list->mBuffers[index].mNumberChannels;
+    if (channels < 2 || channels > 4096)
+        throw std::invalid_argument("Virtual input comparison requires at least two channels");
+    return device;
+}
+struct BufferPeriod {
+    AudioDeviceID device{0};
+    std::string uid;
+    UInt32 original{0}, requested{0};
+    bool changed{false};
+    bool read(UInt32& frames) const noexcept {
+        AudioObjectPropertyAddress address{kAudioDevicePropertyBufferFrameSize,
+                                           kAudioObjectPropertyScopeGlobal, 0};
+        UInt32 bytes = sizeof(frames);
+        return !AudioObjectGetPropertyData(device, &address, 0, nullptr, &bytes, &frames) &&
+               bytes == sizeof(frames);
+    }
+    bool write(UInt32 frames) const noexcept {
+        AudioObjectPropertyAddress address{kAudioDevicePropertyBufferFrameSize,
+                                           kAudioObjectPropertyScopeGlobal, 0};
+        return !AudioObjectSetPropertyData(device, &address, 0, nullptr, sizeof(frames), &frames);
+    }
+    void prepare(const std::string& selected, UInt32 frames) {
+        uid = selected;
+        device = virtualInputDevice(uid);
+        requested = frames;
+        if (!read(original) || !original)
+            throw std::runtime_error("Cannot preserve the virtual input buffer period");
+        if (original != requested) {
+            changed = true;
+            UInt32 actual = 0;
+            if (!write(requested) || !read(actual) || actual != requested)
+                throw std::runtime_error("Virtual input did not accept the requested period");
+        }
+    }
+    bool restore() noexcept {
+        if (!changed)
+            return true;
+        try {
+            UInt32 current = 0;
+            if (virtualInputDevice(uid) != device || !read(current))
+                return false;
+            if (current == original) {
+                changed = false;
+                return true;
+            }
+            // Never overwrite a concurrent client's different selection.
+            if (current != requested || !write(original) || !read(current) || current != original)
+                return false;
+            changed = false;
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+    ~BufferPeriod() {
+        if (!restore())
+            std::fprintf(stderr, "Virtual input buffer period could not be restored\n");
+    }
+};
 struct Observation {
     uint64_t receivedNs{0}, firstFrame{0};
     uint32_t frames{0};
@@ -77,6 +233,10 @@ struct Recorder {
     std::vector<Observation> observations;
     uint64_t observationCount{0};
     bool streaming{false};
+    std::atomic<bool> measuring{true};
+    std::atomic<uint64_t> preparationCallbacks{0}, preparationFailures{0};
+    bool coordinatedCapture{false};
+    loopz::probe::CaptureTrace trace;
     loopz::probe::StreamCheck checker;
     double streamEnergy[2]{};
     std::atomic<uint64_t> quietFrames{0}, nonfiniteSamples{0};
@@ -84,9 +244,18 @@ struct Recorder {
     int64_t minimumReceiptOffsetNs{INT64_MAX}, maximumReceiptOffsetNs{INT64_MIN};
     uint32_t minimumCallbackFrames{UINT32_MAX}, maximumCallbackFrames{0};
     std::atomic<uint64_t> position{0}, failures{0};
+    uint64_t zeroSamples{0};
+    singz::AudioInputCallbackGate callbacks;
+    void stop() noexcept {
+        callbacks.beginClose();
+        if (unit)
+            AudioOutputUnitStop(unit);
+        while (callbacks.inFlight())
+            std::this_thread::yield();
+    }
     ~Recorder() {
         if (unit) {
-            AudioOutputUnitStop(unit);
+            stop();
             AudioUnitUninitialize(unit);
             AudioComponentInstanceDispose(unit);
         }
@@ -95,8 +264,12 @@ struct Recorder {
                            const AudioTimeStamp* time, UInt32 bus, UInt32 frames,
                            AudioBufferList*) {
         auto& self = *static_cast<Recorder*>(context);
-        if (frames > self.left.size()) {
-            self.failures.fetch_add(1);
+        singz::AudioInputCallbackScope admission(self.callbacks);
+        if (!admission)
+            return noErr;
+        const bool measuring = self.measuring.load(std::memory_order_acquire);
+        if (!frames || frames > self.left.size()) {
+            (measuring ? self.failures : self.preparationFailures).fetch_add(1);
             return noErr;
         }
         self.list.buffers[0].mDataByteSize = self.list.buffers[1].mDataByteSize =
@@ -104,8 +277,12 @@ struct Recorder {
         auto status = AudioUnitRender(self.unit, flags, time, bus, frames,
                                       reinterpret_cast<AudioBufferList*>(&self.list));
         if (status) {
-            self.failures.fetch_add(1);
+            (measuring ? self.failures : self.preparationFailures).fetch_add(1);
             return status;
+        }
+        if (!measuring) {
+            self.preparationCallbacks.fetch_add(1);
+            return noErr;
         }
         if (self.streaming) {
             const bool valid = time && (time->mFlags & kAudioTimeStampHostTimeValid) &&
@@ -114,6 +291,10 @@ struct Recorder {
                 valid ? time->mHostTime / timebase.denom * timebase.numer +
                             time->mHostTime % timebase.denom * timebase.numer / timebase.denom
                       : 0;
+            if (self.coordinatedCapture)
+                self.trace.observe({self.left.data(), frames}, {self.right.data(), frames},
+                                   valid ? time->mSampleTime : 0, ns, nowNs(), self.checker.rate,
+                                   valid, flags ? *flags : 0);
             self.checker.append(self.left.data(), self.right.data(), frames, ns,
                                 valid ? time->mSampleTime : 0, valid);
         }
@@ -149,6 +330,8 @@ struct Recorder {
                         self.nonfiniteSamples.fetch_add(1);
                     else
                         self.streamEnergy[channel] += sample * sample;
+                    if (first + i >= self.warmupFrames && sample == 0)
+                        ++self.zeroSamples;
                 }
         }
         if (self.observationCount < self.observations.size())
@@ -161,13 +344,17 @@ struct Recorder {
     }
 };
 } // namespace
-int main(int argc, char** argv) {
+static int runProbe(int argc, char** argv, bool virtualInputOnly = false, uint32_t bufferFrames = 0,
+                    bool requireMarker = true, bool coordinatedCapture = false) {
+    if (argc > 1 && std::string(argv[1]) == "--multi-output-source")
+        return loopz::macos::multiOutputSource(argc - 1, argv + 1);
     @autoreleasepool {
         double seconds = 5, requestedRate = 0;
         std::string expect = "any", report;
-        bool sendTone = false, streaming = false, timestamped = false;
+        bool sendTone = false, streaming = false, timestamped = false, rateRequested = false;
         double frequencies[2]{440, 880};
         bool timingRequested = false;
+        uint32_t startupDelayMs = 0;
         std::string timingConfig;
         std::string deviceUID = loopz::kDeviceUID;
         for (int i = 1; i < argc; ++i) {
@@ -181,11 +368,23 @@ int main(int argc, char** argv) {
                 deviceUID = argv[++i];
             else if (arg == "--seconds" && i + 1 < argc)
                 seconds = std::strtod(argv[++i], nullptr);
-            else if (arg == "--report" && i + 1 < argc)
+            else if (arg == "--startup-delay-ms" && i + 1 < argc) {
+                const std::string value = argv[++i];
+                size_t end = 0;
+                try {
+                    const auto parsed = std::stoul(value, &end);
+                    if (end != value.size() || parsed > 5000)
+                        return 2;
+                    startupDelayMs = static_cast<uint32_t>(parsed);
+                } catch (const std::exception&) {
+                    return 2;
+                }
+            } else if (arg == "--report" && i + 1 < argc)
                 report = argv[++i];
-            else if (arg == "--set-rate" && i + 1 < argc)
+            else if (arg == "--set-rate" && i + 1 < argc) {
                 requestedRate = std::strtod(argv[++i], nullptr);
-            else if (arg == "--send-tone")
+                rateRequested = true;
+            } else if (arg == "--send-tone")
                 sendTone = true;
             else if (arg == "--streaming")
                 streaming = true;
@@ -211,6 +410,8 @@ int main(int argc, char** argv) {
             return 2;
         if (streaming && (sendTone || !report.empty() || (expect != "any" && expect != "audio")))
             return 2;
+        if (startupDelayMs && !sendTone)
+            return 2;
         AudioDeviceID device = 0;
         auto uid = CFStringCreateWithCString(nullptr, deviceUID.c_str(), kCFStringEncodingUTF8);
         AudioObjectPropertyAddress address{kAudioHardwarePropertyTranslateUIDToDevice,
@@ -224,8 +425,15 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "Requested audio device is not visible\n");
             return 1;
         }
-        if (sendTone && deviceUID != loopz::kDeviceUID) {
-            std::fprintf(stderr, "The test source only plays to LoopZ Audio\n");
+        BufferPeriod period;
+        if (virtualInputOnly) {
+            period.prepare(deviceUID, bufferFrames);
+            device = period.device;
+        }
+        if ((sendTone || rateRequested) && deviceUID != loopz::kDeviceUID &&
+            !loopzRoutingDevice(device, deviceUID)) {
+            std::fprintf(stderr,
+                         "Playback and rate tests require a verified LoopZ virtual device\n");
             return 2;
         }
         if (timingRequested) {
@@ -283,8 +491,8 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "Timing configuration was not applied\n");
             return 1;
         }
-        if (requestedRate) {
-            if (requestedRate != 44100 && requestedRate != 48000)
+        if (rateRequested) {
+            if (!loopz::supportedVirtualSampleRate(requestedRate))
                 return 2;
             address.mSelector = kAudioDevicePropertyNominalSampleRate;
             status = AudioObjectSetPropertyData(device, &address, 0, nullptr, sizeof(requestedRate),
@@ -319,10 +527,14 @@ int main(int argc, char** argv) {
         writer.timestamped = timestamped;
         Recorder recorder;
         recorder.checker.rate = rate;
+        recorder.checker.requireMarker = requireMarker;
         recorder.checker.frequencies[0] = frequencies[0];
         recorder.checker.frequencies[1] = frequencies[1];
         recorder.streaming = streaming;
-        recorder.warmupFrames = static_cast<uint64_t>(rate);
+        recorder.coordinatedCapture = coordinatedCapture;
+        recorder.measuring.store(!coordinatedCapture);
+        recorder.warmupFrames = coordinatedCapture ? 0 : static_cast<uint64_t>(rate);
+        recorder.checker.skipWarmup = coordinatedCapture;
         if (!sendTone && !streaming) {
             recorder.samples.resize(static_cast<size_t>((seconds + 1) * rate) * 2);
             recorder.observations.resize(static_cast<size_t>((seconds + 1) * rate / 16) + 1024);
@@ -370,8 +582,15 @@ int main(int argc, char** argv) {
                 sizeof(callback));
         if (!status)
             status = AudioUnitInitialize(recorder.unit);
-        if (!status)
+        if (!status && startupDelayMs) {
+            std::printf("{\"event\":\"source-waiting\",\"startupDelayMs\":%u}\n", startupDelayMs);
+            std::fflush(stdout);
+            std::this_thread::sleep_for(std::chrono::milliseconds(startupDelayMs));
+        }
+        if (!status) {
+            recorder.callbacks.open();
             status = AudioOutputUnitStart(recorder.unit);
+        }
         if (status) {
             std::fprintf(stderr, "Virtual-device capture failed: %d\n", static_cast<int>(status));
             return 1;
@@ -381,11 +600,24 @@ int main(int argc, char** argv) {
             std::fflush(stdout);
         }
         if (streaming) {
+            if (coordinatedCapture) {
+                const auto readyUntil = std::chrono::steady_clock::now() + std::chrono::seconds(8);
+                while (!recorder.preparationCallbacks.load() && !probeStopping &&
+                       std::chrono::steady_clock::now() < readyUntil)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                if (!recorder.preparationCallbacks.load())
+                    throw std::runtime_error(
+                        "Input-only client did not receive preparation callbacks");
+                loopz::macos::diagnostic::inputCaptureEvent("prepared");
+                loopz::macos::diagnostic::awaitInputCapture("begin-capture", probeStopping);
+                recorder.measuring.store(true, std::memory_order_release);
+            }
             const auto started = std::chrono::steady_clock::now();
             uint64_t nextReport = 60;
             while (
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count() <
-                seconds) {
+                    seconds &&
+                !probeStopping) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));
                 recorder.checker.consume();
                 const auto elapsed = static_cast<uint64_t>(
@@ -393,15 +625,19 @@ int main(int argc, char** argv) {
                         .count());
                 if (elapsed >= nextReport) {
                     const auto& check = recorder.checker;
+                    char delay[64] = "null";
+                    if (requireMarker)
+                        std::snprintf(delay, sizeof(delay), "[%.0f,%.0f]", check.minimumDelayMs,
+                                      check.maximumDelayMs);
                     std::printf(
                         "{\"event\":\"progress\",\"elapsedSeconds\":%llu,\"frames\":%llu,"
                         "\"quietFrames\":%llu,\"callbackFailures\":%llu,\"nonfiniteSamples\":%llu,"
                         "\"windows\":%llu,\"badWindows\":%llu,\"timestampErrors\":%llu,"
-                        "\"queueOverruns\":%llu,\"delayMs\":[%.0f,%.0f]}\n",
+                        "\"queueOverruns\":%llu,\"delayMs\":%s,\"markerChecked\":%s}\n",
                         elapsed, recorder.position.load(), recorder.quietFrames.load(),
                         recorder.failures.load(), recorder.nonfiniteSamples.load(), check.windows,
                         check.badWindows, check.timestampErrors.load(), check.queueOverruns.load(),
-                        check.minimumDelayMs, check.maximumDelayMs);
+                        delay, requireMarker ? "true" : "false");
                     std::fflush(stdout);
                     nextReport += 60;
                 }
@@ -409,7 +645,11 @@ int main(int argc, char** argv) {
         } else
             std::this_thread::sleep_for(
                 std::chrono::milliseconds(static_cast<int>(seconds * 1000)));
-        AudioOutputUnitStop(recorder.unit);
+        recorder.stop();
+        if (coordinatedCapture) {
+            loopz::macos::diagnostic::inputCaptureEvent("captured");
+            loopz::macos::diagnostic::awaitInputCapture("release-input", probeStopping);
+        }
         if (sendTone) {
             std::printf("{\"sentFrames\":%llu,\"rate\":%.0f,\"target\":\"LoopZ Audio\"}\n",
                         writer.frame, rate);
@@ -421,27 +661,56 @@ int main(int argc, char** argv) {
             const double right = frames ? std::sqrt(recorder.streamEnergy[1] / frames) : 0;
             recorder.checker.consume();
             const auto& check = recorder.checker;
-            const bool signalPass = check.windows >= static_cast<uint64_t>(seconds) - 2 &&
-                                    !check.badWindows && !check.timestampErrors.load() &&
-                                    !check.queueOverruns.load() &&
-                                    check.maximumDelayMs - check.minimumDelayMs <= 2;
-            const bool pass = signalPass && frames >= seconds * rate - 8192 &&
-                              !recorder.failures.load() && !recorder.nonfiniteSamples.load() &&
-                              !recorder.quietFrames.load() && left > 0.03 && right > 0.03;
+            const bool signalPass =
+                check.windows >= static_cast<uint64_t>(seconds) - 2 && !check.badWindows &&
+                !check.timestampErrors.load() && !check.queueOverruns.load() &&
+                (!requireMarker || check.maximumDelayMs - check.minimumDelayMs <= 2);
+            const bool restored = period.restore();
+            const bool pass =
+                signalPass && frames >= seconds * rate - 8192 && restored && !probeStopping &&
+                !recorder.failures.load() && !recorder.nonfiniteSamples.load() &&
+                !recorder.quietFrames.load() && left > 0.03 && right > 0.03 &&
+                (!virtualInputOnly || rate != 48000 ||
+                 (requireMarker ? !recorder.zeroSamples : check.maximumZeroRun.load() <= 2)) &&
+                (!coordinatedCapture ||
+                 (!recorder.trace.overflows && !recorder.trace.invalidBlocks &&
+                  recorder.trace.gaps().empty()));
+            char delay[64] = "null", correlation[64] = "null";
+            if (requireMarker) {
+                std::snprintf(delay, sizeof(delay), "[%.0f,%.0f]", check.minimumDelayMs,
+                              check.maximumDelayMs);
+                std::snprintf(correlation, sizeof(correlation), "%.6f", check.minimumCorrelation);
+            }
             std::printf(
                 "{\"event\":\"complete\",\"passed\":%s,\"frames\":%llu,\"rate\":%.0f,\"rms\":[%.8f,"
                 "%.8f],\"quietFrames\":%llu,\"callbackFailures\":%llu,\"nonfiniteSamples\":%llu,"
                 "\"windows\":%llu,\"badWindows\":%llu,\"timestampErrors\":%llu,\"queueOverruns\":%"
                 "llu,\"minimumAmplitude\":%.6f,\"maximumCross\":%.6f,\"minimumMarkerCorrelation\":%"
-                ".6f,\"delayMs\":[%.0f,%.0f],\"delayResolutionMs\":1,\"callbackReceiptOffsetMs\":[%"
-                ".6f,%.6f],\"callbackFrames\":[%u,%u]}\n",
+                "s,"
+                "\"delayMs\":%s,\"delayResolutionMs\":%s,\"markerChecked\":%s,\"maximumZeroRun\":%"
+                "llu,\"callbackReceiptOffsetMs\":[%"
+                ".6f,%.6f],\"callbackFrames\":[%u,%u],\"zeroSamples\":%llu,"
+                "\"invalidTimestamps\":%llu,\"forwardTimestampJumps\":%llu,"
+                "\"backwardTimestampJumps\":%llu,\"maximumForwardTimestampFrames\":%.3f,"
+                "\"maximumBackwardTimestampFrames\":%.3f,"
+                "\"virtualInputOnly\":%s,\"requestedBufferFrames\":%u,\"periodRestored\":%s,"
+                "\"cancelled\":%s,\"coordinatedCapture\":%s,\"preparationCallbacks\":%llu,"
+                "\"preparationFailures\":%llu,\"captureTrace\":%s}\n",
                 pass ? "true" : "false", frames, rate, left, right, recorder.quietFrames.load(),
                 recorder.failures.load(), recorder.nonfiniteSamples.load(), check.windows,
                 check.badWindows, check.timestampErrors.load(), check.queueOverruns.load(),
-                check.minimumAmplitude, check.maximumCross, check.minimumCorrelation,
-                check.minimumDelayMs, check.maximumDelayMs, recorder.minimumReceiptOffsetNs / 1e6,
+                check.minimumAmplitude, check.maximumCross, correlation, delay,
+                requireMarker ? "1" : "null", requireMarker ? "true" : "false",
+                check.maximumZeroRun.load(), recorder.minimumReceiptOffsetNs / 1e6,
                 recorder.maximumReceiptOffsetNs / 1e6, recorder.minimumCallbackFrames,
-                recorder.maximumCallbackFrames);
+                recorder.maximumCallbackFrames, recorder.zeroSamples,
+                check.invalidTimestamps.load(), check.forwardTimestampJumps.load(),
+                check.backwardTimestampJumps.load(), check.maximumForwardTimestampFrames.load(),
+                check.maximumBackwardTimestampFrames.load(), virtualInputOnly ? "true" : "false",
+                bufferFrames, restored ? "true" : "false", probeStopping ? "true" : "false",
+                coordinatedCapture ? "true" : "false", recorder.preparationCallbacks.load(),
+                recorder.preparationFailures.load(),
+                coordinatedCapture ? captureTraceJSON(recorder.trace).c_str() : "null");
             return pass ? 0 : 1;
         }
         double energy[2]{}, tone[2]{}, cross[2]{};
@@ -504,3 +773,90 @@ int main(int argc, char** argv) {
         return pass ? 0 : 1;
     }
 }
+
+#if defined(LOOPZ_EMBEDDED_PROBE)
+int loopz::macos::virtualInputCheck(int argc, char** argv) {
+    try {
+        std::map<std::string, std::string> options;
+        for (int index = 1; index < argc; index += 2) {
+            if (index + 1 == argc)
+                throw std::invalid_argument("Virtual input arguments require values");
+            const std::string key = argv[index];
+            if (key != "--read-device" && key != "--seconds" && key != "--buffer-frames" &&
+                key != "--frequency-left" && key != "--frequency-right" && key != "--signal" &&
+                key != "--capture-protocol")
+                throw std::invalid_argument("Unknown virtual input argument");
+            if (!options.emplace(key, argv[index + 1]).second)
+                throw std::invalid_argument("Duplicate virtual input argument");
+        }
+        const auto number = [&](const char* key, uint32_t fallback) {
+            if (!options.contains(key))
+                return fallback;
+            const auto& text = options.at(key);
+            uint32_t value = 0;
+            const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+            if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size())
+                throw std::invalid_argument("Invalid virtual input integer");
+            return value;
+        };
+        const auto seconds = number("--seconds", 20), frames = number("--buffer-frames", 32);
+        const auto signal = options.contains("--signal") ? options.at("--signal") : "marker";
+        const bool coordinatedCapture = options.contains("--capture-protocol");
+        if (coordinatedCapture && options.at("--capture-protocol") != "stdio-v1")
+            throw std::invalid_argument("Virtual input capture protocol must be stdio-v1");
+        if (signal != "marker" && signal != "sine")
+            throw std::invalid_argument("Virtual input signal must be marker or sine");
+        if (seconds < 3 || seconds > 120 || frames < 32 || frames > 2048 || (frames & (frames - 1)))
+            throw std::invalid_argument("Virtual input requires 3–120 seconds and 32–2048 frames");
+        for (const auto* key : {"--frequency-left", "--frequency-right"}) {
+            if (!options.contains(key))
+                options[key] = key == std::string_view("--frequency-left") ? "1100" : "2200";
+            size_t used = 0;
+            const auto value = std::stod(options.at(key), &used);
+            if (used != options.at(key).size() || !std::isfinite(value) || value < 40 ||
+                value > 20000)
+                throw std::invalid_argument("Invalid virtual input frequency");
+        }
+        if (std::stod(options.at("--frequency-left")) == std::stod(options.at("--frequency-right")))
+            throw std::invalid_argument("Virtual input frequencies must differ");
+        if (!options.contains("--read-device") || options.at("--read-device").empty())
+            throw std::invalid_argument("A virtual input UID is required");
+        virtualInputDevice(options.at("--read-device"));
+        if (microphonePermission() != MicrophonePermission::Authorized) {
+            std::puts(
+                "{\"passed\":false,\"permissionRequired\":true,\"permissionRequested\":false}");
+            return 77;
+        }
+        std::vector<std::string> arguments{"virtual-input-check",
+                                           "--device-uid",
+                                           options.at("--read-device"),
+                                           "--streaming",
+                                           "--expect-audio",
+                                           "--seconds",
+                                           std::to_string(seconds),
+                                           "--frequency-left",
+                                           options.at("--frequency-left"),
+                                           "--frequency-right",
+                                           options.at("--frequency-right")};
+        std::vector<char*> pointers;
+        for (auto& value : arguments)
+            pointers.push_back(value.data());
+        ProbeSignals signals;
+        return runProbe(static_cast<int>(pointers.size()), pointers.data(), true, frames,
+                        signal == "marker", coordinatedCapture);
+    } catch (const std::invalid_argument& error) {
+        std::fprintf(stderr, "Virtual input check: %s\n", error.what());
+        return 2;
+    } catch (const std::out_of_range&) {
+        std::fprintf(stderr, "Virtual input check: Numeric argument is out of range\n");
+        return 2;
+    } catch (const std::exception& error) {
+        std::fprintf(stderr, "Virtual input check: %s\n", error.what());
+        return 1;
+    }
+}
+#else
+int main(int argc, char** argv) {
+    return runProbe(argc, argv);
+}
+#endif

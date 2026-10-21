@@ -170,7 +170,7 @@ def check_ancestors(targets):
 
 
 @contextmanager
-def exclusive_lock(path):
+def exclusive_lock(path, *, readable=False):
     check_ancestors([path])
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
@@ -178,6 +178,10 @@ def exclusive_lock(path):
         info = os.fstat(fd)
         if info.st_uid != os.geteuid() or info.st_mode & 0o022 or info.st_nlink != 1:
             raise ValueError("Installer lock has unsafe ownership or permissions")
+        if readable:
+            if os.geteuid() != 0:
+                raise ValueError("Only the system installer may publish a shared update lock")
+            os.fchmod(fd, 0o644)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:

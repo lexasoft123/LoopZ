@@ -2,6 +2,31 @@
 #include <cassert>
 #include <cstdio>
 #include <memory>
+#include <limits>
+
+void timestampJumpClassification() {
+    auto check = std::make_unique<loopz::probe::StreamCheck>();
+    float silence[64]{};
+    const auto append = [&](double sample, bool valid = true) {
+        check->append(silence, silence, 64, 1000000000, sample, valid);
+    };
+    append(0);
+    append(64);
+    append(160); // 32 missing frames.
+    append(192); // 32 overlapping frames.
+    append(0);   // A reset, 256 frames behind the expected position.
+    append(std::numeric_limits<double>::quiet_NaN());
+    append(4096); // Re-establish the sequence after an invalid timestamp.
+    append(4160, false);
+    append(4224);
+    append(std::numeric_limits<double>::max());
+    assert(check->timestampErrors.load() == 6);
+    assert(check->invalidTimestamps.load() == 3);
+    assert(check->forwardTimestampJumps.load() == 1);
+    assert(check->backwardTimestampJumps.load() == 2);
+    assert(check->maximumForwardTimestampFrames.load() == 32);
+    assert(check->maximumBackwardTimestampFrames.load() == 256);
+}
 
 std::unique_ptr<loopz::probe::StreamCheck> simulate(double rate, bool swap, bool marker, bool jump,
                                                     uint64_t delayNs = 106700000ULL) {
@@ -36,6 +61,14 @@ std::unique_ptr<loopz::probe::StreamCheck> simulate(double rate, bool swap, bool
     return check;
 }
 int main() {
+    {
+        auto strict = std::make_unique<loopz::probe::StreamCheck>();
+        strict->skipWarmup = true;
+        float silence[64]{};
+        strict->append(silence, silence, 64, 1000000000, 0, true);
+        assert(strict->maximumZeroRun.load() == 64);
+    }
+    timestampJumpClassification();
     for (double rate : {44100.0, 48000.0}) {
         auto valid = simulate(rate, false, true, false);
         assert(valid->windows >= 3 && !valid->badWindows && !valid->timestampErrors.load() &&

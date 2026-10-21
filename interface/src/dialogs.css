@@ -1,0 +1,193 @@
+/* Modal size, form content and focus behavior only; shell and actions are actual kit components. */
+.lz-modal,
+.lz-wide-modal {
+    max-height: 85vh;
+    overflow-y: auto;
+}
+.lz-wide-modal {
+    width: min(650px, calc(100vw - 36px));
+}
+.lz-field {
+    display: grid;
+    gap: 8px;
+    font-size: 12px;
+    margin: 18px 0;
+}
+.lz-field input,
+.lz-field select {
+    width: 100%;
+    padding: 11px 12px;
+    border: 1px solid var(--sz-control-rim);
+    border-radius: 8px;
+    background: var(--sz-control-fill);
+    color: var(--sz-text);
+    font: 13px var(--sz-font-display);
+}
+.lz-field select option,
+.lz-rate option {
+    background: var(--sz-panel);
+    color: var(--sz-text);
+}
+.lz-field select:focus-visible,
+.lz-route-options input:focus-visible,
+.lz-rate:focus-visible {
+    outline: 2px solid var(--sz-focus-ring);
+    outline-offset: 2px;
+}
+.lz-dialog-menu {
+    display: grid;
+    justify-items: start;
+    gap: 14px;
+    margin-top: 22px;
+}
+.lz-confirm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+}
+.lz-order-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--sz-line);
+}
+.lz-order-controls p {
+    font-size: 11px;
+    margin-top: 3px;
+}
+.lz-order-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.lz-picker-group {
+    display: grid;
+    gap: 9px;
+    margin-top: 20px;
+}
+.lz-picker-item {
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+}
+.lz-picker-item > span:has(small) {
+    flex: 1;
+    min-width: 0;
+}
+.lz-picker-item small {
+    display: block;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--sz-dim);
+    letter-spacing: 0.01em;
+    margin-top: 3px;
+}
+.lz-scenario-options {
+    display: grid;
+    gap: 9px;
+    margin-top: 20px;
+}
+.lz-setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--sz-line);
+}
+.lz-setting-row > div:first-child {
+    flex: 1;
+    min-width: 0;
+}
+.lz-setting-row strong {
+    font-size: 13px;
+    font-weight: 600;
+}
+.lz-setting-row p {
+    font-size: 11px;
+    color: var(--sz-dim);
+    line-height: 1.7;
+    margin: 4px 0 0;
+    max-width: 37ch;
+}
+.lz-route-fieldset {
+    border: 0;
+    border-top: 1px solid var(--sz-line);
+    padding: 13px 0;
+    margin: 16px 0;
+}
+.lz-route-fieldset legend {
+    font-size: 12px;
+    font-weight: 550;
+    padding: 0 8px 0 0;
+}
+.lz-route-options {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+}
+.lz-route-options label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    padding: 8px;
+    border: 1px solid var(--sz-line-strong);
+    border-radius: 7px;
+    cursor: pointer;
+}
+.lz-route-options input {
+    accent-color: var(--sz-accent);
+    width: 16px;
+    height: 16px;
+    margin: 0;
+}
+.lz-shortcuts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 12px 18px;
+    font-size: 12px;
+}
+.lz-shortcuts dt {
+    font-family: var(--sz-font-mono);
+}
+.lz-shortcuts dd {
+    color: var(--sz-dim);
+    margin: 0;
+}
+@media (max-width: 680px) {
+    .lz-setting-row {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+    .lz-setting-row > div:first-child {
+        min-width: 180px;
+    }
+    .lz-route-options {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+.lz-hardware-buffer {
+    display: grid;
+    gap: 12px;
+    padding-block: 16px;
+    border-bottom: 1px solid var(--sz-line);
+}
+.lz-hardware-buffer label {
+    display: grid;
+    gap: 6px;
+}
+.lz-hardware-buffer select {
+    max-width: 100%;
+}
+.lz-hardware-buffer p {
+    margin: 0;
+    color: var(--sz-dim);
+    font-size: 12px;
+    line-height: 1.6;
+}

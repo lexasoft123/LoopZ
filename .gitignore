@@ -2,4 +2,11 @@ build/
 artifacts/
 .DS_Store
 node_modules/
+interface/dist/
 __pycache__/
+.local/
+.keys/
+*.p12
+*.p8
+*.keychain
+*.keychain-db

@@ -1,0 +1,747 @@
+/* Application-specific nodes, socket targets, wire geometry and simulated meters. */
+.lz-graph {
+    position: relative;
+    display: grid;
+    grid-template-columns:
+        minmax(240px, 1.1fr) 72px minmax(216px, 0.95fr)
+        72px minmax(224px, 1fr);
+    align-items: start;
+    min-height: 480px;
+}
+.lz-graph > section {
+    position: relative;
+    z-index: 2;
+    min-width: 0;
+}
+.lz-sources {
+    grid-column: 1;
+}
+.lz-outputs {
+    grid-column: 3;
+}
+.lz-monitors {
+    grid-column: 5;
+}
+.lz-column-heading {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    gap: 8px;
+}
+.lz-column-heading .eyebrow span {
+    display: inline-block;
+    margin-left: 4px;
+    border: 1px solid var(--sz-line-strong);
+    border-radius: 4px;
+    padding: 0 4px;
+    font: 10px var(--sz-font-mono);
+}
+.lz-node {
+    background:
+        linear-gradient(
+            155deg,
+            color-mix(in oklch, var(--sz-surface-raised) 40%, transparent),
+            transparent 48%
+        ),
+        var(--sz-glass-fill);
+    border: 1px solid var(--sz-glass-rim);
+    border-radius: 11px;
+    box-shadow:
+        inset 0 1px 0 var(--sz-line-strong),
+        inset 0 -1px 0 var(--sz-glass-line),
+        0 6px 18px color-mix(in oklch, var(--sz-shadow) 9%, transparent);
+    margin-bottom: 16px;
+    position: relative;
+}
+.lz-node-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 12px 8px;
+}
+.lz-node-heading > div {
+    flex: 1;
+    min-width: 0;
+}
+.lz-node-heading h3 {
+    overflow-wrap: anywhere;
+}
+.lz-node-heading p {
+    font-size: 10px;
+    line-height: 1.5;
+    margin-top: 3px;
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.lz-source-icon {
+    width: 30px;
+    height: 30px;
+    object-fit: contain;
+    flex: none;
+}
+.lz-node-icon {
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--sz-control-rim);
+    background: var(--sz-surface-raised);
+    border-radius: 8px;
+    flex: none;
+}
+.lz-node-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 13px 6px;
+}
+.lz-gain {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+.lz-gain input {
+    width: 100%;
+    min-width: 20px;
+    flex: 1;
+}
+.lz-gain output {
+    font: 10px var(--sz-font-mono);
+    width: 44px;
+    text-align: right;
+    white-space: nowrap;
+    flex: none;
+    color: var(--sz-dim);
+}
+.lz-channel-bank {
+    padding: 1px 13px 8px;
+}
+.lz-channel-row {
+    height: 24px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+}
+.lz-channel-label {
+    width: 31px;
+    white-space: nowrap;
+    flex: none;
+    font: 10px var(--sz-font-mono);
+    color: var(--sz-dim);
+}
+.lz-node-foot {
+    padding: 7px 13px 9px;
+    border-top: 1px solid var(--sz-line);
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 10px;
+    color: var(--sz-dim);
+    min-height: 31px;
+    line-height: 1.5;
+}
+.lz-node-foot.attention {
+    align-items: flex-start;
+}
+.lz-node-foot.attention > .dot {
+    margin-top: 4px;
+}
+.lz-node-foot .linkish {
+    margin-left: auto;
+}
+.lz-node-foot .dot {
+    flex: none;
+}
+.lz-socket {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 26px;
+    padding: 0;
+    border-radius: 8px;
+}
+.lz-socket.left {
+    left: -31px;
+}
+.lz-socket.right {
+    right: -31px;
+}
+.lz-socket span {
+    height: 8px;
+    width: 8px;
+    border-radius: 50%;
+    background: var(--sz-panel);
+    border: 1.5px solid var(--sz-dim);
+}
+.lz-socket.connected span {
+    background: var(--sz-dim);
+    box-shadow: inset 0 0 0 2px var(--sz-panel);
+}
+.lz-socket.selected span,
+.lz-socket:hover span {
+    background: var(--sz-accent);
+    border-color: var(--sz-accent);
+}
+.lz-socket:focus-visible {
+    outline: 2px solid var(--sz-focus-ring);
+    outline-offset: 2px;
+}
+.lz-first-pair,
+.lz-first-monitor {
+    margin-top: 0;
+}
+.lz-pair-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 15px 13px;
+    gap: 8px;
+    border-bottom: 1px solid var(--sz-line);
+}
+.lz-pair-title h3 {
+    font-size: 12px;
+}
+.lz-output-rows {
+    padding: 11px 13px 14px;
+}
+.lz-output-rows .lz-channel-row {
+    height: 43px;
+}
+.lz-output-rows .lz-channel-label {
+    font-size: 12px;
+    width: 17px;
+    color: var(--sz-text);
+}
+.lz-more-pairs {
+    margin-top: 15px;
+}
+.lz-more-pairs summary,
+.lz-channel-bank summary {
+    font-size: 11px;
+    color: var(--sz-dim);
+    padding: 7px 0;
+    cursor: pointer;
+}
+.lz-more-pairs > details {
+    margin-top: 7px;
+}
+.lz-canvas-note {
+    font-size: 11px;
+    line-height: 1.8;
+    margin: 20px 2px 0;
+    max-width: 35ch;
+}
+.lz-canvas-note .linkish {
+    font-size: 11px;
+    padding-left: 0;
+}
+.lz-wires {
+    position: absolute;
+    inset: 0;
+    overflow: visible;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+}
+.lz-wires path {
+    fill: none;
+    stroke: var(--sz-dim);
+    stroke-width: 1.5;
+    opacity: 0.75;
+}
+.lz-wires .monitor {
+    stroke: var(--sz-accent);
+    opacity: 0.95;
+}
+.lz-wires .waiting {
+    stroke-dasharray: 4 5;
+    opacity: 0.4;
+}
+.lz-toolbar-status {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+.lz-connection-hint {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    color: var(--sz-text);
+    font-size: 11px;
+}
+.lz-connection-hint > span {
+    text-align: right;
+    text-wrap: balance;
+}
+@media (max-width: 680px) {
+    .lz-toolbar-status {
+        flex-basis: 100%;
+    }
+}
+.lz-connection-list table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.lz-connection-list th {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--sz-dim);
+    font-weight: 550;
+    text-align: left;
+}
+.lz-connection-list th,
+.lz-connection-list td {
+    padding: 12px 10px;
+    border-bottom: 1px solid var(--sz-line);
+}
+.lz-list-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 0 0 20px;
+}
+.lz-list-heading p {
+    font-size: 12px;
+}
+.modal-open .lz-window .dot {
+    animation-play-state: paused;
+}
+.lz-compact .lz-graph {
+    grid-template-columns:
+        minmax(224px, 1.05fr) 64px minmax(208px, 0.95fr)
+        64px minmax(224px, 1fr);
+}
+@media (max-width: 1250px) {
+    .lz-graph {
+        grid-template-columns:
+            minmax(224px, 1.05fr) 64px minmax(208px, 0.95fr)
+            64px minmax(224px, 1fr);
+    }
+    .lz-node-heading {
+        padding: 10px 10px 5px;
+        gap: 7px;
+    }
+    .lz-node-controls {
+        padding: 0 10px 4px;
+        gap: 8px;
+    }
+    .lz-channel-bank {
+        padding: 0 10px 6px;
+    }
+    .lz-source {
+        margin-bottom: 11px;
+    }
+    .lz-canvas-note {
+        font-size: 10px;
+    }
+    .lz-sources > .lz-canvas-note {
+        display: none;
+    }
+    .lz-pair-title {
+        padding: 12px 10px;
+        flex-wrap: wrap;
+    }
+    .lz-output-rows {
+        padding: 9px 10px 12px;
+    }
+    .lz-node-foot {
+        padding: 7px 10px;
+        font-size: 10px;
+    }
+    .lz-socket.left {
+        left: -28px;
+    }
+    .lz-socket.right {
+        right: -28px;
+    }
+    .lz-gain {
+        gap: 7px;
+    }
+    .lz-gain output {
+        width: 39px;
+    }
+}
+@media (max-width: 900px) {
+    .lz-graph,
+    .lz-compact .lz-graph {
+        grid-template-columns:
+            minmax(224px, 1.05fr) 56px minmax(208px, 0.95fr)
+            56px minmax(224px, 1fr);
+    }
+}
+@media (max-width: 680px) {
+    .lz-graph,
+    .lz-compact .lz-graph {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+    }
+    .lz-graph > section {
+        width: 100%;
+    }
+    .lz-first-pair,
+    .lz-first-monitor {
+        margin-top: 0;
+    }
+    .lz-wires,
+    .lz-socket {
+        display: none;
+    }
+    .lz-source .lz-node-foot:not(.attention) {
+        display: flex;
+    }
+    .lz-canvas-note {
+        font-size: 11px;
+        max-width: none;
+    }
+    .lz-channel-row {
+        height: 28px;
+    }
+    .lz-connection-list td,
+    .lz-connection-list th {
+        padding: 9px 3px;
+        font-size: 10px;
+    }
+    .lz-list-heading {
+        align-items: flex-start;
+    }
+    .lz-node-heading {
+        padding: 12px;
+    }
+    .lz-node-controls {
+        padding: 0 12px 8px;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .lz-meter i {
+        transition: none;
+    }
+}
+/* Astra review: consistent spacing, block-owned controls, no detached floating toolbar. */
+.lz-output-controls {
+    padding: 12px;
+    border-top: 1px solid var(--sz-line);
+    display: grid;
+    gap: 12px;
+}
+.lz-output-control-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+}
+.lz-output-control-heading strong {
+    font-weight: 550;
+}
+.lz-output-control-heading > span {
+    color: var(--sz-dim);
+    font-size: 10px;
+}
+.lz-output-gain-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+.lz-output-setting {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--sz-dim);
+    min-height: 24px;
+}
+.lz-output-config {
+    border-top: 1px solid var(--sz-line);
+    padding-top: 8px;
+}
+.lz-output-rows {
+    padding: 12px;
+}
+.lz-output-rows .lz-channel-row {
+    height: 32px;
+}
+.lz-pair-title {
+    padding: 12px;
+    min-height: 48px;
+}
+.lz-list-output {
+    margin-bottom: 24px;
+    border: 1px solid var(--sz-line-strong);
+    border-radius: 11px;
+    background: var(--sz-panel);
+}
+.lz-output-controls.standalone {
+    border-top: 0;
+    grid-template-columns: minmax(180px, 1fr) minmax(150px, 1fr) minmax(
+            140px,
+            0.8fr
+        );
+    gap: 12px 24px;
+}
+.lz-output-controls.standalone .lz-output-control-heading {
+    grid-column: 1/-1;
+}
+.lz-output-controls.standalone .lz-output-config {
+    border-top: 0;
+    padding-top: 0;
+}
+.lz-source-empty {
+    display: grid;
+    justify-items: start;
+    align-content: start;
+    gap: 16px;
+    padding: 24px 0;
+}
+.lz-source-empty h2 {
+    max-width: 12ch;
+}
+.lz-source-empty p {
+    font-size: 12px;
+    line-height: 1.7;
+    max-width: 29ch;
+}
+.lz-node-heading > div {
+    overflow-wrap: normal;
+}
+.lz-node-heading > .chip {
+    flex: none;
+}
+.lz-node-foot {
+    padding: 8px 12px;
+    min-height: 32px;
+    gap: 8px;
+}
+.lz-source .lz-node-foot:not(.attention) > span {
+    font-size: 10px;
+}
+.lz-channel-bank {
+    padding: 0 12px 8px;
+}
+.lz-node-controls {
+    padding: 0 12px 8px;
+    gap: 8px;
+}
+.lz-socket {
+    width: 32px;
+    height: 24px;
+}
+.lz-socket.left {
+    left: -29px;
+}
+.lz-socket.right {
+    right: -29px;
+}
+.lz-column-heading {
+    height: 32px;
+    margin-bottom: 16px;
+}
+@media (max-width: 1250px) {
+    .lz-node-heading {
+        padding: 10px 10px 6px;
+        gap: 6px;
+    }
+    .lz-node-icon,
+    .lz-source-icon {
+        width: 26px;
+        height: 26px;
+    }
+    .lz-node-heading h3 {
+        font-size: 12px;
+    }
+    .lz-node-heading p {
+        font-size: 10px;
+        line-height: 1.4;
+    }
+    .lz-node-controls {
+        padding: 0 10px 6px;
+    }
+    .lz-channel-bank {
+        padding: 0 10px 6px;
+    }
+    .lz-node-foot {
+        padding: 6px 10px;
+        min-height: 28px;
+    }
+    .lz-node {
+        margin-bottom: 12px;
+    }
+    .lz-source .lz-node-foot:not(.attention) {
+        display: flex;
+    }
+    .lz-source .lz-node-foot:not(.attention) > span {
+        font-size: 9px;
+    }
+    .lz-node-controls .lz-gain {
+        gap: 6px;
+    }
+    .lz-gain output {
+        width: 36px;
+    }
+    .lz-level-reading {
+        min-width: 21px;
+        font-size: 9px;
+    }
+    .lz-channel-label {
+        width: 28px;
+    }
+    .lz-output-controls {
+        padding: 12px;
+        gap: 10px;
+    }
+    .lz-first-pair,
+    .lz-first-monitor {
+        margin-top: 0;
+    }
+    .lz-canvas-note {
+        margin-top: 16px;
+    }
+}
+@media (max-width: 900px) and (min-width: 681px) {
+    .lz-graph,
+    .lz-compact .lz-graph {
+        grid-template-columns:
+            minmax(200px, 1.05fr) 48px minmax(190px, 0.95fr)
+            48px minmax(200px, 1fr);
+    }
+}
+@media (max-width: 680px) {
+    .lz-output-controls.standalone {
+        grid-template-columns: 1fr;
+    }
+    .lz-list-output {
+        margin-bottom: 20px;
+    }
+    .lz-node-heading {
+        padding: 12px;
+        gap: 8px;
+    }
+    .lz-source-empty {
+        padding: 20px 0;
+    }
+    .lz-source-empty h2,
+    .lz-source-empty p {
+        max-width: none;
+    }
+}
+@media (max-width: 1250px) {
+    .lz-source .lz-node-foot:not(.attention) {
+        display: none;
+    }
+}
+@media (min-width: 681px) and (max-width: 1250px) {
+    .lz-column-heading {
+        margin-bottom: 12px;
+    }
+    .lz-source {
+        margin-bottom: 8px;
+    }
+}
+
+/* Generous invisible stroke targets keep thin routing lines easy to select. */
+.lz-wires .lz-wire-hit {
+    stroke: transparent;
+    stroke-width: 14px;
+    pointer-events: stroke;
+    cursor: pointer;
+    opacity: 1;
+    outline: none;
+}
+.lz-wire:hover .lz-wire-line,
+.lz-wire.is-selected .lz-wire-line,
+.lz-wire:focus-within .lz-wire-line {
+    stroke: var(--sz-accent);
+    stroke-width: 3px;
+    opacity: 1;
+}
+.lz-wire:focus-within .lz-wire-line {
+    filter: drop-shadow(0 0 3px var(--sz-focus-ring));
+}
+.lz-socket {
+    touch-action: none;
+    cursor: crosshair;
+}
+.lz-drag-wire {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    z-index: 4;
+    pointer-events: none;
+}
+.lz-drag-wire path {
+    fill: none;
+    stroke: var(--sz-dim);
+    stroke-width: 2px;
+    stroke-dasharray: 5 4;
+}
+.lz-drag-wire path.valid {
+    stroke: var(--sz-accent);
+    stroke-dasharray: none;
+}
+.lz-wire-inspector {
+    position: fixed;
+    bottom: 76px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: calc(100vw - 48px);
+    padding: 10px 12px;
+    border: 1px solid var(--sz-glass-rim);
+    border-radius: 12px;
+    background: var(--sz-panel);
+    box-shadow: 0 8px 24px
+        color-mix(in oklch, var(--sz-shadow) 24%, transparent);
+    font-size: 12px;
+}
+.lz-wire-inspector > span {
+    max-width: 40ch;
+}
+@media (max-width: 680px) {
+    .lz-wire-inspector {
+        flex-wrap: wrap;
+        width: calc(100vw - 32px);
+    }
+}
+
+/* Compatible sockets gain a ring without changing their hit area or layout. */
+.lz-socket.can-connect span {
+    border-color: var(--sz-accent);
+    background: var(--sz-panel);
+    box-shadow: 0 0 0 3px var(--sz-accent-soft);
+}
+.lz-socket.can-connect:hover span,
+.lz-socket.can-connect:focus-visible span,
+.lz-socket.drop-target span {
+    background: var(--sz-accent);
+    border-color: var(--sz-accent);
+    box-shadow:
+        0 0 0 4px var(--sz-accent-soft),
+        0 0 0 1px var(--sz-accent);
+    transform: scale(1.25);
+}

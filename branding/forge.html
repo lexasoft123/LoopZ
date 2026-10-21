@@ -1,0 +1,37 @@
+<meta charset="utf-8" /><title>LoopZ icon forge</title>
+<body style="margin:0;background:#0d0c0a;display:grid;place-items:center;min-height:100vh">
+<script type="module">
+import { paint, lit, bore } from './glass.js'
+import { signalPath } from './mark.js'
+
+function signal(ctx, pad, size, small) {
+  const unit = size * .82 / 64
+  const x = pad + size * .09, y = pad + size * .09
+  lit(ctx, size, c => signalPath(c, x, y, unit), { w: small ? .117 : .092 })
+  // Routing terminals belong to the full drawing only. At 16/32 the bold Z
+  // silhouette carries the identity without tiny recesses turning to noise.
+  if (!small) {
+    bore(ctx, x + 14 * unit, y + 11 * unit, size * .015)
+    bore(ctx, x + 50 * unit, y + 53 * unit, size * .015)
+  }
+}
+const MARKS = {
+  full: (ctx, pad, size) => signal(ctx, pad, size, false),
+  small: (ctx, pad, size) => signal(ctx, pad, size, true),
+}
+function render(S, variant = 'full') {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = S
+  paint(canvas.getContext('2d'), S, MARKS[variant])
+  return canvas
+}
+window.drawIcon = (S, variant) => render(S, variant).toDataURL('image/png')
+const sheet = document.createElement('div')
+sheet.style.cssText = 'display:flex;gap:22px;align-items:flex-end;padding:40px'
+for (const S of [256, 128, 64, 48, 32, 16]) {
+  const canvas = render(S, S <= 32 ? 'small' : 'full')
+  canvas.style.width = canvas.style.height = S + 'px'
+  sheet.appendChild(canvas)
+}
+document.body.appendChild(sheet)
+</script>

@@ -5,6 +5,7 @@
 #include <loopz/macos/driver_protocol.hpp>
 #include <xpc/xpc.h>
 #include <atomic>
+#include <array>
 #include <functional>
 #include <vector>
 #include <chrono>
@@ -39,6 +40,21 @@ AudioObjectID device(NSString* text) {
                                       &bytes, &id) == noErr
                ? id
                : 0;
+}
+NSDictionary* routingPlugIn() {
+    CFStringRef bundle = CFSTR("com.lexasoft.loopz.driver.routing");
+    AudioObjectID object = kAudioObjectUnknown;
+    UInt32 bytes = sizeof(object);
+    AudioObjectPropertyAddress address{kAudioHardwarePropertyTranslateBundleIDToPlugIn,
+                                       kAudioObjectPropertyScopeGlobal,
+                                       kAudioObjectPropertyElementMain};
+    const auto error = AudioObjectGetPropertyData(kAudioObjectSystemObject, &address,
+                                                  sizeof(bundle), &bundle, &bytes, &object);
+    return @{
+        @"queryStatus" : @(error),
+        @"registered" : @(error == noErr && object != 0),
+        @"objectID" : @(error == noErr ? object : 0)
+    };
 }
 NSDictionary* bridgeStatus() {
     auto connection = xpc_connection_create_mach_service(loopz::kService, nullptr,
@@ -130,8 +146,52 @@ NSDictionary* snapshot() {
                                    devices.data()))
         return nil;
     NSMutableDictionary<NSString*, NSArray*>* members = [NSMutableDictionary dictionary];
+    NSMutableArray* routing = [NSMutableArray array];
     NSMutableSet* busy = [NSMutableSet set];
     for (auto candidate : devices) {
+        NSString* candidateUID = uid(candidate);
+        if ([candidateUID hasPrefix:@"com.lexasoft.loopz.device."]) {
+            UInt32 live = 0, active = 0, inputLatency = 0;
+            Float64 rate = 0;
+            if (!get(candidate, kAudioDevicePropertyDeviceIsAlive, live) ||
+                !get(candidate, kAudioDevicePropertyDeviceIsRunning, active) ||
+                !get(candidate, kAudioDevicePropertyNominalSampleRate, rate) ||
+                !get(candidate, kAudioDevicePropertyLatency, inputLatency,
+                     kAudioObjectPropertyScopeInput))
+                return nil;
+            std::array<UInt32, 2> channels{};
+            for (size_t direction = 0; direction < channels.size(); ++direction) {
+                const auto scope = direction == 0 ? kAudioObjectPropertyScopeInput
+                                                  : kAudioObjectPropertyScopeOutput;
+                AudioObjectPropertyAddress streams{kAudioDevicePropertyStreams, scope,
+                                                   kAudioObjectPropertyElementMain};
+                UInt32 size = 0;
+                if (AudioObjectGetPropertyDataSize(candidate, &streams, 0, nullptr, &size) ||
+                    size > 64 * sizeof(AudioObjectID) || size % sizeof(AudioObjectID))
+                    return nil;
+                std::vector<AudioObjectID> ids(size / sizeof(AudioObjectID));
+                if (size &&
+                    AudioObjectGetPropertyData(candidate, &streams, 0, nullptr, &size, ids.data()))
+                    return nil;
+                for (const auto stream : ids) {
+                    AudioStreamBasicDescription format{};
+                    if (!get(stream, kAudioStreamPropertyVirtualFormat, format) ||
+                        format.mChannelsPerFrame > 64 ||
+                        channels[direction] > 64 - format.mChannelsPerFrame)
+                        return nil;
+                    channels[direction] += format.mChannelsPerFrame;
+                }
+            }
+            [routing addObject:@{
+                @"uid" : candidateUID,
+                @"alive" : @(live != 0),
+                @"running" : @(active != 0),
+                @"sampleRate" : @(rate),
+                @"inputChannels" : @(channels[0]),
+                @"outputChannels" : @(channels[1]),
+                @"inputLatencyFrames" : @(inputLatency)
+            }];
+        }
         AudioClassID type = 0;
         if (!get(candidate, kAudioObjectPropertyClass, type))
             return nil;
@@ -157,24 +217,32 @@ NSDictionary* snapshot() {
             [name isEqualToString:uid(system)])
             [busy addObject:name];
     }
-    std::function<bool(NSString*, NSMutableSet*)> contains = [&](NSString* name,
-                                                                 NSMutableSet* visited) {
-        if ([name isEqualToString:@(loopz::kDeviceUID)])
-            return true;
-        if ([visited containsObject:name])
-            return false;
-        [visited addObject:name];
-        for (NSString* member in members[name])
-            if (contains(member, visited))
+    std::function<bool(NSString*, NSMutableSet*, bool)> contains =
+        [&](NSString* name, NSMutableSet* visited, bool routingOnly) {
+            if (routingOnly ? [name hasPrefix:@"com.lexasoft.loopz.device."]
+                            : [name isEqualToString:@(loopz::kDeviceUID)])
                 return true;
-        return false;
-    };
+            if ([visited containsObject:name])
+                return false;
+            [visited addObject:name];
+            for (NSString* member in members[name])
+                if (contains(member, visited, routingOnly))
+                    return true;
+            return false;
+        };
     NSMutableArray* blocking = [NSMutableArray array];
+    NSMutableArray* routingBlocking = [NSMutableArray array];
     for (NSString* name in busy)
-        if (contains(name, [NSMutableSet set]))
+        if (contains(name, [NSMutableSet set], false))
             [blocking addObject:name];
+    for (NSString* name in busy)
+        if (contains(name, [NSMutableSet set], true))
+            [routingBlocking addObject:name];
     return @{
         @"driverTiming" : timing,
+        @"routingDevices" : routing,
+        @"routingPlugIn" : routingPlugIn(),
+        @"routingBlockingRoutes" : routingBlocking,
         @"clockPeriodFrames" : @(period),
         @"inputLatencyFrames" : @(latency),
         @"loopzBlockingRoutes" : blocking,
@@ -253,7 +321,8 @@ int main(int argc, char** argv) {
             else
                 return 2;
         }
-        if (guardUID.empty() || guardUID == loopz::kDeviceUID || stopFile.empty() ||
+        if (guardUID.empty() || guardUID == loopz::kDeviceUID ||
+            guardUID.starts_with("com.lexasoft.loopz.device.") || stopFile.empty() ||
             report.empty() || !std::isfinite(seconds) || seconds < 1 || seconds > 300)
             return 2;
         const auto id = device(@(guardUID.c_str()));

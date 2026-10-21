@@ -1,4 +1,5 @@
-# Narrow LoopZ composition. Upstream source bytes remain unchanged and hashed.
+# Narrow LoopZ composition. The upstream archive remains unchanged and hashed;
+# one explicitly pinned build overlay reduces graph containment overhead.
 set(SINGZ_ROOT "${PROJECT_SOURCE_DIR}/vendor/singz")
 include("${SINGZ_ROOT}/cmake/SingZRealtimeTarget.cmake")
 add_library(singz_native_build_options INTERFACE)
@@ -16,9 +17,15 @@ set(ZDSP_SOURCES src/api/contracts.cpp src/runtime/realtime_arena.cpp
   src/runtime/streaming_window_source.cpp src/runtime/scheduled_cue_source.cpp
   src/runtime/scheduled_gain.cpp src/runtime/graph_compiler.cpp src/runtime/graph_runner.cpp)
 list(TRANSFORM ZDSP_SOURCES PREPEND "${SINGZ_ROOT}/zdsp/")
+include("${CMAKE_CURRENT_LIST_DIR}/graph_containment.cmake")
+loopz_singz_containment_source(SINGZ_CONTAINED_RUNNER)
+list(REMOVE_ITEM ZDSP_SOURCES "${SINGZ_ROOT}/zdsp/src/runtime/graph_runner.cpp")
+list(APPEND ZDSP_SOURCES "${SINGZ_CONTAINED_RUNNER}")
 add_library(zdsp_runtime STATIC ${ZDSP_SOURCES})
 add_library(SingZ::zdsp_runtime ALIAS zdsp_runtime)
 target_link_libraries(zdsp_runtime PUBLIC zdsp_api)
+target_include_directories(zdsp_runtime PRIVATE "${SINGZ_ROOT}/zdsp/src/runtime")
+set_property(TARGET zdsp_runtime PROPERTY LOOPZ_RUNNER_SOURCE "${SINGZ_CONTAINED_RUNNER}")
 singz_configure_realtime_target(zdsp_runtime)
 set_target_properties(zdsp_runtime PROPERTIES POSITION_INDEPENDENT_CODE YES
   CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES)

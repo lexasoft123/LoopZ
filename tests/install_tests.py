@@ -270,6 +270,15 @@ class InstallTests(unittest.TestCase):
             driver_host.mapped_image(valid, 124, binary, {"LoopZAudio.driver"})
         with self.assertRaises(RuntimeError):
             driver_host.mapped_image(b"p123\0", 123, binary, {"LoopZAudio.driver"})
+        another = f"fmem\0D{info.st_dev:x}\0i{info.st_ino + 1}\0n{name} (deleted)\0".encode()
+        with self.assertRaisesRegex(RuntimeError, "Another LoopZ driver image"):
+            driver_host.mapped_image(valid + another, 123, binary, {"LoopZAudio.driver"})
+        self.assertEqual(
+            driver_host.mapped_image(
+                valid + another, 123, binary, {"LoopZAudio.driver"}, allow_other_images=True
+            )["inode"],
+            info.st_ino,
+        )
 
     def test_apple_identity_uses_a_requirement_expression(self):
         import driver_host

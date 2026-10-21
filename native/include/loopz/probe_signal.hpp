@@ -7,6 +7,7 @@
 #include <algorithm>
 
 namespace loopz::probe {
+static_assert(std::atomic<double>::is_always_lock_free);
 // A time-coded, channel-specific marker. The code changes every 10 ms and
 // never repeats on the time scale of this test. Its clock is the caller's monotonic host-time domain.
 inline double marker(uint64_t ns, unsigned channel) noexcept {
@@ -29,18 +30,39 @@ struct Window {
 class StreamCheck {
   public:
     double rate{48000}, frequencies[2]{1100, 2200};
+    bool requireMarker{true};
+    // Set before callbacks start when a controller explicitly opens the
+    // measurement window after client preparation. Every measured sample counts.
+    bool skipWarmup{false};
     std::atomic<uint64_t> timestampErrors{0}, queueOverruns{0};
+    std::atomic<uint64_t> invalidTimestamps{0}, forwardTimestampJumps{0}, backwardTimestampJumps{0};
+    std::atomic<double> maximumForwardTimestampFrames{0}, maximumBackwardTimestampFrames{0};
+    std::atomic<uint64_t> maximumZeroRun{0};
     uint64_t windows{0}, badWindows{0};
     double minimumAmplitude{1}, maximumCross{0}, minimumCorrelation{1};
     double minimumDelayMs{1000}, maximumDelayMs{0};
     void append(const float* left, const float* right, uint32_t frames, uint64_t ns,
                 double sampleTime, bool valid) noexcept {
-        if (!valid || (havePrevious_ && std::fabs(sampleTime - expectedSample_) > 0.5))
+        valid =
+            valid && std::isfinite(sampleTime) && std::abs(sampleTime) <= double(uint64_t{1} << 53);
+        if (!valid) {
             timestampErrors.fetch_add(1);
+            invalidTimestamps.fetch_add(1);
+        } else if (havePrevious_ && std::fabs(sampleTime - expectedSample_) > 0.5) {
+            timestampErrors.fetch_add(1);
+            const auto jump = sampleTime - expectedSample_;
+            if (jump > 0) {
+                forwardTimestampJumps.fetch_add(1);
+                maximum(maximumForwardTimestampFrames, jump);
+            } else {
+                backwardTimestampJumps.fetch_add(1);
+                maximum(maximumBackwardTimestampFrames, -jump);
+            }
+        }
         expectedSample_ = sampleTime + frames;
-        havePrevious_ = true;
+        havePrevious_ = valid;
         for (uint32_t i = 0; i < frames; ++i, ++seen_) {
-            if (seen_ < static_cast<uint64_t>(rate))
+            if (!skipWarmup && seen_ < static_cast<uint64_t>(rate))
                 continue;
             if (write_.load(std::memory_order_relaxed) - read_.load(std::memory_order_acquire) >=
                 queue_.size()) {
@@ -51,6 +73,9 @@ class StreamCheck {
             const uint64_t time = ns + static_cast<uint64_t>((i + 0.5) * 1e9 / rate);
             const double value[2]{left[i], right[i]};
             for (unsigned c = 0; c < 2; ++c) {
+                zeroRun_[c] = std::abs(value[c]) < 1e-12 ? zeroRun_[c] + 1 : 0;
+                if (zeroRun_[c] > maximumZeroRun.load(std::memory_order_relaxed))
+                    maximumZeroRun.store(zeroRun_[c], std::memory_order_relaxed);
                 const double angle =
                     2 * std::numbers::pi_v<double> * frequencies[c] * sampleTime / rate +
                     2 * std::numbers::pi_v<double> * frequencies[c] * i / rate;
@@ -90,6 +115,8 @@ class StreamCheck {
                 minimumAmplitude = std::min(minimumAmplitude, amplitude);
                 maximumCross = std::max(maximumCross, cross);
                 good &= amplitude > 0.07 && amplitude < 0.13 && cross < 0.01;
+                if (!requireMarker)
+                    continue;
                 double best = -1;
                 unsigned delay = 0;
                 for (unsigned ms = 0; ms <= 200; ++ms) {
@@ -120,11 +147,18 @@ class StreamCheck {
     }
 
   private:
+    static void maximum(std::atomic<double>& target, double candidate) noexcept {
+        auto previous = target.load(std::memory_order_relaxed);
+        while (candidate > previous &&
+               !target.compare_exchange_weak(previous, candidate, std::memory_order_relaxed)) {
+        }
+    }
     std::array<Window, 4> queue_{};
     std::atomic<uint64_t> write_{0}, read_{0};
     uint64_t seen_{0}, firstPointNs_{0};
     uint32_t point_{0}, pointFrames_{0};
     double sums_[2]{}, expectedSample_{0};
+    uint64_t zeroRun_[2]{};
     bool havePrevious_{false};
 };
 } // namespace loopz::probe

@@ -1,0 +1,94 @@
+/* A token-bound extension for the web kit's missing binary switch primitive. */
+.lz-switch {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 34px;
+    height: 28px;
+    padding: 0;
+    border-radius: 999px;
+    cursor: pointer;
+}
+.lz-switch-track {
+    position: relative;
+    display: block;
+    width: 28px;
+    height: 16px;
+    border-radius: 999px;
+    background: var(--sz-control-fill);
+    border: 1px solid var(--sz-control-rim);
+    box-shadow: inset 0 1px 2px
+        color-mix(in srgb, var(--sz-shadow) 14%, transparent);
+    transition:
+        background 0.16s,
+        border-color 0.16s;
+}
+.lz-switch-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--sz-dim);
+    transition:
+        transform 0.16s,
+        background 0.16s;
+}
+.lz-switch[aria-checked="true"] .lz-switch-track {
+    background: color-mix(
+        in oklch,
+        var(--sz-accent) 18%,
+        var(--sz-control-fill)
+    );
+    border-color: color-mix(
+        in oklch,
+        var(--sz-accent) 42%,
+        var(--sz-control-rim)
+    );
+}
+.lz-switch[aria-checked="true"] .lz-switch-thumb {
+    transform: translateX(12px);
+    background: color-mix(in oklch, var(--sz-accent) 60%, var(--sz-text));
+    box-shadow: 0 1px 3px color-mix(in oklch, var(--sz-shadow) 22%, transparent);
+}
+.lz-switch:hover:not(:disabled) .lz-switch-track {
+    border-color: var(--sz-text);
+}
+.lz-switch:focus-visible {
+    outline: 2px solid var(--sz-focus-ring);
+    outline-offset: 2px;
+}
+.lz-switch:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+.lz-control-icon {
+    width: 16px;
+    height: 16px;
+    display: block;
+    flex: none;
+}
+.lz-mute-icon {
+    display: block;
+    position: relative;
+    width: 15px;
+    height: 15px;
+}
+.lz-mute-icon > .lz-mute-slash {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+@media (pointer: coarse) {
+    .lz-switch {
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .lz-switch-track,
+    .lz-switch-thumb {
+        transition: none;
+    }
+}
