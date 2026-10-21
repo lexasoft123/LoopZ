@@ -1,7 +1,10 @@
+import { createTourDemoState } from "./tour-demo.js";
 import StartupTour from "./components/StartupTour.jsx";
 import { tourSeen, rememberTour } from "./tour.js";
 import React, {
     useEffect,
+    useMemo,
+    useCallback,
     useRef,
     useState,
     useSyncExternalStore,
@@ -33,8 +36,36 @@ import { Switch } from "./components/Switch.jsx";
 import { GearIcon } from "./components/ControlIcons.jsx";
 import { installationCondition } from "./installation.js";
 import { backupRecoveryNotice } from "./document-recovery.js";
-export default function App({ state, send, transport, refresh }) {
-    useSyncExternalStore(subscribeLocale, getLocale);
+export default function App({
+    state: liveState,
+    send: sendLive,
+    transport: liveTransport,
+    refresh,
+}) {
+    const locale = useSyncExternalStore(subscribeLocale, getLocale);
+    const [tourOpen, setTourOpen] = useState(false);
+    const demoState = useMemo(
+        () => (tourOpen ? createTourDemoState(liveState.theme) : null),
+        [tourOpen, liveState.theme, locale],
+    );
+    const state = demoState || liveState;
+    // Even programmatic controls or native menu events cannot write demo IDs to
+    // the real graph. Read-only update status and menu context stay available.
+    const send = useCallback(
+        (action) => (tourOpen ? Promise.resolve(false) : sendLive(action)),
+        [tourOpen, sendLive],
+    );
+    const transport = useCallback(
+        (request) => {
+            if (
+                tourOpen &&
+                !["updates", "menu-context"].includes(request.operation)
+            )
+                return Promise.resolve({ ok: false, code: "demo-preview" });
+            return liveTransport(request);
+        },
+        [tourOpen, liveTransport],
+    );
     const releaseUpdates = useReleaseUpdates(transport);
     const palette = useAppearance(state.theme);
     const [view, setView] = useState("routing");
@@ -43,12 +74,13 @@ export default function App({ state, send, transport, refresh }) {
     const [sidebar, setSidebar] = useState(false);
     const [message, setMessage] = useState("");
     const [showWelcome, setShowWelcome] = useState(() => !tourSeen());
-    const [tourOpen, setTourOpen] = useState(false);
+    const tourReturnView = useRef("routing");
     const dismissWelcome = () => {
         rememberTour();
         setShowWelcome(false);
     };
     const startTour = () => {
+        tourReturnView.current = view;
         setModal(null);
         setSidebar(false);
         setView("routing");
@@ -57,6 +89,7 @@ export default function App({ state, send, transport, refresh }) {
     const finishTour = () => {
         dismissWelcome();
         setTourOpen(false);
+        setView(tourReturnView.current);
     };
     const returnFocus = useRef(null);
     const d = selected(state);
@@ -71,6 +104,7 @@ export default function App({ state, send, transport, refresh }) {
         ],
     );
     const open = (next, invoker) => {
+        if (tourOpen) return;
         returnFocus.current = invoker || document.activeElement;
         send({
             type: "clear-error",
@@ -458,6 +492,13 @@ export default function App({ state, send, transport, refresh }) {
                 </aside>
                 <main className="lz-main">
                     <div className="lz-recovery">
+                        {tourOpen && (
+                            <Banner heading={t("Demo project")}>
+                                {t(
+                                    "Example levels only. No audio is captured or played, and your own project is unchanged.",
+                                )}
+                            </Banner>
+                        )}
                         {showWelcome && !tourOpen && (
                             <Banner
                                 heading={t("New to LoopZ?")}
@@ -760,11 +801,13 @@ export default function App({ state, send, transport, refresh }) {
                             }
                         />
                         <span>
-                            {!state.connected
-                                ? t("Reconnecting")
-                                : d
-                                  ? health(state, d)
-                                  : t("No virtual devices")}
+                            {tourOpen
+                                ? t("Demo project")
+                                : !state.connected
+                                  ? t("Reconnecting")
+                                  : d
+                                    ? health(state, d)
+                                    : t("No virtual devices")}
                         </span>
                     </div>
                     <div className="lz-footer-actions">
@@ -820,14 +863,7 @@ export default function App({ state, send, transport, refresh }) {
                 />
             )}
             {tourOpen && (
-                <StartupTour
-                    hasDevice={!!d}
-                    hasPassThrough={
-                        !!d?.sources.some((source) => source.kind === "pass")
-                    }
-                    deviceName={d?.name || ""}
-                    onFinish={finishTour}
-                />
+                <StartupTour deviceName={d?.name || ""} onFinish={finishTour} />
             )}
             <div className="sr-only" role="status" aria-live="polite">
                 {message || state.error}

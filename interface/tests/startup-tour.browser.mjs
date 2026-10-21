@@ -80,6 +80,20 @@ try {
     await tour
         .getByRole("heading", { name: "Your sound, in one place" })
         .waitFor();
+    assert.equal(
+        await page.getByText("Demo microphone", { exact: true }).count(),
+        1,
+    );
+    assert.equal(
+        await page.getByText("Demo headphones", { exact: true }).count(),
+        1,
+    );
+    assert.equal(
+        await page
+            .getByRole("heading", { name: "Demo Mix", exact: true })
+            .count(),
+        1,
+    );
     await page.screenshot({ path: new URL("welcome.png", output).pathname });
     await tour.getByRole("button", { name: "Next", exact: true }).click();
     await tour
@@ -155,6 +169,7 @@ try {
     await tour.getByRole("heading", { name: "Help is always here" }).waitFor();
     await tour.getByRole("button", { name: "Got it", exact: true }).click();
     await tour.waitFor({ state: "detached" });
+    await page.getByRole("button", { name: "Routing", exact: true }).click();
     // Opening contextual help must not alter the graph, even while meters poll.
     await page.getByText("What is Pass-through?", { exact: true }).click();
     await page
@@ -174,10 +189,25 @@ try {
     await page
         .getByRole("button", { name: "Take a tour", exact: true })
         .click();
-    await tour.getByRole("button", { name: "Next", exact: true }).click();
-    await tour.getByRole("button", { name: "Next", exact: true }).click();
+    assert.equal(
+        await page.getByText("Demo headphones", { exact: true }).count(),
+        1,
+    );
+    for (let i = 0; i < 7; ++i)
+        await tour.getByRole("button", { name: "Next", exact: true }).click();
+    await page.screenshot({
+        path: new URL("empty-workspace-demo.png", output).pathname,
+    });
     await tour.getByRole("heading", { name: "Help is always here" }).waitFor();
     await tour.getByRole("button", { name: "Got it", exact: true }).click();
+    await tour.waitFor({ state: "detached" });
+    assert.equal(
+        await page.getByText("Demo headphones", { exact: true }).count(),
+        0,
+    );
+    await page
+        .getByRole("heading", { name: "Connect your sound.", exact: true })
+        .waitFor();
     assert(
         calls.every((request) =>
             ["state", "updates", "menu-context"].includes(request.operation),

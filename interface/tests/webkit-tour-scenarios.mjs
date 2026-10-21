@@ -23,6 +23,8 @@ export const beforeTourReload = `${helpers}
 check(!!button("Take a tour"), "First-run invitation is available");
 button("Take a tour").click();
 await until(() => document.querySelector("dialog.lz-tour[open]"));
+check(!!document.querySelector('[aria-label="Select Demo Mix"]'), "Demo device is displayed instead of the real project");
+check(document.body.textContent.includes("Demo headphones"), "Demo includes a monitor");
 check(document.querySelector("dialog.lz-tour").contains(document.activeElement), "Tour receives focus in native WebKit");
 await nativeKey("n", true);
 window.dispatchEvent(new CustomEvent("loopz-history", {detail: "undo"}));
@@ -33,6 +35,7 @@ await until(() => document.querySelector(".lz-tour svg > rect[stroke]"));
 check(!!document.querySelector(".lz-tour svg > rect[stroke]"), "The real create-device control is highlighted");
 await nativeKey("Escape");
 await until(() => !document.querySelector("dialog.lz-tour"));
+check(!!document.querySelector('[aria-label="Select Second Mix"]'), "Real project returns after exiting demo");
 check(localStorage.getItem("loopz-tour-v1") === "seen", "Escape remembers dismissal");
 return {checks};
 `;

@@ -3,19 +3,14 @@ import { Button } from "@singz/ui";
 import { t } from "../i18n.js";
 import { tourPlacement, tourSteps } from "../tour.js";
 
-export default function StartupTour({
-    hasDevice,
-    hasPassThrough,
-    deviceName,
-    onFinish,
-}) {
+export default function StartupTour({ deviceName, onFinish }) {
     const dialog = useRef(null);
     const card = useRef(null);
     const [index, setIndex] = useState(0);
     const [layout, setLayout] = useState({ rect: null, placement: {} });
     // Freeze the route through the tour. Background audio snapshots must not
     // reset steps or cause extra layout measurements while meters update.
-    const [steps] = useState(() => tourSteps(hasDevice, hasPassThrough));
+    const [steps] = useState(tourSteps);
     const step = steps[index];
     const body = t(step.body, { name: deviceName });
     const title = t(step.title);

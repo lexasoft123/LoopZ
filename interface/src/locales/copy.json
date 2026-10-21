@@ -468,5 +468,21 @@
     "Sound from apps using this device as their speaker": [
         "Звук приложений, выбравших это устройство как динамик",
         "将此设备选作扬声器的应用的声音"
+    ],
+    "Demo Mix": ["Демо-микс", "演示混音"],
+    "Demo microphone": ["Демо-микрофон", "演示麦克风"],
+    "Demo headphones": ["Демо-наушники", "演示耳机"],
+    "Demo project": ["Демо-проект", "演示项目"],
+    "Example levels only. No audio is captured or played, and your own project is unchanged.": [
+        "Уровни показаны для примера. Звук не записывается и не воспроизводится, ваш проект не изменяется.",
+        "电平仅为示例。不会采集或播放音频，您的项目保持不变。"
+    ],
+    "Explore this demo mix with a microphone, Pass-through and headphones. The example shows how sound flows into a virtual device and out to other apps. No audio is captured or played. Your own project stays unchanged.": [
+        "Изучите демо-микс с микрофоном, сквозным каналом и наушниками. Пример показывает, как звук поступает в виртуальное устройство и передаётся другим приложениям. Звук не записывается и не воспроизводится. Ваш проект не изменяется.",
+        "通过包含麦克风、直通和耳机的演示混音，了解声音如何进入虚拟设备并传递到其他应用。不会采集或播放音频。您的项目保持不变。"
+    ],
+    "Settings contains audio setup, buffer size and language. Replay this demo here whenever you need a refresher. Choose Got it to return to your own workspace.": [
+        "В настройках доступны настройка звука, размер буфера и язык. Здесь можно повторить знакомство с приложением. Нажмите «Понятно», чтобы вернуться к своему проекту.",
+        "设置中包含音频设置、缓冲区大小和语言。您可以随时在此重看演示。选择“知道了”返回自己的工作区。"
     ]
 }
