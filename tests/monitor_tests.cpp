@@ -16,30 +16,39 @@ namespace {
 thread_local bool trackHeap = false;
 thread_local unsigned heapEvents = 0;
 } // namespace
-void* operator new(std::size_t size) {
+// Keep allocation instrumentation out of line: GCC otherwise diagnoses the
+// malloc/free implementation of matching replacement new/delete as a mismatch.
+#if defined(__GNUC__)
+#define LOOPZ_HEAP_HOOK __attribute__((noinline))
+#else
+#define LOOPZ_HEAP_HOOK
+#endif
+LOOPZ_HEAP_HOOK void* operator new(std::size_t size) {
     if (trackHeap)
         ++heapEvents;
     if (auto* pointer = std::malloc(size ? size : 1))
         return pointer;
     throw std::bad_alloc();
 }
-void* operator new[](std::size_t size) {
+LOOPZ_HEAP_HOOK void* operator new[](std::size_t size) {
     return ::operator new(size);
 }
-void operator delete(void* pointer) noexcept {
+LOOPZ_HEAP_HOOK void operator delete(void* pointer) noexcept {
     if (trackHeap && pointer)
         ++heapEvents;
     std::free(pointer);
 }
-void operator delete[](void* pointer) noexcept {
+LOOPZ_HEAP_HOOK void operator delete[](void* pointer) noexcept {
     ::operator delete(pointer);
 }
-void operator delete(void* pointer, std::size_t) noexcept {
+LOOPZ_HEAP_HOOK void operator delete(void* pointer, std::size_t) noexcept {
     ::operator delete(pointer);
 }
-void operator delete[](void* pointer, std::size_t) noexcept {
+LOOPZ_HEAP_HOOK void operator delete[](void* pointer, std::size_t) noexcept {
     ::operator delete(pointer);
 }
+
+#undef LOOPZ_HEAP_HOOK
 
 namespace {
 using namespace loopz;

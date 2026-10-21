@@ -17,30 +17,39 @@ namespace {
 thread_local bool watchHeap = false;
 thread_local unsigned heapEvents = 0;
 } // namespace
-void* operator new(size_t count) {
+// Keep allocation instrumentation out of line: GCC otherwise diagnoses the
+// malloc/free implementation of matching replacement new/delete as a mismatch.
+#if defined(__GNUC__)
+#define LOOPZ_HEAP_HOOK __attribute__((noinline))
+#else
+#define LOOPZ_HEAP_HOOK
+#endif
+LOOPZ_HEAP_HOOK void* operator new(size_t count) {
     if (watchHeap)
         ++heapEvents;
     if (auto* value = std::malloc(count ? count : 1))
         return value;
     throw std::bad_alloc();
 }
-void* operator new[](size_t count) {
+LOOPZ_HEAP_HOOK void* operator new[](size_t count) {
     return ::operator new(count);
 }
-void operator delete(void* value) noexcept {
+LOOPZ_HEAP_HOOK void operator delete(void* value) noexcept {
     if (watchHeap && value)
         ++heapEvents;
     std::free(value);
 }
-void operator delete[](void* value) noexcept {
+LOOPZ_HEAP_HOOK void operator delete[](void* value) noexcept {
     ::operator delete(value);
 }
-void operator delete(void* value, size_t) noexcept {
+LOOPZ_HEAP_HOOK void operator delete(void* value, size_t) noexcept {
     ::operator delete(value);
 }
-void operator delete[](void* value, size_t) noexcept {
+LOOPZ_HEAP_HOOK void operator delete[](void* value, size_t) noexcept {
     ::operator delete(value);
 }
+#undef LOOPZ_HEAP_HOOK
+
 namespace {
 using namespace loopz;
 void close(float value, float expected) {
@@ -130,7 +139,7 @@ void historyChannelsAndRecovery() {
         close(output.write[count - 1][1], 0);
         auto invalid = output.output();
         invalid.capacityFrames = 2;
-        std::fill_n(output.write[0], 256, 9);
+        std::fill_n(output.write[0], 256, 9.0f);
         assert(!history.read(4000000000, 48000, invalid, 64, a).online);
         close(output.write[0][0], 0);
         close(output.write[0][1], 0);

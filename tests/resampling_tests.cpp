@@ -303,7 +303,7 @@ void historyReadFailureDiagnostics() {
     assert(reason(history.readDiagnostics(), AudioHistoryMissingReason::InvalidRequest) == 64);
     // Stop must preserve lifetime evidence; valid silence must not be counted
     // as missing audio. Independent readers update the optional counters safely.
-    std::fill(input.values.begin(), input.values.end(), 0);
+    std::fill(input.values.begin(), input.values.end(), 0.0f);
     history.stop();
     assert(history.append(input.input(), 256, origin + 1000000000, rate, 0, true));
     const auto before = history.readDiagnostics();
@@ -463,7 +463,7 @@ void stridedOutputAndInvalidRequests() {
 }
 void benchmark(bool callbackAnchors = false, double driftPpm = 0) {
     for (uint32_t channels : {2U, 8U, 64U})
-        for (const auto rates : {std::pair{48000U, 48000U}, std::pair{48000U, 44100U},
+        for (const auto& rates : {std::pair{48000U, 48000U}, std::pair{48000U, 44100U},
                                  std::pair{96000U, 48000U}, std::pair{192000U, 8000U}}) {
             Fixture fixture(channels, rates.first, 1000);
             if (callbackAnchors) {

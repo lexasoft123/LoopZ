@@ -114,8 +114,8 @@ void correlatedSignalAndIndependentReaders() {
             inverse[i] = -input[i];
         }
         const auto time = frameNs(originFrame + frame, 48000);
-        assert(physical->append({inputPlane, 64}, 64, time, 48000, frame, true));
-        assert(application->append({inversePlane, 64}, 64, time, 48000, frame, true));
+        assert(physical->append({inputPlane, 64}, 64, time, 48000, static_cast<double>(frame), true));
+        assert(application->append({inversePlane, 64}, 64, time, 48000, static_cast<double>(frame), true));
     }
     auto mix = device("mix");
     source(mix, "mic", SourceKind::InputDevice, "hardware");

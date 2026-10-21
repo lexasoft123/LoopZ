@@ -175,7 +175,7 @@ void partitioningAndWideChannels() {
     }
 }
 void firstImpulseAndReset() {
-    for (const auto rates : {std::pair{48000U, 48000U}, std::pair{48000U, 44100U},
+    for (const auto& rates : {std::pair{48000U, 48000U}, std::pair{48000U, 44100U},
                              std::pair{44100U, 48000U}, std::pair{192000U, 8000U}})
         for (uint64_t origin : {uint64_t{0}, uint64_t{1000000000031}}) {
             const auto delay = CausalResampler::delayFrames(rates.first, rates.second);
