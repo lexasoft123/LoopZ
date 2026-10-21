@@ -402,10 +402,6 @@
         "Создайте виртуальное устройство",
         "创建虚拟设备"
     ],
-    "1. Choose what goes in": [
-        "1. Выберите источники звука",
-        "1. 选择输入声音"
-    ],
     "Use + in Sources to add an app, microphone, audio interface or another virtual device. The meters show whether each channel is receiving sound.": [
         "Нажмите + в разделе «Источники», чтобы добавить приложение, микрофон, аудиоинтерфейс или другое виртуальное устройство. Индикаторы показывают, поступает ли звук в каждый канал.",
         "使用“来源”中的 + 添加应用、麦克风、音频接口或其他虚拟设备。电平表显示每个通道是否收到声音。"
@@ -415,14 +411,9 @@
         "Сквозной канал принимает звук приложений, в которых ваше устройство LoopZ выбрано как динамик или выход. Для микрофона или инструмента он не нужен. Также можно добавить само приложение как источник.",
         "直通接收将 LoopZ 设备选作扬声器或输出的应用的音频。如果只使用麦克风或乐器，可以将它移除。也可以直接将应用添加为来源。"
     ],
-    "2. Connect your channels": ["2. Соедините каналы", "2. 连接通道"],
     "Drag a circle beside a source channel to a circle beside an output channel. Connected sounds are mixed together. Channels 1 and 2 normally carry left and right stereo sound.": [
         "Перетащите кружок рядом с каналом источника на кружок рядом с выходным каналом. Соединённые звуки смешиваются. Каналы 1 и 2 обычно передают левый и правый стереоканалы.",
         "将来源通道旁的圆圈拖到输出通道旁的圆圈。连接的声音会混合在一起。通道 1 和 2 通常分别传送左、右声道。"
-    ],
-    "3. Hear your mix, if you want": [
-        "3. Слушайте микс, если нужно",
-        "3. 按需监听混音"
     ],
     "Add headphones or speakers under Monitors to listen to the mix. Monitoring is optional: other apps still receive your virtual device without a monitor. Use headphones with a microphone to avoid feedback.": [
         "Добавьте наушники или колонки в разделе «Мониторы», чтобы слышать микс. Это необязательно: другие приложения получают звук и без монитора. С микрофоном лучше использовать наушники, чтобы избежать обратной связи.",
@@ -484,5 +475,8 @@
     "Settings contains audio setup, buffer size and language. Replay this demo here whenever you need a refresher. Choose Got it to return to your own workspace.": [
         "В настройках доступны настройка звука, размер буфера и язык. Здесь можно повторить знакомство с приложением. Нажмите «Понятно», чтобы вернуться к своему проекту.",
         "设置中包含音频设置、缓冲区大小和语言。您可以随时在此重看演示。选择“知道了”返回自己的工作区。"
-    ]
+    ],
+    "Choose what goes in": ["Выберите источники звука", "选择输入声音"],
+    "Connect your channels": ["Соедините каналы", "连接通道"],
+    "Hear your mix, if you want": ["Слушайте микс, если нужно", "按需监听混音"]
 }

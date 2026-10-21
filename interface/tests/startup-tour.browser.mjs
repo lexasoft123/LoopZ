@@ -102,7 +102,7 @@ try {
     await tour.locator("svg > rect[stroke]").waitFor();
     await tour.getByRole("button", { name: "Next", exact: true }).click();
     await tour
-        .getByRole("heading", { name: "1. Choose what goes in" })
+        .getByRole("heading", { name: "Choose what goes in" })
         .waitFor();
     await page.screenshot({ path: new URL("sources.png", output).pathname });
     await tour.getByRole("button", { name: "Next", exact: true }).click();
@@ -111,12 +111,12 @@ try {
         .waitFor();
     await tour.getByRole("button", { name: "Back", exact: true }).click();
     await tour
-        .getByRole("heading", { name: "1. Choose what goes in" })
+        .getByRole("heading", { name: "Choose what goes in" })
         .waitFor();
     await tour.getByRole("button", { name: "Next", exact: true }).click();
     await tour.getByRole("button", { name: "Next", exact: true }).click();
     await tour
-        .getByRole("heading", { name: "2. Connect your channels" })
+        .getByRole("heading", { name: "Connect your channels" })
         .waitFor();
     await page.screenshot({
         path: new URL("connections.png", output).pathname,

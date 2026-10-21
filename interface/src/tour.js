@@ -34,7 +34,7 @@ export function tourSteps() {
     steps.push(
         {
             target: '[data-od-id="sources"] .lz-column-heading',
-            title: "1. Choose what goes in",
+            title: "Choose what goes in",
             body: "Use + in Sources to add an app, microphone, audio interface or another virtual device. The meters show whether each channel is receiving sound.",
         },
         {
@@ -44,12 +44,12 @@ export function tourSteps() {
         },
         {
             target: '[data-od-id="outputs"] .lz-first-pair .lz-output-rows',
-            title: "2. Connect your channels",
+            title: "Connect your channels",
             body: "Drag a circle beside a source channel to a circle beside an output channel. Connected sounds are mixed together. Channels 1 and 2 normally carry left and right stereo sound.",
         },
         {
             target: '[data-od-id="monitors"] .lz-column-heading',
-            title: "3. Hear your mix, if you want",
+            title: "Hear your mix, if you want",
             body: "Add headphones or speakers under Monitors to listen to the mix. Monitoring is optional: other apps still receive your virtual device without a monitor. Use headphones with a microphone to avoid feedback.",
         },
         {
