@@ -42,7 +42,7 @@ void mappingRoundTrip() {
     auto message = encodeDeviceTransports(pool.devices(), 17);
     auto remote = DeviceTransportSnapshot::decode(message);
     assert(remote.revision == 17 && remote.devices.size() == 2);
-    assert(remote.devices[0].id() == "studio" && remote.devices[0].name() == "Studio 音");
+    assert(remote.devices[0].id() == "studio" && remote.devices[0].name() == "LoopZ: Studio 音");
     assert(!remote.devices[0].hasOutput() && remote.devices[1].hasOutput());
     assert(remote.devices[0].uid() == pool.devices()[0].uid);
     assert(remote.devices[0].inputLatencyFrames() == latencies[0] &&

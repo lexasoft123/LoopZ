@@ -3,9 +3,21 @@
 
 #include <algorithm>
 #include <stdexcept>
+#include <string_view>
 
 namespace loopz::macos {
 namespace {
+std::string publicDeviceName(const std::string& name) {
+    constexpr std::string_view prefix = "LoopZ: ";
+    if (name.starts_with(prefix))
+        return name;
+    // Keep the transport's existing byte limit without splitting UTF-8 text.
+    auto end = std::min(name.size(), size_t{4096} - prefix.size());
+    while (end < name.size() && (static_cast<unsigned char>(name[end]) & 0xc0) == 0x80)
+        --end;
+    return std::string(prefix) + name.substr(0, end);
+}
+
 void retire(const DeviceTransport& device) noexcept {
     device.region->retire();
 }
@@ -73,8 +85,8 @@ PreparedDeviceTransports DeviceTransportPool::prepare(const RouteDocument& docum
                                                generation++);
         }
         prepared.push_back({definition.id, "com.lexasoft.loopz.device." + definition.id,
-                            definition.name, hasPlaybackEndpoint(definition), std::move(region),
-                            latency});
+                            publicDeviceName(definition.name), hasPlaybackEndpoint(definition),
+                            std::move(region), latency});
     }
     // Reserve generations even if the transaction is later abandoned. An
     // already-exported tentative mapping must never share a generation with a

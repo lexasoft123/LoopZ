@@ -252,7 +252,8 @@ void deviceTransactions() {
     document.devices[0].name = "Renamed";
     document.devices[0].routing.sources[0].muted = true;
     pool.apply(document);
-    assert(pool.devices()[0].name == "Renamed" && pool.devices()[0].uid == uid);
+    assert(pool.devices()[0].name == "LoopZ: Renamed" && pool.devices()[0].uid == uid);
+    assert(document.devices[0].name == "Renamed");
     assert(pool.devices()[0].region == a && pool.devices()[1].region == b);
     assert(a->header().helperOnline.load() && b->header().driverOnline.load());
     document.devices[0].routing.sources[0].enabled = false;
