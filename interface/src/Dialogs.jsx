@@ -1,3 +1,4 @@
+import PassThroughHelp from "./components/PassThroughHelp.jsx";
 import { AudioSetup } from "./AudioSetup.jsx";
 import { t } from "./i18n.js";
 import { Language } from "./components/Language.jsx";
@@ -90,6 +91,7 @@ export default function Dialogs({
     returnFocus,
     transport,
     refresh,
+    startTour,
 }) {
     const d = state.devices.find((device) => device.id === modal.device);
     const source = d?.sources.find((s) => s.id === modal.id);
@@ -399,6 +401,7 @@ export default function Dialogs({
     else if (modal.kind === "source" && source)
         content = (
             <>
+                {source.kind === "pass" && <PassThroughHelp expanded />}
                 {sourceState && !sourceState.available && (
                     <Banner tone="warning" heading={sourceState.label}>
                         {sourceState.detail}
@@ -603,6 +606,9 @@ export default function Dialogs({
                         groupItems.length > 0 && (
                             <div className="lz-picker-group" key={group}>
                                 <p className="eyebrow">{group}</p>
+                                {group === t("Pass-through") && (
+                                    <PassThroughHelp expanded />
+                                )}
                                 {groupItems.map((item) => (
                                     <Button
                                         className="lz-picker-item"
@@ -1041,6 +1047,17 @@ export default function Dialogs({
                 <div className="lz-setting-row">
                     <strong>{t("Language")}</strong>
                     <Language />
+                </div>
+                <div className="lz-setting-row">
+                    <div>
+                        <strong>{t("Getting started")}</strong>
+                        <p>
+                            {t(
+                                "A guided tour of sources, connections and monitors. Your audio settings won’t change.",
+                            )}
+                        </p>
+                    </div>
+                    <Button onClick={startTour}>{t("Take a tour")}</Button>
                 </div>
                 {releaseUpdates && <ReleaseUpdates value={releaseUpdates} />}
                 <AudioSetup

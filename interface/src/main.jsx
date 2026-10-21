@@ -6,6 +6,7 @@ import "./routing.css";
 import "./dialogs.css";
 import "./desktop.css";
 import "./components/switch.css";
+import "./components/startup-tour.css";
 import "./components/level-meter.css";
 import { EngineStore, nativeTransport } from "./store.js";
 import App from "./App.jsx";

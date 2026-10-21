@@ -1,3 +1,4 @@
+import PassThroughHelp from "./components/PassThroughHelp.jsx";
 import { t } from "./i18n.js";
 import React, { useRef, useState } from "react";
 import { Button, Chip, StatusDot, Badge, LinkButton } from "@singz/ui";
@@ -205,7 +206,11 @@ function SourceNode({
             </div>
         ));
     return (
-        <article className="lz-node lz-source" data-od-id={`source-${s.id}`}>
+        <article
+            className="lz-node lz-source"
+            data-od-id={`source-${s.id}`}
+            data-tour={s.kind === "pass" ? "pass-through" : undefined}
+        >
             <div className="lz-node-heading">
                 <SourceIdentity source={s} />
                 <div>
@@ -214,7 +219,9 @@ function SourceNode({
                         {s.kind === "app"
                             ? "Application · stereo"
                             : s.kind === "pass"
-                              ? t("Apps using this device as output")
+                              ? t(
+                                    "Sound from apps using this device as their speaker",
+                                )
                               : s.kind === "virtual"
                                 ? `Virtual device · ${s.channels} channels`
                                 : `Input device · ${s.channels} channel${s.channels > 1 ? "s" : ""}`}
@@ -250,6 +257,7 @@ function SourceNode({
                     <GearIcon />
                 </Button>
             </div>
+            {s.kind === "pass" && <PassThroughHelp />}
             <div className="lz-node-controls">
                 <Chip
                     active={s.muted}

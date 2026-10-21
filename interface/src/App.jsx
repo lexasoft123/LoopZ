@@ -1,3 +1,5 @@
+import StartupTour from "./components/StartupTour.jsx";
+import { tourSeen, rememberTour } from "./tour.js";
 import React, {
     useEffect,
     useRef,
@@ -40,6 +42,22 @@ export default function App({ state, send, transport, refresh }) {
     const [selection, setSelection] = useState(null);
     const [sidebar, setSidebar] = useState(false);
     const [message, setMessage] = useState("");
+    const [showWelcome, setShowWelcome] = useState(() => !tourSeen());
+    const [tourOpen, setTourOpen] = useState(false);
+    const dismissWelcome = () => {
+        rememberTour();
+        setShowWelcome(false);
+    };
+    const startTour = () => {
+        setModal(null);
+        setSidebar(false);
+        setView("routing");
+        setTourOpen(true);
+    };
+    const finishTour = () => {
+        dismissWelcome();
+        setTourOpen(false);
+    };
     const returnFocus = useRef(null);
     const d = selected(state);
     const setupIssue = installationCondition(state);
@@ -91,11 +109,13 @@ export default function App({ state, send, transport, refresh }) {
                 textEditing: textEditing(),
                 canUndo:
                     !modal &&
+                    !tourOpen &&
                     state.canEdit &&
                     state.history.supported &&
                     state.history.canUndo,
                 canRedo:
                     !modal &&
+                    !tourOpen &&
                     state.canEdit &&
                     state.history.supported &&
                     state.history.canRedo,
@@ -105,6 +125,7 @@ export default function App({ state, send, transport, refresh }) {
         const action = (event) => {
             if (
                 !modal &&
+                !tourOpen &&
                 !textEditing() &&
                 state.canEdit &&
                 state.history.supported &&
@@ -125,6 +146,7 @@ export default function App({ state, send, transport, refresh }) {
         };
     }, [
         modal,
+        tourOpen,
         state.canEdit,
         state.history.supported,
         state.history.canUndo,
@@ -136,7 +158,7 @@ export default function App({ state, send, transport, refresh }) {
     }, [state.selected, layoutIdentity]);
     useEffect(() => {
         const key = (event) => {
-            if (modal) return;
+            if (modal || tourOpen) return;
             const target = event.target;
             const textEditing =
                 target?.isContentEditable ||
@@ -176,6 +198,7 @@ export default function App({ state, send, transport, refresh }) {
         return () => window.removeEventListener("keydown", key);
     }, [
         modal,
+        tourOpen,
         state.selected,
         state.canEdit,
         state.history.supported,
@@ -290,6 +313,7 @@ export default function App({ state, send, transport, refresh }) {
                             size="sm"
                             icon
                             className="lz-sidebar-trigger"
+                            data-tour="devices-menu"
                             aria-label={t("Show devices")}
                             onClick={() => setSidebar(!sidebar)}
                         >
@@ -311,6 +335,7 @@ export default function App({ state, send, transport, refresh }) {
                         </Button>
                         <Button
                             size="sm"
+                            data-tour="settings"
                             onClick={(event) =>
                                 open(
                                     {
@@ -408,6 +433,7 @@ export default function App({ state, send, transport, refresh }) {
                     <div className="lz-sidebar-bottom">
                         <Button
                             size="sm"
+                            data-tour="new-device"
                             disabled={
                                 !(state.canEdit || state.canCreate) ||
                                 state.devices.length >= 32
@@ -432,6 +458,25 @@ export default function App({ state, send, transport, refresh }) {
                 </aside>
                 <main className="lz-main">
                     <div className="lz-recovery">
+                        {showWelcome && !tourOpen && (
+                            <Banner
+                                heading={t("New to LoopZ?")}
+                                footer={
+                                    <div className="lz-welcome-actions">
+                                        <Button size="sm" onClick={startTour}>
+                                            {t("Take a tour")}
+                                        </Button>
+                                        <LinkButton onClick={dismissWelcome}>
+                                            {t("Not now")}
+                                        </LinkButton>
+                                    </div>
+                                }
+                            >
+                                {t(
+                                    "Learn how to combine sound and use your mix in other apps. You can replay this tour from Settings.",
+                                )}
+                            </Banner>
+                        )}
                         {backupNotice && (
                             <Banner
                                 tone="warning"
@@ -683,6 +728,7 @@ export default function App({ state, send, transport, refresh }) {
                             </p>
                             <Button
                                 variant="primary"
+                                data-tour="new-device"
                                 disabled={!(state.canEdit || state.canCreate)}
                                 onClick={(event) =>
                                     open(
@@ -770,6 +816,17 @@ export default function App({ state, send, transport, refresh }) {
                     returnFocus={returnFocus}
                     transport={transport}
                     refresh={refresh}
+                    startTour={startTour}
+                />
+            )}
+            {tourOpen && (
+                <StartupTour
+                    hasDevice={!!d}
+                    hasPassThrough={
+                        !!d?.sources.some((source) => source.kind === "pass")
+                    }
+                    deviceName={d?.name || ""}
+                    onFinish={finishTour}
                 />
             )}
             <div className="sr-only" role="status" aria-live="polite">

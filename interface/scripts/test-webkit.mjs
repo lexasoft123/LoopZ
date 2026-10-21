@@ -1,3 +1,7 @@
+import {
+    beforeTourReload,
+    afterTourReload,
+} from "../tests/webkit-tour-scenarios.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -57,6 +61,14 @@ const output = resolve(process.argv[2] || `${root}/artifacts/webkit-interface`);
 const keyboard = process.argv[3] === "keyboard";
 const sanitized = process.argv[4] === "sanitized";
 const profiles = new Map([
+    [
+        "tour",
+        {
+            before: beforeTourReload,
+            after: afterTourReload,
+            label: "startup-tour",
+        },
+    ],
     [
         "document-recovery",
         {
@@ -280,6 +292,10 @@ for (const path of [
     "interface/tests/webkit-recovery-scenarios.mjs",
     "interface/tests/webkit-upstream-recovery-scenarios.mjs",
     "interface/tests/webkit-installation-scenarios.mjs",
+    "interface/tests/webkit-tour-scenarios.mjs",
+    "interface/src/components/StartupTour.jsx",
+    "interface/src/components/PassThroughHelp.jsx",
+    "interface/src/tour.js",
     "interface/src/installation.js",
     "interface/tests/webkit-document-recovery-scenarios.mjs",
     "interface/src/document-recovery.js",

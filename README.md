@@ -40,6 +40,10 @@ If macOS asks, allow LoopZ’s helper in **Login Items & Extensions**.
 When first-time activation is needed, **Finish audio setup** briefly interrupts
 audio in other apps while preserving your audio selections and saved mixes.
 
+New to LoopZ? Choose **Take a tour** on the welcome prompt or in Settings for a
+guided introduction to devices, sources, channel connections and monitors.
+Pass-through sources also include **What is Pass-through?** help with an example.
+
 ## What it does
 
 - **Virtual devices** — independent mixes with up to 64 channels, per-device

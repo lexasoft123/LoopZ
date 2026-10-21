@@ -12,7 +12,9 @@
         "test:webkit:persistence": "node scripts/test-webkit-persistence.mjs",
         "format": "prettier --write src scripts tests",
         "format:check": "prettier --check src scripts tests",
-        "test:browser:maintenance": "node tests/audio-maintenance.browser.mjs"
+        "test:browser:maintenance": "node tests/audio-maintenance.browser.mjs",
+        "test:browser:tour": "node tests/startup-tour.browser.mjs",
+        "test:webkit:tour": "node scripts/test-webkit.mjs ../artifacts/webkit-startup-tour tour"
     },
     "dependencies": {
         "@singz/ui": "file:packages/singz-ui-1.9.5.tgz",

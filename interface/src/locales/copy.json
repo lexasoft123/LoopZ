@@ -98,7 +98,7 @@
     "To": ["Куда", "目标"],
     "Position": ["Положение", "位置"],
     "Previous": ["Назад", "上一个"],
-    "Next": ["Далее", "下一个"],
+    "Next": ["Далее", "下一步"],
     "Move up": ["Выше", "上移"],
     "Move down": ["Ниже", "下移"],
     "All connections": ["Все соединения", "全部连接"],
@@ -371,5 +371,102 @@
     "Your saved devices will reconnect automatically.": [
         "Ваши сохранённые устройства подключатся автоматически.",
         "您保存的设备将自动重新连接。"
+    ],
+    "Pass-through receives sound from apps that select this LoopZ device as their speaker or audio output.": [
+        "Сквозной канал принимает звук из приложений, в которых это устройство LoopZ выбрано как динамик или аудиовыход.",
+        "直通接收将此 LoopZ 设备选作扬声器或音频输出的应用的声音。"
+    ],
+    "Use it when you want to send an app’s output into your mix. You can also capture an app directly by adding it as an application source.": [
+        "Используйте его, чтобы направить выход приложения в микс. Также можно захватывать звук приложения напрямую, добавив его как источник.",
+        "当您想将应用的输出送入混音时使用它。也可以将应用添加为来源，直接捕获其声音。"
+    ],
+    "Only using a microphone or instrument? You don’t need Pass-through and can remove it.": [
+        "Используете только микрофон или инструмент? сквозной канал не нужен, его можно удалить.",
+        "只使用麦克风或乐器？您不需要直通，可以将它移除。"
+    ],
+    "Example: Music app → LoopZ device output → Pass-through → your mix → Zoom microphone.": [
+        "Пример: музыкальное приложение → выход устройства LoopZ → сквозной канал → ваш микс → микрофон Zoom.",
+        "示例：音乐应用 → LoopZ 设备输出 → 直通 → 您的混音 → Zoom 麦克风。"
+    ],
+    "About Pass-through": ["О сквозном канале", "关于直通"],
+    "What is Pass-through?": ["Что такое сквозной канал?", "什么是直通？"],
+    "Your sound, in one place": [
+        "Весь ваш звук в одном месте",
+        "所有声音，汇聚一处"
+    ],
+    "Combine sound from apps, microphones and instruments into a virtual device. Other apps can use it like a microphone. This tour won’t change your audio or connections.": [
+        "Объединяйте звук приложений, микрофонов и инструментов в виртуальном устройстве. Другие приложения смогут использовать его как микрофон. Обзор не изменит звук или соединения.",
+        "将应用、麦克风和乐器的声音合并到虚拟设备中。其他应用可以像使用麦克风一样使用它。本导览不会更改音频或连接。"
+    ],
+    "Create a virtual device": [
+        "Создайте виртуальное устройство",
+        "创建虚拟设备"
+    ],
+    "1. Choose what goes in": [
+        "1. Выберите источники звука",
+        "1. 选择输入声音"
+    ],
+    "Use + in Sources to add an app, microphone, audio interface or another virtual device. The meters show whether each channel is receiving sound.": [
+        "Нажмите + в разделе «Источники», чтобы добавить приложение, микрофон, аудиоинтерфейс или другое виртуальное устройство. Индикаторы показывают, поступает ли звук в каждый канал.",
+        "使用“来源”中的 + 添加应用、麦克风、音频接口或其他虚拟设备。电平表显示每个通道是否收到声音。"
+    ],
+    "When to use Pass-through": ["Когда нужен сквозной канал", "何时使用直通"],
+    "Pass-through receives audio from apps that choose your LoopZ device as their speaker or output. For a microphone or instrument alone, you can remove it. You can also add an app directly as a source.": [
+        "Сквозной канал принимает звук приложений, в которых ваше устройство LoopZ выбрано как динамик или выход. Для микрофона или инструмента он не нужен. Также можно добавить само приложение как источник.",
+        "直通接收将 LoopZ 设备选作扬声器或输出的应用的音频。如果只使用麦克风或乐器，可以将它移除。也可以直接将应用添加为来源。"
+    ],
+    "2. Connect your channels": ["2. Соедините каналы", "2. 连接通道"],
+    "Drag a circle beside a source channel to a circle beside an output channel. Connected sounds are mixed together. Channels 1 and 2 normally carry left and right stereo sound.": [
+        "Перетащите кружок рядом с каналом источника на кружок рядом с выходным каналом. Соединённые звуки смешиваются. Каналы 1 и 2 обычно передают левый и правый стереоканалы.",
+        "将来源通道旁的圆圈拖到输出通道旁的圆圈。连接的声音会混合在一起。通道 1 和 2 通常分别传送左、右声道。"
+    ],
+    "3. Hear your mix, if you want": [
+        "3. Слушайте микс, если нужно",
+        "3. 按需监听混音"
+    ],
+    "Add headphones or speakers under Monitors to listen to the mix. Monitoring is optional: other apps still receive your virtual device without a monitor. Use headphones with a microphone to avoid feedback.": [
+        "Добавьте наушники или колонки в разделе «Мониторы», чтобы слышать микс. Это необязательно: другие приложения получают звук и без монитора. С микрофоном лучше использовать наушники, чтобы избежать обратной связи.",
+        "在“监听”中添加耳机或扬声器来收听混音。监听是可选的：没有监听设备，其他应用也能收到虚拟设备的声音。使用麦克风时请戴耳机，以避免啸叫。"
+    ],
+    "Use your mix in another app": [
+        "Используйте микс в другом приложении",
+        "在其他应用中使用混音"
+    ],
+    "In Zoom, a recorder or a streaming app, choose “LoopZ: {name}” as the microphone or audio input. LoopZ sends the connected output channels to that app.": [
+        "В Zoom, программе записи или трансляции выберите «LoopZ: {name}» как микрофон или аудиовход. LoopZ передаст в это приложение подключённые выходные каналы.",
+        "在 Zoom、录音或直播应用中，将“LoopZ: {name}”选作麦克风或音频输入。LoopZ 会将连接的输出通道发送到该应用。"
+    ],
+    "Help is always here": ["Помощь всегда рядом", "随时获取帮助"],
+    "Settings contains audio setup, buffer size and language. Choose Take a tour here whenever you need a refresher. Closing the LoopZ window leaves your audio routing running.": [
+        "В настройках доступны настройка звука, размер буфера и язык. Нажмите «Обзор приложения», чтобы повторить этот обзор. При закрытии окна LoopZ маршрутизация звука продолжит работать.",
+        "“设置”中包含音频设置、缓冲大小和语言选项。随时选择“查看导览”重温操作。关闭 LoopZ 窗口后，音频路由仍会继续运行。"
+    ],
+    "Finish audio setup in Settings if needed, then create your first device. Replay Take a tour from Settings after creating a device to explore Sources, Output channels and Monitors.": [
+        "При необходимости завершите настройку звука в настройках, затем создайте первое устройство. После этого запустите «Обзор приложения» из настроек, чтобы познакомиться с источниками, выходными каналами и мониторами.",
+        "如有需要，请先在“设置”中完成音频设置，然后创建第一个设备。创建设备后，可从“设置”再次查看导览，了解来源、输出通道和监听。"
+    ],
+    "Quick tour": ["Краткий обзор", "快速导览"],
+    "Skip tour": ["Пропустить", "跳过导览"],
+    "Back": ["Назад", "上一步"],
+    "Got it": ["Понятно", "知道了"],
+    "Getting started": ["Начало работы", "入门"],
+    "Take a tour": ["Обзор приложения", "查看导览"],
+    "A guided tour of sources, connections and monitors. Your audio settings won’t change.": [
+        "Знакомство с источниками, соединениями и мониторами. Настройки звука не изменятся.",
+        "了解来源、连接和监听。不会更改您的音频设置。"
+    ],
+    "New to LoopZ?": ["Впервые в LoopZ?", "第一次使用 LoopZ？"],
+    "Not now": ["Позже", "暂时跳过"],
+    "Learn how to combine sound and use your mix in other apps. You can replay this tour from Settings.": [
+        "Узнайте, как объединять звук и использовать микс в других приложениях. Обзор можно повторить из настроек.",
+        "了解如何混合声音，并在其他应用中使用混音。您可以从“设置”重播此导览。"
+    ],
+    "Open the device list and choose New virtual device. Name your mix, for example Podcast or Guitar. Other apps will see “LoopZ: Podcast” or “LoopZ: Guitar”. Each device has its own sources and connections.": [
+        "Откройте список устройств и нажмите «Новое виртуальное устройство». Назовите микс, например Podcast или Guitar. В других приложениях он появится как «LoopZ: Podcast» или «LoopZ: Guitar». У каждого устройства свои источники и соединения.",
+        "打开设备列表并选择“新建虚拟设备”。为混音命名，例如 Podcast 或 Guitar。其他应用会将它显示为“LoopZ: Podcast”或“LoopZ: Guitar”。每个设备都有自己的来源和连接。"
+    ],
+    "Sound from apps using this device as their speaker": [
+        "Звук приложений, выбравших это устройство как динамик",
+        "将此设备选作扬声器的应用的声音"
     ]
 }
