@@ -181,8 +181,10 @@ void creationAndControls() {
            changed.routing.sources[2].muted && !changed.bindings[2].muteOriginal);
     assert(changed.monitors[0].gain == 0.75f && !changed.monitors[0].enabled &&
            changed.monitors[0].muted);
-    document = edited(document, {SetDeviceControls{"mix", {.enabled = true, .muted = false}, true},
-                                 SetSourceControls{"mix", "app", {.muted = false}, true}});
+    document = edited(
+        document,
+        {SetDeviceControls{"mix", {.gain = {}, .enabled = true, .muted = false}, true},
+         SetSourceControls{"mix", "app", {.gain = {}, .enabled = {}, .muted = false}, true}});
     assert(document.devices[0].routing.enabled && !document.devices[0].routing.muted);
     assert(document.devices[0].routing.gain == 0.5f);
     assert(document.devices[0].bindings[2].muteOriginal);
@@ -228,7 +230,7 @@ void referencesAndAtomicFailures() {
         edited(document, {DeleteDevice{"mix"}});
     });
     invalid([&] {
-        edited(document, {SetDeviceControls{"mix", {.enabled = false}, {}},
+        edited(document, {SetDeviceControls{"mix", {.gain = {}, .enabled = false, .muted = {}}, {}},
                           AddSource{"mix", "cycle", SourceKind::VirtualDevice, "call"}});
     });
     invalid([&] {
@@ -241,8 +243,10 @@ void referencesAndAtomicFailures() {
     assert(removed.devices.size() == 1 && removed.devices[0].id == "call");
     assert(removed.devices[0].routing.sources.empty() && removed.devices[0].bindings.empty());
 
-    auto disabled = edited(document, {SetDeviceControls{"call", {.enabled = false}, {}},
-                                      SetSourceControls{"call", "stream", {.enabled = false}, {}}});
+    auto disabled = edited(
+        document,
+        {SetDeviceControls{"call", {.gain = {}, .enabled = false, .muted = {}}, {}},
+         SetSourceControls{"call", "stream", {.gain = {}, .enabled = false, .muted = {}}, {}}});
     invalid([&] {
         edited(disabled, {DeleteDevice{"mix"}});
     });
@@ -352,11 +356,16 @@ void boundsAndValidation() {
         edited(document, {SetSourceWiring{"mix", "app", {{2, 0}}}});
     });
     invalid([&] {
-        edited(document, {SetDeviceControls{"mix", {.gain = -0.1f}, {}}});
+        edited(document,
+               {SetDeviceControls{"mix", {.gain = -0.1f, .enabled = {}, .muted = {}}, {}}});
     });
     invalid([&] {
-        edited(document, {SetSourceControls{
-                             "mix", "app", {.gain = std::numeric_limits<float>::quiet_NaN()}, {}}});
+        edited(document,
+               {SetSourceControls{
+                   "mix",
+                   "app",
+                   {.gain = std::numeric_limits<float>::quiet_NaN(), .enabled = {}, .muted = {}},
+                   {}}});
     });
     invalid([&] {
         edited(document, {SetDeviceRate{"mix", std::numeric_limits<double>::infinity()}});
@@ -384,10 +393,11 @@ void boundsAndValidation() {
 }
 
 void editsReachRealDSP(double rate) {
-    auto document = edited({}, {CreateDevice{"mix", "Mix", 2, rate, false},
-                                AddSource{"mix", "mono", SourceKind::InputDevice, "uid", 1},
-                                SetDeviceControls{"mix", {.gain = 0.5f}, false},
-                                SetSourceControls{"mix", "mono", {.gain = 0.5f}, {}}});
+    auto document = edited(
+        {}, {CreateDevice{"mix", "Mix", 2, rate, false},
+             AddSource{"mix", "mono", SourceKind::InputDevice, "uid", 1},
+             SetDeviceControls{"mix", {.gain = 0.5f, .enabled = {}, .muted = {}}, false},
+             SetSourceControls{"mix", "mono", {.gain = 0.5f, .enabled = {}, .muted = {}}, {}}});
     std::array<float, 64> input{}, left{}, right{};
     input.fill(0.8f);
     const float* channels[]{input.data()};
@@ -404,12 +414,17 @@ void editsReachRealDSP(double rate) {
     render(0.2f, 0.2f);
     document = edited(document, {SetSourceWiring{"mix", "mono", {{0, 1, 0.25f}}}});
     render(0, 0.05f);
-    document = edited(document, {SetDeviceControls{"mix", {.muted = true}, {}}});
+    document = edited(document,
+                      {SetDeviceControls{"mix", {.gain = {}, .enabled = {}, .muted = true}, {}}});
     render(0, 0);
-    document = edited(document, {SetDeviceControls{"mix", {.muted = false}, {}},
-                                 SetSourceControls{"mix", "mono", {.enabled = false}, {}}});
+    document =
+        edited(document,
+               {SetDeviceControls{"mix", {.gain = {}, .enabled = {}, .muted = false}, {}},
+                SetSourceControls{"mix", "mono", {.gain = {}, .enabled = false, .muted = {}}, {}}});
     render(0, 0);
-    document = edited(document, {SetSourceControls{"mix", "mono", {.enabled = true}, {}}});
+    document =
+        edited(document,
+               {SetSourceControls{"mix", "mono", {.gain = {}, .enabled = true, .muted = {}}, {}}});
     render(0, 0.05f);
 }
 } // namespace

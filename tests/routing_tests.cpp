@@ -15,30 +15,38 @@ bool trackHeap = false;
 uint64_t heapEvents = 0;
 } // namespace
 
-void* operator new(std::size_t bytes) {
+// Preserve heap-hook boundaries when GCC optimizes allocation probes.
+#if defined(__GNUC__)
+#define LOOPZ_HEAP_HOOK __attribute__((noinline))
+#else
+#define LOOPZ_HEAP_HOOK
+#endif
+LOOPZ_HEAP_HOOK void* operator new(std::size_t bytes) {
     if (trackHeap)
         ++heapEvents;
     if (void* memory = std::malloc(bytes ? bytes : 1))
         return memory;
     throw std::bad_alloc();
 }
-void* operator new[](std::size_t bytes) {
+LOOPZ_HEAP_HOOK void* operator new[](std::size_t bytes) {
     return ::operator new(bytes);
 }
-void operator delete(void* memory) noexcept {
+LOOPZ_HEAP_HOOK void operator delete(void* memory) noexcept {
     if (trackHeap && memory)
         ++heapEvents;
     std::free(memory);
 }
-void operator delete[](void* memory) noexcept {
+LOOPZ_HEAP_HOOK void operator delete[](void* memory) noexcept {
     ::operator delete(memory);
 }
-void operator delete(void* memory, std::size_t) noexcept {
+LOOPZ_HEAP_HOOK void operator delete(void* memory, std::size_t) noexcept {
     ::operator delete(memory);
 }
-void operator delete[](void* memory, std::size_t) noexcept {
+LOOPZ_HEAP_HOOK void operator delete[](void* memory, std::size_t) noexcept {
     ::operator delete(memory);
 }
+
+#undef LOOPZ_HEAP_HOOK
 
 namespace {
 bool renderWithoutHeap(loopz::RoutingGraph& graph, std::span<const loopz::RoutingInput> inputs,
