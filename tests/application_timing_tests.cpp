@@ -16,7 +16,7 @@ class TestSource final : public AudioSource {
     AudioReadResult read(uint64_t, double, RoutingOutput output, uint32_t frames,
                          AudioReadCursor&) const noexcept override {
         for (auto* channel : output.channels)
-            std::fill_n(channel, frames, 0);
+            std::fill_n(channel, frames, 0.0f);
         return {0, true};
     }
 };

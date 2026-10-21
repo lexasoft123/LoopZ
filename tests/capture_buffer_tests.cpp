@@ -238,7 +238,7 @@ void concurrentCaptureMix() {
                 std::this_thread::yield();
             realtime([&] {
                 capture.append(left.data(), right.data(), 64, origin + frameNs(frame, 48000), 48000,
-                               frame);
+                               static_cast<double>(frame));
                 return true;
             });
             written[index].store(frame + 64);

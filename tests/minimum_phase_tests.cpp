@@ -69,7 +69,7 @@ void spectralQualityAndFractionalContinuity() {
         int source, output;
         double passEnd;
     };
-    for (const auto [source, output, passEnd] : {Band{48000, 48000, 20000},
+    for (const auto& [source, output, passEnd] : {Band{48000, 48000, 20000},
                                                  {48000, 44100, 20000},
                                                  {44100, 48000, 19000},
                                                  {96000, 48000, 20000},
@@ -170,7 +170,7 @@ void changingClockKeepsFilterPhase() {
     }
 }
 void fixedFilterDriftRejection() {
-    for (const auto [source, output] :
+    for (const auto& [source, output] :
          {std::pair{8000, 8000}, {48000, 48000}, {48000, 44100}, {96000, 48000}, {192000, 8000}}) {
         double maximumGain = -300;
         for (const auto ratio : {.995, 1.005}) {
@@ -196,7 +196,7 @@ void fixedFilterDriftRejection() {
     }
 }
 void historyClockCorrections() {
-    for (const auto [source, output] :
+    for (const auto& [source, output] :
          {std::pair{8000U, 8000U}, {48000U, 48000U}, {192000U, 48000U}}) {
         AudioHistory history(2, 8192, ResamplingFilter::MinimumPhase);
         std::array<float, 32> left{}, right{};
@@ -456,7 +456,7 @@ void invalidNominalClockIsSilent() {
 }
 void rateConversionAndStridedBounds() {
     AudioResampler causal(ResamplingFilter::MinimumPhase);
-    for (const auto [source, output] : {std::pair{48000, 44100},
+    for (const auto& [source, output] : {std::pair{48000, 44100},
                                         {44100, 48000},
                                         {96000, 48000},
                                         {192000, 8000},

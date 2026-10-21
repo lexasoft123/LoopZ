@@ -12,7 +12,8 @@
 namespace {
 using namespace loopz;
 double tone(long double seconds, uint32_t channel) {
-    return 0.25 * std::sin(2 * std::numbers::pi_v<long double> * (997 + channel * 74) * seconds);
+    return static_cast<double>(0.25L * std::sin(2 * std::numbers::pi_v<long double> *
+                                              (997 + channel * 74) * seconds));
 }
 void changingClock(uint32_t nominal, bool stereoAdapter) {
     AudioHistory history(2);
@@ -40,10 +41,10 @@ void changingClock(uint32_t nominal, bool stereoAdapter) {
             }
             const auto timestamp = origin + static_cast<uint64_t>(elapsed * 1e9L);
             if (stereoAdapter)
-                stereo.append(left.data(), right.data(), frames, timestamp, nominal, firstFrame);
+                stereo.append(left.data(), right.data(), frames, timestamp, nominal, static_cast<double>(firstFrame));
             else
                 assert(
-                    history.append({input, frames}, frames, timestamp, nominal, firstFrame, true));
+                    history.append({input, frames}, frames, timestamp, nominal, static_cast<double>(firstFrame), true));
             if (elapsed > 0.25L && block % 10 == 0) {
                 const bool settled = elapsed - phaseStart > 1.1L;
                 const auto measured =

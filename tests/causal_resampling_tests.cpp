@@ -197,7 +197,7 @@ void firstImpulseAndReset() {
     for (uint32_t block = 0; block < 8; ++block)
         assert(converter.convert(block * 256, input.view(), 256).valid);
     converter.reset();
-    std::fill(input.data.begin(), input.data.end(), 0);
+    std::fill(input.data.begin(), input.data.end(), 0.0f);
     for (uint64_t first : {uint64_t{0}, uint64_t{10000}, uint64_t{20000}}) {
         const auto block = realtime([&] {
             return converter.convert(first, input.view(), 256);

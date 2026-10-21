@@ -218,7 +218,7 @@ void contiguousHardwareTimestampCorrections() {
                             origin + frameNs(block * period, rate) + (block >= 128 ? shift : 0));
                         assert(realtime([&] {
                             return history.append({planes, period}, period, ns, rate,
-                                                  block * period, verified);
+                                                  static_cast<double>(block * period), verified);
                         }));
                     }
                     std::array<float, 256> output{};
@@ -274,7 +274,7 @@ void historyReadFailureDiagnostics() {
     Planes input(1, 256), output(1, 64);
     std::fill(input.values.begin(), input.values.end(), .25f);
     AudioReadCursor cursor;
-    const auto read = [&](uint64_t time, double outputRate = rate) {
+    const auto read = [&](uint64_t time, double outputRate = 48000.0) {
         return realtime([&] {
             return history.read(time, outputRate, output.output(), 64, cursor);
         });
@@ -294,7 +294,7 @@ void historyReadFailureDiagnostics() {
     assert(observed.unpublishedSampleReads == 64 && !observed.expiredSampleReads);
     for (uint64_t block = 1; block < 3; ++block)
         assert(history.append(input.input(), 256, origin + frameNs(block * 256, rate), rate,
-                              block * 256, true));
+                              static_cast<double>(block * 256), true));
     assert(read(origin + frameNs(64, rate)).missingFrames == 64);
     observed = history.readDiagnostics();
     assert(observed.expiredSampleReads == 64 && !observed.absentSampleReads);
@@ -355,7 +355,7 @@ void drift() {
             for (uint32_t channel = 0; channel < 2; ++channel)
                 for (uint32_t frame = 0; frame < 256; ++frame)
                     input.write[channel][frame] =
-                        tone(block * 256 + frame, actualRate, 1000 + channel * 37);
+                        static_cast<float>(tone(block * 256 + frame, actualRate, 1000 + channel * 37));
             latest = origin + static_cast<uint64_t>(block * 256 * 1e9L / actualRate);
             assert(realtime([&] {
                 return history.append(input.input(), 256, latest, 48000, block * 256, true);

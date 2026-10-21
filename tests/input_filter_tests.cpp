@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <stdexcept>
 #include <cmath>
 #include <cstdio>
 #include <numbers>
@@ -106,9 +107,10 @@ void correlatedSignalAndIndependentReaders() {
     std::array<const float*, 2> inputPlane{input.data(), input.data()},
         inversePlane{inverse.data(), inverse.data()};
     constexpr uint64_t originFrame = 48000;
-    for (unsigned frame = 0; frame < 8192; frame += input.size()) {
-        for (unsigned i = 0; i < input.size(); ++i) {
-            input[i] = .2f * std::sin(2 * std::numbers::pi * 8000 * (frame + i) / 48000);
+    for (size_t frame = 0; frame < 8192; frame += input.size()) {
+        for (size_t i = 0; i < input.size(); ++i) {
+            input[i] = static_cast<float>(.2 * std::sin(2 * std::numbers::pi * 8000 *
+                                                      static_cast<double>(frame + i) / 48000));
             inverse[i] = -input[i];
         }
         const auto time = frameNs(originFrame + frame, 48000);
@@ -202,8 +204,8 @@ void mixedPhaseAcrossEndpointRates() {
                     for (uint32_t first = 0; first < rate / 10; first += 64) {
                         for (uint32_t frame = 0; frame < samples.size(); ++frame)
                             samples[frame] =
-                                sign * .2 *
-                                std::sin(2 * std::numbers::pi * frequency * (first + frame) / rate);
+                                static_cast<float>(sign * .2 *
+                                std::sin(2 * std::numbers::pi * frequency * (first + frame) / rate));
                         assert(history.append({planes, 64}, 64, origin + frameNs(first, rate), rate,
                                               first, true));
                     }

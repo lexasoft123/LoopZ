@@ -22,7 +22,10 @@ from driver installation. Python is used only for builds, tests and release work
 
 ## Credentials
 
-Configure these GitHub Actions secrets, matching SingZ's existing names:
+Release signing currently runs locally; the tag workflow builds and validates
+without receiving private signing credentials. Hosted signing is optional. To
+enable it, set the repository variable `ENABLE_HOSTED_SIGNING=true` and configure
+these GitHub Actions secrets, matching SingZ's existing names:
 
 - APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 — Developer ID Application P12.
 - APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD — its export password.
@@ -73,3 +76,7 @@ The macOS updater checks GitHub's latest stable release after startup and every
 six hours. Drafts and prereleases are not offered. It opens only LoopZ's fixed
 release-download page, and never accepts executable commands or installation
 paths from release JSON.
+
+With hosted signing disabled, create and push the version tag after local
+validation, then run `python3 scripts/publish_release.py --tag v0.1.0 --output
+<notarized-artifact-directory>` to upload the exact notarized DMG and checksums.

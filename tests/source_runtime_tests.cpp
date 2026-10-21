@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <stdexcept>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>

@@ -1261,7 +1261,7 @@ void mixedTransportHandoff() {
         assert(notifications.load() == notices);
         assert(!replacement->devices()[0].region->header().driverOnline.load());
         const auto name = property<CFStringRef>(list[0], kAudioObjectPropertyName);
-        assert(CFEqual(name, CFSTR("mixed-stable")));
+        assert(CFEqual(name, CFSTR("LoopZ: mixed-stable")));
         CFRelease(name);
         carrier(list[0], pool->devices()[0].region->view());
         hostReply.store(HostReply::Reject);

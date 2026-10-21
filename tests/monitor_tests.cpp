@@ -247,7 +247,7 @@ void changingSignalRateConversion() {
     });
     assert(result.validBlock && !result.missingFrames && !result.failedChunks);
     for (uint32_t frame = 0; frame < 701; ++frame) {
-        const float expected = (1000 + frame * 48000.0 / 44100) * 0.00005;
+        const float expected = static_cast<float>((1000 + frame * 48000.0 / 44100) * 0.00005);
         near(output.samples[0][frame], expected);
         near(output.samples[1][frame], -expected);
     }

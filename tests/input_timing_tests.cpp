@@ -31,13 +31,13 @@ template <class Action> void rejects(Action action) {
 int main() {
     using namespace loopz;
     const SceneTiming render{48000, 32, 1024, 128};
-    assert(inputTimingBudget({48000, 32, 74}, render, 64) == 352);
-    assert(inputTimingBudget({48000, 64, 74}, render, 64) == 384);
-    assert(inputTimingBudget({48000, 512, 74}, render, 64) == 832);
-    assert(inputTimingBudget({48000, 32, 74}, {48000, 64, 1024, 128}, 64) == 448);
-    assert(inputTimingBudget({48000, 32, 74}, render, 64, ResamplingFilter::MinimumPhase) == 256);
-    assert(inputTimingBudget({48000, 64, 74}, render, 64, ResamplingFilter::MinimumPhase) == 288);
-    assert(inputTimingBudget({48000, 512, 74}, render, 64, ResamplingFilter::MinimumPhase) == 736);
+    assert(inputTimingBudget({48000, 32, 74}, render, 64) == 352U);
+    assert(inputTimingBudget({48000, 64, 74}, render, 64) == 384U);
+    assert(inputTimingBudget({48000, 512, 74}, render, 64) == 832U);
+    assert(inputTimingBudget({48000, 32, 74}, {48000, 64, 1024, 128}, 64) == 448U);
+    assert(inputTimingBudget({48000, 32, 74}, render, 64, ResamplingFilter::MinimumPhase) == 256U);
+    assert(inputTimingBudget({48000, 64, 74}, render, 64, ResamplingFilter::MinimumPhase) == 288U);
+    assert(inputTimingBudget({48000, 512, 74}, render, 64, ResamplingFilter::MinimumPhase) == 736U);
     for (double rate : {8000., 44100., 48000., 96000., 192000.}) {
         uint32_t previous = 0;
         for (uint32_t period : {16, 32, 64, 128, 256, 512, 1024}) {
@@ -57,7 +57,7 @@ int main() {
     assert(!inputTimingBudget({48000, 32, UINT32_MAX}, render, 64));
     assert(!inputTimingBudget({8000, kCapacity / 2, 74}, render, 64));
     assert(!inputTimingBudget({48000, 32, 74}, render, UINT32_MAX));
-    assert(inputTimingBudget({192000, 128, 30000}, render, 32) == 7744);
+    assert(inputTimingBudget({192000, 128, 30000}, render, 32) == 7744U);
     assert(!inputTimingBudget({192000, 128, 32000}, render, 32));
     assert(!inputTimingBudget({192000, 128, 32000}, render, 32, ResamplingFilter::MinimumPhase));
     assert(!inputTimingBudget({48000, 32, 74}, render, 64, static_cast<ResamplingFilter>(99)));
