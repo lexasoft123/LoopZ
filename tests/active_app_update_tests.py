@@ -84,6 +84,16 @@ class ContractTests(unittest.TestCase):
                 modify(changed)
                 self.assertFalse(restored(changed, self.expected))
 
+    def test_driver_receipt_refresh_preserves_intent_but_rate_change_does_not(self):
+        self.expected["document"]["devices"][0]["formatRequestReceipt"] = "driver/4"
+        self.after["document"]["devices"][0]["formatRequestReceipt"] = "driver/5"
+        self.assertTrue(restored(self.after, self.expected))
+        self.assertEqual(
+            self.expected["document"]["devices"][0]["formatRequestReceipt"], "driver/4"
+        )
+        self.after["document"]["devices"][0]["sampleRate"] = 44100
+        self.assertFalse(restored(self.after, self.expected))
+
     def test_preexisting_disconnected_routes_are_retained_without_faking_readiness(self):
         self.before["runtime"]["restored"] = False
         self.before["runtime"]["sources"][0].update(connected=False, complete=False)

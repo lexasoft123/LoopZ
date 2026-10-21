@@ -90,8 +90,21 @@ def contract(state, document):
     }
 
 
+def same_routing_intent(actual, expected):
+    """Device recreation may refresh its internal driver-format receipt."""
+    def intent(document):
+        result = copy.deepcopy(document)
+        if isinstance(result, dict) and isinstance(result.get("devices"), list):
+            for device in result["devices"]:
+                if isinstance(device, dict):
+                    device.pop("formatRequestReceipt", None)
+        return result
+
+    return intent(actual) == intent(expected)
+
+
 def restored(state, expected):
-    if state.get("document") != expected["document"]:
+    if not same_routing_intent(state.get("document"), expected["document"]):
         return False
     runtime = state.get("runtime", {})
     if (
