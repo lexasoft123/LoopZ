@@ -99,7 +99,7 @@ void changingClock(uint32_t nominal, bool stereoAdapter) {
 }
 void continuousTransitionCoverage() {
     uint32_t caseIndex = 0;
-    for (const auto rates :
+    for (const auto& rates :
          {std::pair{8000U, 8000U}, std::pair{48000U, 48000U}, std::pair{48000U, 44100U},
           std::pair{44100U, 48000U}, std::pair{192000U, 192000U}, std::pair{192000U, 48000U},
           std::pair{48000U, 44100U}}) {
