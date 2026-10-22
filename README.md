@@ -6,15 +6,52 @@
 [![Desktop checks](https://github.com/lexasoft123/LoopZ/actions/workflows/checks.yml/badge.svg)](https://github.com/lexasoft123/LoopZ/actions/workflows/checks.yml)
 [![Portable core](https://github.com/lexasoft123/LoopZ/actions/workflows/core.yml/badge.svg)](https://github.com/lexasoft123/LoopZ/actions/workflows/core.yml)
 
-Virtual audio routing for macOS. Combine microphones, hardware inputs and sound
-from apps into a virtual device, then choose that device as the microphone in
-your recording, streaming or calling app. Connect channels visually and listen
-through any output device.
+**Low-latency virtual audio routing for macOS.** Combine microphones, audio
+interfaces and sound from individual apps into your own virtual audio device.
+Use the mix in Zoom, a recorder or your streaming software, and listen through
+headphones or speakers.
+
+- **Small hardware buffers** — 32- and 64-frame settings on compatible devices,
+  with one persistent control for all inputs and monitors used by your mix.
+- **Flexible multichannel mixes** — connect individual source channels to virtual
+  outputs, with gain, mute, live meters and a safety limiter.
+- **Background routing and recovery** — close the window and keep your mix
+  running; saved connections are retained when a source or monitor disconnects.
+- **Native audio setup** — install, update and repair audio components inside
+  the app, with ordinary app updates separate from driver maintenance.
 
 ![LoopZ audio routing workspace](docs/screenshot.png)
 
 Built with SingZ's **zcore**, **zdsp** and **singz-ui**. Audio runs locally in a
 native background Engine; closing the window leaves your routing running.
+
+## Low latency
+
+Choose a smaller hardware buffer for responsive monitoring and recording, or a
+larger one for more processing headroom. LoopZ applies your choice to all used
+hardware inputs and monitors and remembers it across reconnects.
+
+At 48 kHz, the duration of **one hardware buffer** is:
+
+| Buffer size | Duration |
+| --- | --- |
+| 32 frames | 0.67 ms |
+| 64 frames | 1.33 ms |
+| 128 frames | 2.67 ms |
+| 256 frames | 5.33 ms |
+
+These durations are not the complete microphone-to-speaker delay. The full path
+also includes device conversion, capture and routing buffers, clock alignment,
+monitoring and the receiving app. Results depend on your hardware and mix;
+very small buffers need more CPU headroom.
+
+For hardware inputs, the Engine processes connected channels while taking
+source-meter readings directly from capture callbacks, so unconnected hardware
+channels keep their meters without being resampled for the mix.
+Hardware-property checks run on the control thread rather than audio callbacks.
+
+See [latency measurements and test conditions](docs/latency-comparison.md) for
+measured paths, comparisons and remaining validation limits.
 
 ## Download and use
 
@@ -50,10 +87,13 @@ Pass-through sources also include **What is Pass-through?** help with an example
   on/off controls, gain, mute and a safety limiter.
 - **App and hardware sources** — capture selected applications, microphones and
   multichannel interfaces; route individual channels into the mix.
+- **Pass-through** — receive audio from apps that select your LoopZ device as
+  their speaker/output. Combine that audio with other sources in the same mix.
 - **Three-column routing** — sources → output channels → monitors. Drag between
   sockets, or use the Connections view and keyboard controls.
 - **Monitoring** — send a mix to physical output channels while exposing it to
-  other applications as a recording device.
+  other applications as a recording device. Monitoring is optional: recording
+  apps can receive the mix even when no headphones or speakers are connected.
 - **Saved routing and recovery** — retain connections when devices or apps
   disconnect and retry the desired graph automatically.
 - **Live meters** — separate source and output levels, with visual interpolation
@@ -65,6 +105,8 @@ Pass-through sources also include **What is Pass-through?** help with an example
 - **Languages and appearance** — English, Russian and Simplified Chinese controls,
   a system-language option, and the SingZ light/dark palettes. Some diagnostic
   messages currently remain in English.
+- **Guided first steps** — an interactive tour with a demo mix explains sources,
+  output channels, monitors and using your virtual device in another app.
 - **Update checks** — automatic checks every six hours, with a manual check in
   Settings. Like SingZ on macOS, updates open the release download page;
   installation is explicit. Driver installation is a separate action.
@@ -107,6 +149,9 @@ Native code lives in `native/core` and `native/platform/macos`; the React interf
 lives in `interface`. Build and release scripts use Python **on the development
 machine and CI runner only**. Native formatting uses clang-format and Black;
 frontend formatting uses the locked Prettier version.
+
+Development workflow, worktree isolation, review requirements and audio-testing
+rules are documented in [AGENTS.md](AGENTS.md).
 
 ## Releases
 
