@@ -220,12 +220,22 @@ struct AudioScene::Impl {
         std::optional<uint32_t> budget;
         PlanarBlock scratch;
         AudioMeter meter;
+        // Prepared on control; audio callbacks only reuse this deduplicated map.
+        std::vector<uint32_t> audioChannels;
         size_t upstream{kNoDevice};
         std::atomic<bool> online{false};
         std::atomic<uint64_t> missing{0};
         Input(const SourceRouting& route, SourceKind type, uint32_t frames)
             : configuration(route), kind(type), scratch(route.channels, frames),
-              meter(route.channels) {}
+              meter(route.channels) {
+            std::array<bool, kMaximumRoutingChannels> connected{};
+            for (const auto& wire : route.connections)
+                connected[wire.sourceChannel] = true;
+            audioChannels.reserve(route.channels);
+            for (uint32_t channel = 0; channel < route.channels; ++channel)
+                if (connected[channel])
+                    audioChannels.push_back(channel);
+        }
     };
     struct Device {
         const VirtualDeviceDefinition& definition;
@@ -376,6 +386,18 @@ SceneRenderResult AudioScene::render(uint64_t firstFrame, uint32_t frames,
             input.scratch.clear(frames);
             auto data = input.scratch.input();
             AudioReadResult read{0, false};
+            AudioMeterSnapshot nativeMeter;
+            const bool nativeLevels = input.configuration.enabled && input.binding.source &&
+                                      input.binding.source->readMeter(nativeMeter);
+            if (nativeLevels && input.configuration.connections.empty()) {
+                // No audio leaves this source. Native callback levels cover
+                // every captured frame, so meters need neither resampling nor
+                // decimation. Keep an empty graph input and the saved layout.
+                input.online.store(nativeMeter.frames != 0);
+                input.meter.publishSnapshot(nativeMeter);
+                node.views[source] = data;
+                continue;
+            }
             if (input.configuration.enabled) {
                 if (input.upstream != kNoDevice) {
                     const auto& upstream = *impl_->devices[input.upstream];
@@ -408,8 +430,23 @@ SceneRenderResult AudioScene::render(uint64_t firstFrame, uint32_t frames,
                         std::array<float*, kMaximumRoutingChannels> planes;
                         const auto time =
                             frameNs(firstFrame + prefix - node.latency, impl_->timing.renderRate);
-                        const auto output = suffix(input.scratch, prefix, planes);
-                        read = input.filter
+                        auto output = suffix(input.scratch, prefix, planes);
+                        std::optional<AudioReadResult> sparseRead;
+                        if (nativeLevels) {
+                            std::array<float*, kMaximumRoutingChannels> selectedPlanes;
+                            const auto count = input.audioChannels.size();
+                            for (size_t channelIndex = 0; channelIndex < count; ++channelIndex)
+                                selectedPlanes[channelIndex] =
+                                    output.channels[input.audioChannels[channelIndex]];
+                            if (count)
+                                sparseRead = input.binding.source->readChannels(
+                                    time, impl_->timing.renderRate,
+                                    {{selectedPlanes.data(), count}, output.capacityFrames},
+                                    frames - prefix, *input.binding.cursor, input.audioChannels,
+                                    input.filter);
+                        }
+                        read = sparseRead ? *sparseRead
+                               : input.filter
                                    ? input.binding.source->readWithFilter(
                                          time, impl_->timing.renderRate, output, frames - prefix,
                                          *input.binding.cursor, *input.filter)
@@ -431,7 +468,9 @@ SceneRenderResult AudioScene::render(uint64_t firstFrame, uint32_t frames,
             // Offline and disabled sources have fully cleared scratch planes.
             // Online reads may have silent channels but valid audio elsewhere,
             // even when missingFrames equals the whole block.
-            if (read.online)
+            if (read.online && nativeLevels)
+                input.meter.publishSnapshot(nativeMeter);
+            else if (read.online)
                 input.meter.publish(data, frames);
             else
                 input.meter.publishSilence(frames);

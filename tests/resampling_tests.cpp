@@ -160,6 +160,71 @@ void spectralQuality() {
     const auto longUptime = quality(48000, 44100, 1000, 8, 4000000000000000000ULL);
     assert(longUptime.snrDb > 90);
 }
+void sparseChannelsMatchFullHistory() {
+    for (auto filter : {ResamplingFilter::LinearPhase, ResamplingFilter::MinimumPhase}) {
+        AudioHistory history(8, AudioHistory::kDefaultCapacityFrames, filter);
+        Planes input(8, 8192), full(8, kBlock), sparse(2, kBlock);
+        for (uint32_t channel = 0; channel < 8; ++channel)
+            for (uint32_t frame = 0; frame < input.frames; ++frame)
+                input.write[channel][frame] =
+                    static_cast<float>(tone(frame, 48000, 300 + channel * 700));
+        constexpr uint64_t origin = 1000000000;
+        assert(history.append(input.input(), input.frames, origin, 48000, 0, true));
+        for (double rate : {44100.0, 48000.0, 96000.0}) {
+            for (const auto channels :
+                 {std::array<uint32_t, 2>{2, 3}, std::array<uint32_t, 2>{1, 7}}) {
+                AudioReadCursor fullCursor, selectedCursor;
+                const auto when = origin + frameNs(2048, 48000) + 7000;
+                const auto baseline = realtime([&] {
+                    return history.readWithFilter(when, rate, full.output(), 64, fullCursor,
+                                                  filter);
+                });
+                const auto result = realtime([&] {
+                    return history.readChannels(when, rate, sparse.output(), 64, selectedCursor,
+                                                channels, filter);
+                });
+                assert(result && result->online && result->missingFrames == baseline.missingFrames);
+                assert(selectedCursor.hostNs == fullCursor.hostNs &&
+                       selectedCursor.rate == fullCursor.rate);
+                for (uint32_t channel = 0; channel < 2; ++channel)
+                    for (uint32_t frame = 0; frame < 64; ++frame)
+                        assert(sparse.write[channel][frame] ==
+                               full.write[channels[channel]][frame]);
+            }
+        }
+        // Input channels may disappear without changing the logical layout.
+        // An unwired missing tail must not make a valid selected lane missing.
+        history.stop();
+        const RoutingInput narrow{{input.read.data(), 4}, input.frames};
+        assert(history.append(narrow, input.frames, origin + 1000000000, 48000, 0, true));
+        AudioReadCursor cursor;
+        const std::array<uint32_t, 2> partial{2, 7}, available{1, 3};
+        auto result = history.readChannels(origin + 1000000000 + frameNs(2048, 48000), 48000,
+                                           sparse.output(), 64, cursor, partial, filter);
+        assert(result && result->online && result->missingFrames == 64);
+        assert(std::all_of(sparse.write[1], sparse.write[1] + 64, [](auto value) {
+            return value == 0;
+        }));
+        result = history.readChannels(origin + 1000000000 + frameNs(2048, 48000), 48000,
+                                      sparse.output(), 64, cursor, available, filter);
+        assert(result && result->online && !result->missingFrames);
+        for (const auto invalid : {std::array<uint32_t, 2>{3, 2}, std::array<uint32_t, 2>{2, 2},
+                                   std::array<uint32_t, 2>{2, 8}}) {
+            result = history.readChannels(origin + 1000000000 + frameNs(2048, 48000), 48000,
+                                          sparse.output(), 64, cursor, invalid, filter);
+            assert(result && !result->online && result->missingFrames == 64);
+            for (uint32_t channel = 0; channel < 2; ++channel)
+                assert(
+                    std::all_of(sparse.write[channel], sparse.write[channel] + 64, [](auto value) {
+                        return value == 0;
+                    }));
+        }
+        history.stop();
+        result = history.readChannels(origin + 1000000000 + frameNs(2048, 48000), 48000,
+                                      sparse.output(), 64, cursor, available, filter);
+        assert(result && !result->online && result->missingFrames == 64);
+    }
+}
 void boundariesAndPartitioning() {
     Fixture fixture(8, 48000, 1000);
     AudioReadCursor cursor;
@@ -514,6 +579,7 @@ int main(int argc, char** argv) {
     }
     assert(argc == 1);
     spectralQuality();
+    sparseChannelsMatchFullHistory();
     boundariesAndPartitioning();
     contiguousHardwareTimestampCorrections();
     historyReadFailureDiagnostics();

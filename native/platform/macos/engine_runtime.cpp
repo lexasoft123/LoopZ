@@ -178,8 +178,8 @@ struct EngineRuntime::Impl {
         } else if (physicalTiming) {
             renderer.setInputTiming(std::move(physicalTiming));
         }
-        controller =
-            std::make_unique<ConfigurationController>(link, options.documentPath, &renderer, false);
+        controller = std::make_unique<ConfigurationController>(link, options.documentPath,
+                                                               &renderer, false, 250);
         editor = std::make_unique<EditorController>(*controller, editorEpoch());
         acceptedRates.reserve(kMaximumVirtualDevices);
     }

@@ -33,6 +33,20 @@ class AudioSource {
     // use separate cursors and do not consume one another's history.
     virtual AudioReadResult read(uint64_t firstHostNs, double rate, RoutingOutput output,
                                  uint32_t frames, AudioReadCursor& cursor) const noexcept = 0;
+    // Optional native pre-gain levels, without converting audio to the render
+    // clock. True means supported; frames == 0 means currently unavailable.
+    // The same realtime contract applies. The snapshot is independent of reads.
+    virtual bool readMeter(AudioMeterSnapshot&) const noexcept {
+        return false;
+    }
+    // Optional sparse read. Channels are unique, increasing source indices;
+    // output planes correspond to that list. Unsupported adapters return nullopt
+    // without touching output, allowing the caller to use the full-layout path.
+    virtual std::optional<AudioReadResult>
+    readChannels(uint64_t, double, RoutingOutput, uint32_t, AudioReadCursor&,
+                 std::span<const uint32_t>, std::optional<ResamplingFilter>) const noexcept {
+        return std::nullopt;
+    }
     // A prepared physical reader may select its filter per scene. The default
     // preserves adapters without selectable resampling. Selection must never
     // prepare coefficients, allocate or change shared producer state here.

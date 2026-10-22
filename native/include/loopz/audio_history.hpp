@@ -78,6 +78,10 @@ class AudioHistory final : public AudioSource {
     AudioReadResult readWithFilter(uint64_t firstHostNs, double rate, RoutingOutput output,
                                    uint32_t frames, AudioReadCursor& cursor,
                                    ResamplingFilter filter) const noexcept override;
+    std::optional<AudioReadResult>
+    readChannels(uint64_t firstHostNs, double rate, RoutingOutput output, uint32_t frames,
+                 AudioReadCursor& cursor, std::span<const uint32_t> channels,
+                 std::optional<ResamplingFilter> filter) const noexcept override;
     // Optional per-frame coverage distinguishes valid silence from missing
     // support when combining independently clocked captures. Nonempty storage
     // must cover frames; output and coverage are zero on invalid/stopped reads.
@@ -89,7 +93,8 @@ class AudioHistory final : public AudioSource {
     AudioReadResult readUsing(uint64_t firstHostNs, double rate, RoutingOutput output,
                               uint32_t frames, AudioReadCursor& cursor,
                               std::span<uint8_t> availableFrames,
-                              const class AudioResampler& resampler) const noexcept;
+                              const class AudioResampler& resampler,
+                              std::span<const uint32_t> channels = {}) const noexcept;
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

@@ -35,6 +35,13 @@ class ManagedSource final : public AudioSource {
     uint32_t channels() const noexcept override {
         return endpoint->channels();
     }
+    bool readMeter(AudioMeterSnapshot& snapshot) const noexcept override {
+        const auto epoch = admission.load();
+        const bool supported = endpoint->readMeter(snapshot);
+        if (!(epoch & 1) || admission.load() != epoch)
+            snapshot = {};
+        return supported;
+    }
     AudioReadResult read(uint64_t firstHostNs, double rate, RoutingOutput output, uint32_t frames,
                          AudioReadCursor& cursor) const noexcept override {
         const auto epoch = admission.load();
@@ -48,6 +55,25 @@ class ManagedSource final : public AudioSource {
             return account({frames, false});
         }
         return account(result);
+    }
+    std::optional<AudioReadResult>
+    readChannels(uint64_t firstHostNs, double rate, RoutingOutput output, uint32_t frames,
+                 AudioReadCursor& cursor, std::span<const uint32_t> channels,
+                 std::optional<ResamplingFilter> filter) const noexcept override {
+        const auto epoch = admission.load();
+        if (!(epoch & 1)) {
+            silence(output, frames);
+            return account({frames, false});
+        }
+        const auto result =
+            endpoint->readChannels(firstHostNs, rate, output, frames, cursor, channels, filter);
+        if (!result)
+            return std::nullopt;
+        if (!(epoch & 1) || admission.load() != epoch) {
+            silence(output, frames);
+            return account({frames, false});
+        }
+        return account(*result);
     }
     AudioReadResult readWithFilter(uint64_t firstHostNs, double rate, RoutingOutput output,
                                    uint32_t frames, AudioReadCursor& cursor,

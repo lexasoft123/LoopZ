@@ -73,7 +73,8 @@ struct AudioHistory::Impl {
           tags(std::make_unique<FrameTag[]>(frames)),
           samples(std::make_unique<std::atomic<uint32_t>[]>(static_cast<size_t>(count) * frames)),
           diagnostics(readDiagnostics ? std::make_unique<ReadDiagnostics>() : nullptr) {}
-    ResampleFrame frame(uint64_t position, std::span<float> destination) const noexcept {
+    ResampleFrame frame(uint64_t position, std::span<float> destination,
+                        std::span<const uint32_t> selection) const noexcept {
         const auto slot = position % capacity;
         const auto& tag = tags[slot];
         const auto revision = tag.revision.load();
@@ -83,16 +84,25 @@ struct AudioHistory::Impl {
             return {false, 0};
         }
         const auto frameAvailable = tag.available.load();
-        for (uint32_t channel = 0; channel < destination.size(); ++channel)
-            destination[channel] = std::bit_cast<float>(samples[slot * channels + channel].load());
+        uint32_t selectedAvailable = 0;
+        for (uint32_t channel = 0; channel < destination.size(); ++channel) {
+            const auto source = selection.empty() ? channel : selection[channel];
+            destination[channel] = std::bit_cast<float>(samples[slot * channels + source].load());
+            selectedAvailable += source < frameAvailable;
+        }
         const bool valid = tag.frame.load() == position && tag.revision.load() == revision;
         if (!valid && diagnostics)
             diagnostics->unavailable(position, true, capacity);
-        return {valid, frameAvailable};
+        return {valid, selection.empty() ? frameAvailable : selectedAvailable};
     }
+    struct ReadContext {
+        const Impl* history;
+        std::span<const uint32_t> channels;
+    };
     static ResampleFrame readFrame(const void* context, uint64_t position,
                                    std::span<float> values) noexcept {
-        return static_cast<const Impl*>(context)->frame(position, values);
+        const auto& read = *static_cast<const ReadContext*>(context);
+        return read.history->frame(position, values, read.channels);
     }
 };
 AudioHistory::AudioHistory(uint32_t channels, uint32_t capacityFrames)
@@ -292,10 +302,30 @@ AudioReadResult AudioHistory::readWithFilter(uint64_t firstHostNs, double rate,
     }
     return {frames, false};
 }
+std::optional<AudioReadResult>
+AudioHistory::readChannels(uint64_t firstHostNs, double rate, RoutingOutput output, uint32_t frames,
+                           AudioReadCursor& cursor, std::span<const uint32_t> selection,
+                           std::optional<ResamplingFilter> filter) const noexcept {
+    const AudioResampler* resampler = &impl_->resampler;
+    if (filter == ResamplingFilter::LinearPhase)
+        resampler = &impl_->linear;
+    else if (filter && (filter != ResamplingFilter::MinimumPhase || impl_->filter != *filter))
+        resampler = nullptr;
+    if (!resampler || selection.empty()) {
+        silence(output, frames);
+        if (impl_->diagnostics) {
+            impl_->diagnostics->begin(frames);
+            impl_->diagnostics->missing(AudioHistoryMissingReason::InvalidRequest, frames);
+        }
+        return AudioReadResult{frames, false};
+    }
+    return readUsing(firstHostNs, rate, output, frames, cursor, {}, *resampler, selection);
+}
 AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, RoutingOutput output,
                                         uint32_t frames, AudioReadCursor& cursor,
                                         std::span<uint8_t> availableFrames,
-                                        const AudioResampler& resampler) const noexcept {
+                                        const AudioResampler& resampler,
+                                        std::span<const uint32_t> selection) const noexcept {
     const auto& self = *impl_;
     if (self.diagnostics)
         self.diagnostics->begin(frames);
@@ -315,6 +345,14 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
             return !plane;
         }))
         return failed(AudioHistoryMissingReason::InvalidRequest, false);
+    if (!selection.empty()) {
+        if (selection.size() != output.channels.size())
+            return failed(AudioHistoryMissingReason::InvalidRequest, false);
+        for (size_t channel = 0; channel < selection.size(); ++channel)
+            if (selection[channel] >= channels() ||
+                (channel && selection[channel] <= selection[channel - 1]))
+                return failed(AudioHistoryMissingReason::InvalidRequest, false);
+    }
     if (!self.online.load())
         return failed(AudioHistoryMissingReason::Offline, false);
     const auto generation = self.generation.load();
@@ -344,6 +382,7 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
     const auto through =
         firstHostNs + static_cast<uint64_t>(static_cast<long double>(frames - 1) * 1e9L / rate);
     std::array<float*, kMaximumRoutingChannels> planes{};
+    const Impl::ReadContext readContext{&self, selection};
     uint32_t missing = 0, clockMissing = 0;
     for (uint32_t offset = 0; offset < frames;) {
         // Preserve the fractional output grid instead of rounding each split
@@ -371,7 +410,7 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
         missing += resampler.read(
             {point.frame, point.offset, point.rate, rate, point.localClockCorrection, nominal},
             {{planes.data(), output.channels.size()}, output.capacityFrames - offset}, count,
-            Impl::readFrame, &self,
+            Impl::readFrame, &readContext,
             availableFrames.empty() ? std::span<uint8_t>{}
                                     : availableFrames.subspan(offset, count));
         offset += count;

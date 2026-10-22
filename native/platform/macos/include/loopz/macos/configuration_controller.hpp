@@ -92,7 +92,8 @@ class ConfigurationController {
     explicit ConfigurationController(DriverConfigurationLink& link,
                                      std::filesystem::path documentPath = {},
                                      GraphActivation* activation = nullptr,
-                                     bool loadDocument = true);
+                                     bool loadDocument = true,
+                                     uint32_t timingInspectionIntervalMs = 100);
     ~ConfigurationController();
     ConfigurationController(const ConfigurationController&) = delete;
     ConfigurationController& operator=(const ConfigurationController&) = delete;
@@ -138,6 +139,8 @@ class ConfigurationController {
     GraphRecovery submission_;
     uint64_t session_{0}, desiredGeneration_{0}, activeGeneration_{0};
     uint64_t nextRevision_{0}, orphanCancellation_{0}, nextPoll_{0};
+    const uint32_t timingInspectionIntervalMs_;
+    uint64_t nextTimingInspection_{0};
     bool synchronized_{false}, recoveredBackup_{false};
     int32_t error_{0};
     std::string detail_;

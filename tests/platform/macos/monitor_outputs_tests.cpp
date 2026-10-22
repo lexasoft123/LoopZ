@@ -63,7 +63,7 @@ struct Facts {
     AudioHostState state{AudioHostState::Closed};
     AudioHostRender callback{nullptr};
     void* context{nullptr};
-    uint32_t opens{0}, starts{0}, stops{0};
+    uint32_t opens{0}, starts{0}, stops{0}, enumerations{0};
     bool failOpen{false}, failStart{false}, throwInventory{false};
     std::atomic<uint64_t> callbacks{0};
     std::function<void()> onStart;
@@ -126,6 +126,7 @@ class FakeHost final : public AudioHostBackend {
     const std::shared_ptr<Facts> facts;
     explicit FakeHost(std::shared_ptr<Facts> state) : facts(std::move(state)) {}
     AudioHostInventory enumerate() const override {
+        ++facts->enumerations;
         if (facts->throwInventory)
             throw std::runtime_error("Inventory unavailable");
         return facts->inventory;
@@ -239,18 +240,20 @@ struct Fixture {
         MonitorOutputs::InputPermission permission =
             [] {
                 return true;
-            })
-        : facts(std::move(providers)), outputs(
-                                           48000, delay,
-                                           [&] {
-                                               assert(factories < facts.size());
-                                               return std::make_unique<AudioHost>(
-                                                   std::make_unique<FakeHost>(facts[factories++]));
-                                           },
-                                           [&] {
-                                               return completed;
-                                           },
-                                           kBlock, periodReserve, std::move(permission)) {}
+            },
+        uint32_t inspectionIntervalMs = 0)
+        : facts(std::move(providers)),
+          outputs(
+              48000, delay,
+              [&] {
+                  assert(factories < facts.size());
+                  return std::make_unique<AudioHost>(
+                      std::make_unique<FakeHost>(facts[factories++]));
+              },
+              [&] {
+                  return completed;
+              },
+              kBlock, periodReserve, std::move(permission), inspectionIntervalMs) {}
     std::unique_ptr<AudioScene> scene(const RouteDocument& document) {
         return std::make_unique<AudioScene>(
             document, SceneTiming{},
@@ -936,7 +939,44 @@ void noEnabledMonitorNeedsNoHistoryOrHardware() {
     near(sample, .2f);
 }
 
+void boundedMetadataKeepsCallbackHealthAndRecoveryImmediate() {
+    auto facts = std::make_shared<Facts>();
+    Fixture fixture(
+        {facts}, 1024, 2,
+        [] {
+            return true;
+        },
+        250);
+    auto current = fixture.scene(document(false));
+    current->activate();
+    fixture.prime(*current);
+    fixture.poll(current.get(), 1000);
+    assert(fixture.outputs.restored());
+    float sample;
+    assert(facts->fire(sample, 1001));
+    fixture.poll(current.get(), 1001);
+    const auto queries = facts->enumerations;
+    for (uint64_t now = 1010; now < 1250; now += 10) {
+        assert(facts->fire(sample, now));
+        fixture.poll(current.get(), now);
+    }
+    assert(facts->enumerations == queries && facts->opens == 1);
+    fixture.poll(current.get(), 1251);
+    assert(facts->enumerations > queries && facts->opens == 1);
+
+    const auto refreshed = facts->enumerations;
+    fixture.outputs.retryNow(1252);
+    fixture.poll(current.get(), 1252);
+    assert(facts->enumerations > refreshed);
+
+    // A stopped stream must be noticed inside the metadata-cache window.
+    facts->state = AudioHostState::Error;
+    fixture.poll(current.get(), 1253);
+    assert(facts->stops == 1 && !fixture.outputs.restored());
+}
+
 int main() {
+    boundedMetadataKeepsCallbackHealthAndRecoveryImmediate();
     noEnabledMonitorNeedsNoHistoryOrHardware();
     sharedClockMonitoringKeepsControlsAndRecoversModes();
     optInPeriodReservePreservesFloorsAndRateConversion();

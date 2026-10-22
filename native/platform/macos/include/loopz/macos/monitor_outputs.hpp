@@ -33,11 +33,14 @@ class MonitorOutputs {
     // One period is an opt-in diagnostic profile requiring real continuity
     // validation; two remains the default. Shared periods are never changed.
     // An optional control clock refreshes each endpoint's retry/deadline after
-    // blocking host calls; callback-stall grace begins at admission.
+    // blocking host calls; callback-stall grace begins at admission. Metadata
+    // inspection is bounded separately from callback health checks. Native
+    // recovery events invalidate it immediately through retryNow().
     explicit MonitorOutputs(uint32_t renderRate, uint32_t delayFrames = 1024,
                             HostFactory factory = {}, Clock controlClock = {},
                             uint32_t renderBlockFrames = 256, uint32_t periodReserve = 2,
-                            InputPermission inputPermission = {});
+                            InputPermission inputPermission = {},
+                            uint32_t deviceInspectionIntervalMs = 250);
     ~MonitorOutputs();
     MonitorOutputs(const MonitorOutputs&) = delete;
     MonitorOutputs& operator=(const MonitorOutputs&) = delete;

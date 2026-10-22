@@ -22,8 +22,12 @@ void validateBackendDocument(const RouteDocument& document) {
 
 ConfigurationController::ConfigurationController(DriverConfigurationLink& link,
                                                  std::filesystem::path documentPath,
-                                                 GraphActivation* activation, bool loadDocument)
-    : link_(link), activation_(activation), path_(std::move(documentPath)) {
+                                                 GraphActivation* activation, bool loadDocument,
+                                                 uint32_t timingInspectionIntervalMs)
+    : link_(link), activation_(activation), path_(std::move(documentPath)),
+      timingInspectionIntervalMs_(timingInspectionIntervalMs) {
+    if (timingInspectionIntervalMs_ > 1000)
+        throw std::invalid_argument("Timing inspection interval exceeds recovery bound");
     submission_.setDesired({{"submission", {}}}, 0);
     if (loadDocument && !path_.empty())
         reloadDesired();
@@ -268,8 +272,9 @@ void ConfigurationController::poll(uint64_t now) {
                     return device.region->header().retired.load();
                 });
             bool timingChanged = false;
-            if (!retired && activation_) {
+            if (!retired && activation_ && now >= nextTimingInspection_) {
                 const auto latencies = activation_->inputLatencyFrames(*desired_);
+                nextTimingInspection_ = after(now, timingInspectionIntervalMs_);
                 if (!latencies.empty()) {
                     if (latencies.size() != desired_->devices.size())
                         throw std::runtime_error("Renderer returned an incomplete timing plan");
@@ -360,6 +365,7 @@ void ConfigurationController::poll(uint64_t now) {
 void ConfigurationController::retryNow(uint64_t now) noexcept {
     submission_.retryNow(now);
     nextPoll_ = now;
+    nextTimingInspection_ = now;
 }
 RestorationStatus ConfigurationController::status() const {
     auto phase = RestorationPhase::Reconciling;

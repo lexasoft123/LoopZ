@@ -62,15 +62,46 @@ class Source final : public AudioSource {
     uint32_t count;
     std::atomic<bool> online{true};
     float value{0.2f};
-    bool malformed{false};
+    bool malformed{false}, nativeMeters{false};
+    mutable uint32_t readChannelCount{0};
+    mutable std::vector<uint32_t> selectedChannels;
+    std::optional<AudioReadResult>
+    readChannels(uint64_t time, double rate, RoutingOutput output, uint32_t frames,
+                 AudioReadCursor& cursor, std::span<const uint32_t> selection,
+                 std::optional<ResamplingFilter>) const noexcept override {
+        if (!nativeMeters)
+            return std::nullopt;
+        selectedChannels.assign(selection.begin(), selection.end());
+        lastTime = time;
+        readChannelCount = static_cast<uint32_t>(output.channels.size());
+        ++reads;
+        ++cursor.generation;
+        cursor.rate = rate;
+        for (size_t index = 0; index < selection.size(); ++index)
+            std::fill_n(output.channels[index], frames, value * (selection[index] + 1));
+        return AudioReadResult{0, online.load()};
+    }
     mutable uint64_t lastTime{0}, reads{0};
-    explicit Source(uint32_t channels = 2) : count(channels) {}
+    explicit Source(uint32_t channels = 2) : count(channels) {
+        selectedChannels.reserve(64);
+    }
     uint32_t channels() const noexcept override {
         return count;
+    }
+    bool readMeter(AudioMeterSnapshot& snapshot) const noexcept override {
+        if (!nativeMeters)
+            return false;
+        snapshot = {};
+        snapshot.channels = count;
+        snapshot.frames = online.load() ? 128 : 0;
+        for (uint32_t channel = 0; channel < count; ++channel)
+            snapshot.peak[channel] = snapshot.rms[channel] = value * (channel + 1);
+        return true;
     }
     AudioReadResult read(uint64_t time, double rate, RoutingOutput output, uint32_t frames,
                          AudioReadCursor& cursor) const noexcept override {
         lastTime = time;
+        readChannelCount = static_cast<uint32_t>(output.channels.size());
         ++reads;
         ++cursor.generation;
         cursor.rate = rate;
@@ -525,6 +556,87 @@ void unwiredSourcePreview() {
     sink->demand = true;
     assert(render(scene, 100192).activeDevices == 1 && source->reads == 2);
 }
+void nativeMetersAvoidUnwiredConversion() {
+    auto route = device("native-preview", SourceKind::InputDevice, "hardware", 16);
+    route.routing.outputChannels = 2;
+    route.routing.sources[0].connections.clear();
+    auto source = std::make_shared<Source>(16);
+    source->value = .01f;
+    source->nativeMeters = true;
+    auto sink = std::make_shared<Sink>();
+    const auto prepare = [&] {
+        return std::make_unique<AudioScene>(
+            RouteDocument{1, {route}}, SceneTiming{},
+            [&](const auto&, const auto&, const auto&) {
+                return ResolvedAudioSource{source, {}};
+            },
+            [&](const auto&) {
+                return sink;
+            });
+    };
+    auto scene = prepare();
+    assert(render(*scene).validBlock && source->reads == 0);
+    AudioMeterSnapshot meter;
+    assert(scene->sourceMeters(0, 0, meter) && meter.frames == 128 && meter.channels == 16);
+    close(meter.peak[15], .16f);
+    close(meter.rms[15], .16f);
+    close(sink->samples[0][0], 0);
+    // Adding a wire takes effect immediately; only channels needed by the
+    // audio graph are converted while all 16 native meter lanes stay live.
+    route.routing.sources[0].connections = {{2, 0, 1}, {3, 1, 1}};
+    scene = prepare();
+    assert(render(*scene).validBlock && source->reads == 1 && source->readChannelCount == 2);
+    assert((source->selectedChannels == std::vector<uint32_t>{2, 3}));
+    close(sink->samples[0][0], .03f);
+    close(sink->samples[1][0], .04f);
+    assert(scene->sourceMeters(0, 0, meter) && meter.frames == 128);
+    close(meter.peak[15], .16f);
+    route.routing.sources[0].connections = {{15, 0, 1}};
+    scene = prepare();
+    assert(render(*scene).validBlock && source->readChannelCount == 1);
+    assert((source->selectedChannels == std::vector<uint32_t>{15}));
+    close(sink->samples[0][0], .16f);
+    // Nonadjacent wires and fan-out select each source once, independent of
+    // connection order. Silent gaps remain zero in the full graph layout.
+    route.routing.sources[0].connections = {{15, 0, .5f}, {2, 1, 1}, {15, 1, .25f}};
+    scene = prepare();
+    assert(render(*scene).validBlock && source->readChannelCount == 2);
+    assert((source->selectedChannels == std::vector<uint32_t>{2, 15}));
+    close(sink->samples[0][0], .08f);
+    close(sink->samples[1][0], .07f);
+    assert(scene->sourceMeters(0, 0, meter));
+    close(meter.peak[0], .01f);
+    close(meter.peak[15], .16f);
+    // Disconnecting or disabling a source clears the preview, never freezes it.
+    route.routing.sources[0].connections.clear();
+    scene = prepare();
+    source->online.store(false);
+    const auto reads = source->reads;
+    assert(render(*scene).validBlock && source->reads == reads);
+    assert(scene->sourceMeters(0, 0, meter) && !meter.frames);
+    source->online.store(true);
+    route.routing.sources[0].enabled = false;
+    scene = prepare();
+    assert(render(*scene).validBlock && source->reads == reads);
+    assert(scene->sourceMeters(0, 0, meter) && meter.peak[15] == 0);
+
+    AudioMeter captured(16), narrower(2);
+    std::array<float, 128> impulse{};
+    impulse.back() = 1;
+    const float* planes[]{impulse.data()};
+    captured.publishPartial({planes, 128}, 128);
+    assert(captured.read(meter) && meter.frames == 128);
+    close(meter.peak[0], 1);
+    close(meter.rms[0], std::sqrt(1.f / 128));
+    close(meter.peak[15], 0);
+    narrower.publishSnapshot(meter);
+    assert(narrower.read(meter) && meter.channels == 2 && meter.frames == 128);
+    close(meter.peak[0], 1);
+    captured.clear();
+    assert(captured.read(meter));
+    narrower.publishSnapshot(meter);
+    assert(narrower.read(meter) && !meter.frames && meter.peak[0] == 0);
+}
 void silentMeterBlocksAndConcurrentObservers() {
     for (const auto channels : {2U, 8U, 64U}) {
         AudioMeter meter(channels);
@@ -962,6 +1074,7 @@ int main(int argc, char** argv) {
         run("Publication reservations", committedUpdatesDoNotReleaseNewerReservations);
         run("Dependency demand", dependencyDemandAndRecovery);
         run("Unwired source preview", unwiredSourcePreview);
+        run("Native meter conversion demand", nativeMetersAvoidUnwiredConversion);
         run("Silent meter blocks and concurrent observers",
             silentMeterBlocksAndConcurrentObservers);
         run("Partial channel availability retains meters", partialChannelAvailabilityRetainsMeters);

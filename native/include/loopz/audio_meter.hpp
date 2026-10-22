@@ -19,6 +19,10 @@ class AudioMeter {
     explicit AudioMeter(uint32_t channels);
     // Invalid input clears the observation. Nonfinite samples count as silence.
     void publish(RoutingInput input, uint32_t frames) noexcept;
+    // Capture may expose fewer channels than a retained logical layout.
+    void publishPartial(RoutingInput input, uint32_t frames) noexcept;
+    // Transfer a native meter observation, retaining this meter's layout.
+    void publishSnapshot(const AudioMeterSnapshot& snapshot) noexcept;
     // The producer has already established every sample is zero. Positive
     // frames retain a valid silent block; zero clears the observation.
     void publishSilence(uint32_t frames) noexcept;

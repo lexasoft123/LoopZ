@@ -169,11 +169,15 @@ struct MonitorEndpoint {
     uint32_t physicalChannels{0}, inputChannels{0}, periodFrames{0};
     double rate{48000};
     uint64_t attempts{0}, startedAt{0};
+    const uint32_t inspectionIntervalMs;
+    uint64_t nextInspectionMs{0};
+    std::optional<singz::AudioHostDeviceInfo> inspectedDevice;
     explicit MonitorEndpoint(std::string owner, const MonitorDefinition& definition,
                              std::unique_ptr<singz::AudioHost> backend,
-                             MonitorOutputs::InputPermission permission)
+                             MonitorOutputs::InputPermission permission, uint32_t inspectionMs)
         : device(std::move(owner)), monitor(definition.id), selector(definition.deviceSelector),
-          host(std::move(backend)), inputPermission(std::move(permission)) {
+          host(std::move(backend)), inputPermission(std::move(permission)),
+          inspectionIntervalMs(inspectionMs) {
         if (!host || ownOutput(selector))
             throw std::invalid_argument("Invalid or recursive physical monitor");
         retry.setDesired({{"output", {}}}, 0);
@@ -182,6 +186,8 @@ struct MonitorEndpoint {
         close();
     }
     void close() noexcept {
+        nextInspectionMs = 0;
+        inspectedDevice.reset();
         admitted.store(false);
         host->stop();
         outputClock.reset();
@@ -222,7 +228,16 @@ struct MonitorEndpoint {
             error = "Monitor stream stopped or stalled; restoring its saved route";
             return false;
         }
-        const auto info = describe();
+        // Stream faults and callback progress are checked on every poll. Only
+        // synchronous hardware metadata IPC is bounded; recovery events bypass
+        // the cache through retryNow(). Routing and permission checks below
+        // still run for every committed graph.
+        if (!inspectedDevice || now >= nextInspectionMs) {
+            inspectedDevice = describe();
+            nextInspectionMs =
+                now > UINT64_MAX - inspectionIntervalMs ? UINT64_MAX : now + inspectionIntervalMs;
+        }
+        const auto& info = inspectedDevice;
         if (!info)
             return false;
         if (info->uid != uid || info->nominalSampleRate != rate ||
@@ -384,11 +399,11 @@ struct MonitorOutputs::Impl {
     const HostFactory factory;
     const Clock clock;
     const InputPermission inputPermission;
-    const uint32_t delay, quantum, periodReserve;
+    const uint32_t delay, quantum, periodReserve, inspectionIntervalMs;
     MonitorBuses buses;
     std::vector<std::weak_ptr<MonitorEndpoint>> endpoints;
     Impl(uint32_t rate, uint32_t lookback, HostFactory create, Clock time, uint32_t blockFrames,
-         uint32_t reservedPeriods, InputPermission permission)
+         uint32_t reservedPeriods, InputPermission permission, uint32_t inspectionMs)
         : factory(create ? std::move(create) : HostFactory{[] {
               return std::make_unique<singz::AudioHost>();
           }}),
@@ -396,17 +411,20 @@ struct MonitorOutputs::Impl {
           inputPermission(permission ? std::move(permission) : InputPermission{[] {
               return microphonePermission() == MicrophonePermission::Authorized;
           }}),
-          delay(lookback), quantum(blockFrames), periodReserve(reservedPeriods), buses(rate) {
+          delay(lookback), quantum(blockFrames), periodReserve(reservedPeriods),
+          inspectionIntervalMs(inspectionMs), buses(rate) {
         if (delay > kCapacity / 2 || (periodReserve != 1 && periodReserve != 2) ||
-            (quantum != 32 && quantum != 64 && quantum != 128 && quantum != kBlock))
+            (quantum != 32 && quantum != 64 && quantum != 128 && quantum != kBlock) ||
+            inspectionIntervalMs > 1000)
             throw std::invalid_argument("Invalid monitor lookback");
     }
 };
 MonitorOutputs::MonitorOutputs(uint32_t renderRate, uint32_t delayFrames, HostFactory factory,
                                Clock clock, uint32_t renderBlockFrames, uint32_t periodReserve,
-                               InputPermission permission)
+                               InputPermission permission, uint32_t inspectionMs)
     : impl_(std::make_unique<Impl>(renderRate, delayFrames, std::move(factory), std::move(clock),
-                                   renderBlockFrames, periodReserve, std::move(permission))) {}
+                                   renderBlockFrames, periodReserve, std::move(permission),
+                                   inspectionMs)) {}
 MonitorOutputs::~MonitorOutputs() {
     stop();
 }
@@ -448,8 +466,9 @@ std::shared_ptr<AudioSink> MonitorOutputs::decorate(const VirtualDeviceDefinitio
             auto host = self.factory();
             if (!host)
                 throw std::runtime_error("Monitor factory returned no audio host");
-            endpoint = std::make_shared<MonitorEndpoint>(device.id, monitor, std::move(host),
-                                                         self.inputPermission);
+            endpoint =
+                std::make_shared<MonitorEndpoint>(device.id, monitor, std::move(host),
+                                                  self.inputPermission, self.inspectionIntervalMs);
             self.endpoints.push_back(endpoint);
         }
         endpoint->slots.checkStageCapacity();
@@ -556,8 +575,10 @@ void MonitorOutputs::poll(const AudioScene* committed, uint64_t now) {
 }
 void MonitorOutputs::retryNow(uint64_t now) noexcept {
     for (const auto& weak : impl_->endpoints)
-        if (const auto endpoint = weak.lock())
+        if (const auto endpoint = weak.lock()) {
+            endpoint->nextInspectionMs = 0;
             endpoint->retry.retryNow(now);
+        }
 }
 void MonitorOutputs::stop() noexcept {
     for (const auto& weak : impl_->endpoints)

@@ -271,7 +271,7 @@ class InputSource final : public SourceEndpoint {
         : selector_(std::move(selector)),
           history_(channels, AudioHistory::kDefaultCapacityFrames, options.inputFilter,
                    options.deliveryDiagnostics),
-          deliveryEnabled_(options.deliveryDiagnostics) {}
+          deliveryEnabled_(options.deliveryDiagnostics), captureMeter_(channels) {}
     ~InputSource() override {
         close();
     }
@@ -408,6 +408,7 @@ class InputSource final : public SourceEndpoint {
             unit_ = nullptr;
         }
         history_.stop();
+        captureMeter_.clear();
         available_ = 0;
     }
     void invalidateHealth() noexcept override {
@@ -439,9 +440,20 @@ class InputSource final : public SourceEndpoint {
         nextDeviceInspectionNs_ = now + 250000000ULL;
         return true;
     }
+    bool readMeter(AudioMeterSnapshot& snapshot) const noexcept override {
+        snapshot = {};
+        (void)captureMeter_.read(snapshot);
+        return true;
+    }
     AudioReadResult read(uint64_t first, double rate, RoutingOutput output, uint32_t frames,
                          AudioReadCursor& cursor) const noexcept override {
         return history_.read(first, rate, output, frames, cursor);
+    }
+    std::optional<AudioReadResult>
+    readChannels(uint64_t first, double rate, RoutingOutput output, uint32_t frames,
+                 AudioReadCursor& cursor, std::span<const uint32_t> channels,
+                 std::optional<ResamplingFilter> filter) const noexcept override {
+        return history_.readChannels(first, rate, output, frames, cursor, channels, filter);
     }
     AudioReadResult readWithFilter(uint64_t first, double rate, RoutingOutput output,
                                    uint32_t frames, AudioReadCursor& cursor,
@@ -500,6 +512,9 @@ class InputSource final : public SourceEndpoint {
                                        time->mSampleTime,
                                        time->mFlags & kAudioTimeStampSampleTimeValid))
             self.callbackError_.store(kAudioHardwareUnspecifiedError);
+        if (!result)
+            self.captureMeter_.publishPartial(
+                {{self.planes_.data(), self.available_}, self.maximum_}, frames);
         if (!result && self.deliveryEnabled_ && enteredNs < self.deliveryEndNs_.load())
             self.delivery_.observe(ticksToNs(time->mHostTime), frames, self.rate_, enteredNs,
                                    hostNowNs(), time->mSampleTime,
@@ -520,6 +535,7 @@ class InputSource final : public SourceEndpoint {
     const bool deliveryEnabled_;
     AudioDeliveryTiming delivery_;
     std::atomic<uint64_t> deliveryEndNs_{UINT64_MAX};
+    AudioMeter captureMeter_;
 };
 } // namespace
 std::shared_ptr<SourceEndpoint> createCaptureSource(SourceKind kind, const std::string& selector,

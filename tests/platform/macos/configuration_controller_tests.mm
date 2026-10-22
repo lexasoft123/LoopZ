@@ -114,6 +114,60 @@ void settle(ConfigurationController& controller, Link& link, uint64_t& now) {
     }
     assert(false && "Controller did not restore the desired graph");
 }
+void stableTimingInspectionIsBoundedButRecoveryBypassesIt() {
+    struct Activation final : GraphActivation {
+        mutable uint32_t inspections{0};
+        uint32_t latency{129};
+        struct Prepared final : PreparedGraphActivation {
+            void commit() noexcept override {}
+        };
+        struct Plan final : GraphActivationPlan {
+            std::vector<uint32_t> latencies;
+            explicit Plan(std::vector<uint32_t> values) : latencies(std::move(values)) {}
+            std::span<const uint32_t> inputLatencyFrames() const noexcept override {
+                return latencies;
+            }
+            std::unique_ptr<PreparedGraphActivation>
+            prepare(std::span<const DeviceTransport>) override {
+                return std::make_unique<Prepared>();
+            }
+        };
+        std::vector<uint32_t> inputLatencyFrames(const RouteDocument& route) const override {
+            ++inspections;
+            return std::vector<uint32_t>(route.devices.size(), latency);
+        }
+        std::unique_ptr<GraphActivationPlan> plan(const RouteDocument& route) override {
+            return std::make_unique<Plan>(inputLatencyFrames(route));
+        }
+        std::unique_ptr<PreparedGraphActivation>
+        prepare(const RouteDocument&, std::span<const DeviceTransport>) override {
+            return std::make_unique<Prepared>();
+        }
+    } activation;
+    Link link;
+    ConfigurationController controller(link, {}, &activation, false, 250);
+    controller.setDesired(document());
+    uint64_t now = 0;
+    settle(controller, link, now);
+    const auto initial = activation.inspections;
+    controller.poll(now += 100);
+    assert(activation.inspections == initial + 1);
+    controller.poll(now += 100);
+    controller.poll(now += 100);
+    assert(activation.inspections == initial + 1);
+    controller.poll(now += 100);
+    assert(activation.inspections == initial + 2);
+
+    activation.latency = 257;
+    controller.retryNow(++now);
+    controller.poll(now);
+    assert(link.submitCount == 2 && link.staged.front().inputLatencyFrames == 257);
+    // The transaction plans fresh metadata rather than using a cached budget.
+    link.finish();
+    settle(controller, link, now);
+    assert(controller.devices().front().inputLatencyFrames == 257);
+}
+
 void rejectionRollbackAndQuarantine() {
     Link link;
     ConfigurationController controller(link);
@@ -414,6 +468,7 @@ void persistenceAndFailedEdits() {
 } // namespace
 int main() {
     @autoreleasepool {
+        stableTimingInspectionIsBoundedButRecoveryBypassesIt();
         rejectionRollbackAndQuarantine();
         newerIntentAndCancelRace();
         sessionChangesAndUncertainSubmits();

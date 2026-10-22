@@ -11,7 +11,15 @@ AudioMeter::AudioMeter(uint32_t channels) : channels_(channels) {
         throw std::invalid_argument("Invalid audio meter channel count");
 }
 void AudioMeter::publish(RoutingInput input, uint32_t frames) noexcept {
-    if (!frames || frames > input.capacityFrames || input.channels.size() != channels_ ||
+    if (input.channels.size() != channels_) {
+        clear();
+        return;
+    }
+    publishPartial(input, frames);
+}
+void AudioMeter::publishPartial(RoutingInput input, uint32_t frames) noexcept {
+    if (!frames || frames > input.capacityFrames || input.channels.empty() ||
+        input.channels.size() > channels_ ||
         std::any_of(input.channels.begin(), input.channels.end(), [](auto* p) {
             return !p;
         })) {
@@ -20,19 +28,36 @@ void AudioMeter::publish(RoutingInput input, uint32_t frames) noexcept {
     }
     version_.fetch_add(1);
     for (uint32_t channel = 0; channel < channels_; ++channel) {
+        const float* samples = channel < input.channels.size() ? input.channels[channel] : nullptr;
         float peak = 0;
         double energy = 0;
-        const float* samples = input.channels[channel];
-        for (uint32_t frame = 0; frame < frames; ++frame) {
-            const float value = std::isfinite(samples[frame]) ? samples[frame] : 0;
-            peak = std::max(peak, std::fabs(value));
-            energy += static_cast<double>(value) * value;
-        }
+        if (samples)
+            for (uint32_t frame = 0; frame < frames; ++frame) {
+                const float value = std::isfinite(samples[frame]) ? samples[frame] : 0;
+                peak = std::max(peak, std::fabs(value));
+                energy += static_cast<double>(value) * value;
+            }
         peak_[channel].store(std::bit_cast<uint32_t>(peak));
         rms_[channel].store(
             std::bit_cast<uint32_t>(static_cast<float>(std::sqrt(energy / frames))));
     }
     frames_.store(frames);
+    version_.fetch_add(1);
+}
+void AudioMeter::publishSnapshot(const AudioMeterSnapshot& snapshot) noexcept {
+    if (!snapshot.frames || snapshot.channels < channels_ ||
+        snapshot.channels > kMaximumRoutingChannels) {
+        clear();
+        return;
+    }
+    version_.fetch_add(1);
+    for (uint32_t channel = 0; channel < channels_; ++channel) {
+        const auto peak = snapshot.peak[channel], rms = snapshot.rms[channel];
+        peak_[channel].store(
+            std::bit_cast<uint32_t>(std::isfinite(peak) && peak >= 0 ? peak : 0.0f));
+        rms_[channel].store(std::bit_cast<uint32_t>(std::isfinite(rms) && rms >= 0 ? rms : 0.0f));
+    }
+    frames_.store(snapshot.frames);
     version_.fetch_add(1);
 }
 void AudioMeter::publishSilence(uint32_t frames) noexcept {
