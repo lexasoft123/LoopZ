@@ -246,8 +246,13 @@ void SourceRegistry::poll(const AudioScene* committed, uint64_t now, uint32_t su
         return observedNow;
     };
     // Keep unchanged capture alive across the interval between scene commit
-    // and its first audio block. An all-idle rendered scene still closes it.
-    if (committed && !committed->hasRendered())
+    // and its first audio block. Fully disabled scenes never render and can
+    // release capture immediately after commit.
+    if (committed && !committed->hasRendered() &&
+        std::any_of(committed->document().devices.begin(), committed->document().devices.end(),
+                    [](const auto& device) {
+                        return device.routing.enabled;
+                    }))
         return;
     const auto playbackDemand = committed ? committed->requestedDevices() | supplementalDemand : 0;
     const auto demand = committed

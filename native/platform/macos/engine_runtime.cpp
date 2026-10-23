@@ -72,7 +72,7 @@ struct EngineRuntime::Impl {
     std::unique_ptr<EditorController> editor;
     RenderThread render;
     GraphRecovery renderRecovery;
-    bool started{false};
+    bool started{false}, renderDemanded{false};
     uint64_t nextFilePoll{0};
     uint64_t renderEpochNs{0}, hardwareBufferGeneration{0};
     std::string documentError, controlError;
@@ -282,6 +282,7 @@ void EngineRuntime::start() {
 }
 void EngineRuntime::stop() noexcept {
     impl_->started = false;
+    impl_->renderDemanded = false;
     impl_->render.stop();
     impl_->monitors.stop();
     impl_->sources.stop();
@@ -327,11 +328,22 @@ void EngineRuntime::poll() {
         self.controlError = error.what();
     }
     const auto completed = hostNowNs() / 1000000;
-    if (self.renderRecovery.ready("renderer") && !self.render.active()) {
+    const auto* active = self.controller->active();
+    const bool renderNeeded = active && std::any_of(active->devices.begin(), active->devices.end(),
+                                                    [](const auto& device) {
+                                                        return device.routing.enabled;
+                                                    });
+    if (renderNeeded != self.renderDemanded) {
+        self.renderDemanded = renderNeeded;
+        if (!renderNeeded)
+            self.render.stop();
+        self.renderRecovery.restart(completed);
+    }
+    if (renderNeeded && self.renderRecovery.ready("renderer") && !self.render.active()) {
         self.render.stop();
         self.renderRecovery.lost("renderer", completed);
     }
-    if (self.controller->active())
+    if (renderNeeded)
         for (const auto& attempt : self.renderRecovery.attempts(completed)) {
             bool started = false;
             try {
@@ -504,12 +516,20 @@ EngineRuntimeStatus EngineRuntime::status() const {
     result.documentError = self.documentError;
     result.controlError = self.controlError;
     auto scene = self.renderer.observe();
-    result.restored = self.started && result.render.running && !result.render.error &&
-                      result.render.lastBlockHostNs >= self.renderEpochNs &&
+    const bool renderNeeded =
+        scene && std::any_of(scene->document().devices.begin(), scene->document().devices.end(),
+                             [](const auto& device) {
+                                 return device.routing.enabled;
+                             });
+    const bool renderReady = renderNeeded
+                                 ? result.render.running && !result.render.error &&
+                                       result.render.lastBlockHostNs >= self.renderEpochNs &&
+                                       scene->hasRendered() && scene->timingReady()
+                                 : !result.render.running;
+    result.restored = self.started && renderReady &&
                       result.configuration.phase == RestorationPhase::Restored && scene &&
-                      scene->hasRendered() && scene->timingReady() && self.sources.restored() &&
-                      self.monitors.restored() && self.documentError.empty() &&
-                      self.controlError.empty() &&
+                      self.sources.restored() && self.monitors.restored() &&
+                      self.documentError.empty() && self.controlError.empty() &&
                       self.deviceSettings.restoredFor(scene->document());
     return result;
 }

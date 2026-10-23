@@ -342,6 +342,35 @@ VirtualDeviceDefinition device(std::string id, SourceKind kind, const std::strin
     result.bindings = {{"source", kind, selector, false}};
     return result;
 }
+void disabledSceneReleasesCaptureWithoutRendering() {
+    std::shared_ptr<Endpoint> endpoint;
+    SourceRegistry registry([&](auto, const auto&, unsigned channels) {
+        endpoint = std::make_shared<Endpoint>(channels);
+        return endpoint;
+    });
+    RouteDocument document{1, {device("one", SourceKind::Application, "app")}};
+    auto sink = std::make_shared<Sink>();
+    const auto prepare = [&] {
+        registry.prepare(document);
+        return std::make_unique<AudioScene>(
+            document, SceneTiming{},
+            [&](const auto& d, const auto& b, const auto& r) {
+                return registry.resolve(d, b, r);
+            },
+            [&](const auto&) {
+                return sink;
+            });
+    };
+    auto active = prepare();
+    active->render(100000, 64);
+    registry.poll(active.get(), 0);
+    assert(endpoint->ready && registry.restored());
+    document.devices.front().routing.enabled = false;
+    auto disabled = prepare();
+    assert(!disabled->hasRendered());
+    registry.poll(disabled.get(), 100);
+    assert(!endpoint->ready && endpoint->closes == 1 && registry.restored());
+}
 void sharedSourcesAndPolicy() {
     std::vector<std::shared_ptr<Endpoint>> endpoints;
     SourceRegistry registry([&](auto, const auto&, unsigned channels) {
@@ -951,6 +980,7 @@ int main() {
     concurrentHistory();
     measuredInputClock();
     sharedSourcesAndPolicy();
+    disabledSceneReleasesCaptureWithoutRendering();
     previewDoesNotMuteOriginalPlayback();
     sharedChannelDemandRetainsHistory();
     missingRetryAndCapabilities();

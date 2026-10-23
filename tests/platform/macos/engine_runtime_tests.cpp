@@ -10,6 +10,7 @@
 #include <fstream>
 #include <map>
 #include <functional>
+#include <source_location>
 #include <thread>
 #include <unistd.h>
 
@@ -230,7 +231,9 @@ struct Fixture {
         runtime.poll();
         output->fire();
     }
-    template <typename Predicate> void until(Predicate predicate) {
+    template <typename Predicate>
+    void until(Predicate predicate,
+               const std::source_location location = std::source_location::current()) {
         const auto deadline = hostNowNs() + 10000000000ULL;
         while (hostNowNs() < deadline) {
             tick();
@@ -239,8 +242,8 @@ struct Fixture {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         const auto status = runtime.status();
-        std::fprintf(stderr, "Runtime timeout: cfg=%u, render=%d, doc=%s, control=%s\n",
-                     unsigned(status.configuration.phase), status.render.running,
+        std::fprintf(stderr, "Runtime timeout at line %u: cfg=%u, render=%d, doc=%s, control=%s\n",
+                     location.line(), unsigned(status.configuration.phase), status.render.running,
                      status.documentError.c_str(), status.controlError.c_str());
         assert(false);
     }
@@ -250,6 +253,84 @@ struct Fixture {
         });
     }
 };
+void disabledDevicesSuspendRenderingAndResumeOnEnable() {
+    Fixture fixture;
+    auto desired = document();
+    desired.devices.resize(1);
+    auto& device = desired.devices.front();
+    device.routing.sources = {{"input", 2, 1, true, false, defaultChannelConnections(2, 2)}};
+    device.bindings = {{"input", SourceKind::InputDevice, "input"}};
+    device.routing.enabled = false;
+    auto& engine = fixture.runtime;
+    engine.start();
+    engine.setDesired(desired);
+    fixture.until([&] {
+        return engine.status().restored;
+    });
+    assert(!engine.status().render.running && !fixture.output->opens);
+
+    // Editor preview and recovery notifications cannot wake disabled audio.
+    engine.setEditorPreview(true);
+    engine.retryNow();
+    const auto idleBlocks = engine.status().render.blocks;
+    for (unsigned poll = 0; poll < 20; ++poll) {
+        fixture.tick();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    assert(engine.status().restored && !engine.status().render.running &&
+           engine.status().render.blocks == idleBlocks && !fixture.output->opens);
+
+    device.routing.enabled = true;
+    engine.setDesired(desired);
+    fixture.until([&] {
+        return engine.status().restored;
+    });
+    fixture.sample(0.1f);
+    const auto input = fixture.sources.at("input");
+    assert(input->opened && fixture.output->opens == 1 && engine.status().render.running);
+
+    // A disabled neighbour does not suspend an enabled device's renderer.
+    auto neighbour = device;
+    neighbour.id = neighbour.name = "disabled-neighbour";
+    neighbour.routing.enabled = false;
+    desired.devices.push_back(neighbour);
+    engine.setDesired(desired);
+    fixture.until([&] {
+        return engine.status().restored;
+    });
+    assert(engine.status().render.running);
+    fixture.sample(0.1f);
+
+    desired.devices.front().routing.enabled = false;
+    engine.setDesired(desired);
+    fixture.until([&] {
+        return engine.status().restored;
+    });
+    assert(!engine.status().render.running && !input->opened &&
+           fixture.output->state == AudioHostState::Closed);
+    const auto stoppedBlocks = engine.status().render.blocks;
+    for (unsigned poll = 0; poll < 20; ++poll) {
+        fixture.tick();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    assert(engine.status().render.blocks == stoppedBlocks);
+
+    desired.devices.front().routing.enabled = true;
+    fixture.output->sample = 0;
+    engine.setDesired(desired);
+    fixture.until([&] {
+        return engine.status().restored;
+    });
+    fixture.sample(0.1f);
+    assert(engine.status().render.running && fixture.sources.at("input")->opened);
+
+    engine.setDesired({kRouteDocumentVersion, {}});
+    fixture.until([&] {
+        return engine.status().restored;
+    });
+    assert(!engine.status().render.running && !input->opened);
+}
+
 void editorPreviewWithoutClientsOrWires() {
     Fixture fixture;
     auto desired = document();
@@ -927,6 +1008,10 @@ void listReorderingRetainsRunningGraph(bool requireContinuousSamples = true) {
 }
 
 int main(int argc, char** argv) {
+    if (argc == 2 && std::string(argv[1]) == "--idle") {
+        disabledDevicesSuspendRenderingAndResumeOnEnable();
+        return 0;
+    }
     if (argc == 2 && std::string(argv[1]) == "--reorder") {
         listReorderingRetainsRunningGraph();
         return 0;
@@ -942,6 +1027,7 @@ int main(int argc, char** argv) {
     }
     if (argc != 1)
         return 2;
+    disabledDevicesSuspendRenderingAndResumeOnEnable();
     audioServiceResetRestoresSavedIntent();
     editorPreviewWithoutClientsOrWires();
     physicalInputBudgetDoesNotShortenApplicationHistory();
