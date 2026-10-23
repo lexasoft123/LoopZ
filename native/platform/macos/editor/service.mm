@@ -24,13 +24,15 @@ struct Pending {
 };
 struct State {
     const EditorServicePolicy policy;
+    const std::function<void()> wake;
     std::mutex mutex;
     bool stopped{false}, listening{true};
     std::vector<std::shared_ptr<Peer>> peers;
     std::deque<std::unique_ptr<Pending>> requests;
     size_t outstanding{0}, inFlight{0};
     uint64_t completed{0}, rejected{0}, expired{0};
-    explicit State(EditorServicePolicy configuration) : policy(std::move(configuration)) {}
+    State(EditorServicePolicy configuration, std::function<void()> notification)
+        : policy(std::move(configuration)), wake(std::move(notification)) {}
 
     void remove(const std::shared_ptr<Peer>& peer) {
         std::lock_guard lock(mutex);
@@ -45,6 +47,8 @@ struct State {
             return true;
         });
         xpc_connection_cancel(peer->connection);
+        if (wake)
+            wake();
     }
     void reject(const std::shared_ptr<Peer>& peer, xpc_object_t reply, EditorFailure code,
                 std::string_view detail) {
@@ -116,6 +120,8 @@ void receive(const std::shared_ptr<State>& state, const std::shared_ptr<Peer>& p
         }
         if (!admitted)
             state->reject(peer, reply, EditorFailure::Busy, "Editor request queue is full");
+        else if (state->wake)
+            state->wake();
     } catch (const std::invalid_argument& error) {
         state->reject(peer, reply, EditorFailure::Invalid, error.what());
     } catch (const std::exception& error) {
@@ -148,7 +154,7 @@ struct EditorService::Impl {
     Impl(EditorServicePolicy policy, EditorOperations handlers, const std::string& name)
         : operations(std::move(handlers)),
           queue(dispatch_queue_create("com.lexasoft.loopz.editor.listener", DISPATCH_QUEUE_SERIAL)),
-          state(std::make_shared<State>(std::move(policy))) {
+          state(std::make_shared<State>(std::move(policy), operations.wake)) {
         if (!queue || state->policy.clientRequirement.empty() ||
             state->policy.clientUID == UINT32_MAX || !operations.snapshot || !operations.edit ||
             !operations.retry || name.find('\0') != std::string::npos || name.size() > 255)
@@ -167,6 +173,8 @@ struct EditorService::Impl {
             if (xpc_get_type(event) == XPC_TYPE_ERROR) {
                 std::lock_guard lock(current->mutex);
                 current->listening = false;
+                if (current->wake)
+                    current->wake();
                 return;
             }
             if (xpc_get_type(event) != XPC_TYPE_CONNECTION)

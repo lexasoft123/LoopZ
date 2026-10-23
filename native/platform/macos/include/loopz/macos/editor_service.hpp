@@ -35,6 +35,9 @@ struct EditorOperations {
     std::function<std::string(std::string_view)> initialize{};
     std::function<void(bool)> preview{};
     std::function<std::string(std::string_view)> hardwareBuffer{};
+    // Optional thread-safe scheduler notification. XPC callbacks may invoke it
+    // after queueing work or losing a peer; it must not access runtime state.
+    std::function<void()> wake{};
 };
 class EngineRuntime;
 EditorOperations runtimeEditorOperations(EngineRuntime& runtime);

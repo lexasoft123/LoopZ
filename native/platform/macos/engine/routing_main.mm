@@ -14,6 +14,35 @@
 
 namespace loopz::macos {
 namespace {
+// A signalled source interrupts the idle wait without executing Engine work on
+// XPC threads. Its retained lifetime also covers callbacks during disconnect.
+class ControlWake {
+  public:
+    ControlWake() : loop_(CFRunLoopGetCurrent()) {
+        CFRetain(loop_);
+        CFRunLoopSourceContext context{};
+        context.perform = [](void*) {};
+        source_ = CFRunLoopSourceCreate(nullptr, 0, &context);
+        if (!source_) {
+            CFRelease(loop_);
+            throw std::runtime_error("Engine command wake source could not be created");
+        }
+        CFRunLoopAddSource(loop_, source_, kCFRunLoopDefaultMode);
+    }
+    ~ControlWake() {
+        CFRunLoopSourceInvalidate(source_);
+        CFRelease(source_);
+        CFRelease(loop_);
+    }
+    void signal() const noexcept {
+        CFRunLoopSourceSignal(source_);
+        CFRunLoopWakeUp(loop_);
+    }
+
+  private:
+    CFRunLoopRef loop_;
+    CFRunLoopSourceRef source_;
+};
 volatile sig_atomic_t stopping = 0, retrying = 0;
 void stop(int) {
     stopping = 1;
@@ -267,6 +296,7 @@ int routingMain(int argc, char** argv) {
             uint64_t nextReport = 0;
             uint64_t nextEditorAttempt = 0;
             std::unique_ptr<EditorService> editor;
+            const auto commandWake = std::make_shared<ControlWake>();
             while (!stopping && (!seconds || hostNowNs() - begun <
                                                  static_cast<uint64_t>(seconds) * 1000000000)) {
                 @autoreleasepool {
@@ -288,8 +318,12 @@ int routingMain(int argc, char** argv) {
                     if (editorEnabled && !editor && now >= nextEditorAttempt) {
                         nextEditorAttempt = now + 5000000000;
                         try {
+                            auto operations = runtimeEditorOperations(runtime);
+                            operations.wake = [commandWake] {
+                                commandWake->signal();
+                            };
                             editor = EditorService::machService(productionEditorPolicy(),
-                                                                runtimeEditorOperations(runtime));
+                                                                std::move(operations));
                         } catch (const std::exception& error) {
                             std::fprintf(stderr, "Editor connection: %s\n", error.what());
                         }
@@ -301,8 +335,9 @@ int routingMain(int argc, char** argv) {
                              options, statusLevels ? &details : nullptr, events.get());
                         nextReport = now + 1000000000;
                     }
-                    [[NSRunLoop currentRunLoop]
-                        runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+                    if (!editor || !editor->status().outstanding)
+                        CFRunLoopRunInMode(kCFRunLoopDefaultMode,
+                                           runtime.idleStatusToken() ? 1.0 : 0.02, true);
                 }
             }
             editor.reset();

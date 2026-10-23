@@ -138,6 +138,7 @@ bool peak(EngineRuntime& runtime, float expected) {
 void hardwareBufferRoundTrip(const std::string& requirement) {
     const auto owner = std::this_thread::get_id();
     unsigned writes = 0;
+    const auto wakes = std::make_shared<std::atomic<unsigned>>(0);
     EditorOperations operations{[] {
                                     return "{}";
                                 },
@@ -151,6 +152,9 @@ void hardwareBufferRoundTrip(const std::string& requirement) {
         ++writes;
         return "{\"ok\":true}";
     };
+    operations.wake = [wakes] {
+        ++*wakes;
+    };
     auto service = EditorService::anonymous(policy(requirement), operations);
     EditorServiceClient client(endpoint(*service, requirement));
     perform(*service, nullptr, [&] {
@@ -160,6 +164,9 @@ void hardwareBufferRoundTrip(const std::string& requirement) {
         return client.hardwareBuffer("{\"version\":1}");
     });
     assert(reply == "{\"ok\":true}" && writes == 1);
+    until([&] {
+        return wakes->load() > 0;
+    });
     client.disconnect();
     service->stop();
     operations.hardwareBuffer = {};
