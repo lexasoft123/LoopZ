@@ -56,6 +56,23 @@ def snapshot():
 
 
 class ContractTests(unittest.TestCase):
+    def test_disabled_graph_can_restore_without_rendering(self):
+        before = snapshot()
+        before["document"]["devices"][0]["routing"] = {"enabled": False}
+        before["runtime"].update(sources=[], monitors=[])
+        expected = contract(before, before["document"])
+        after = copy.deepcopy(before)
+        after["revision"]["epoch"] = "replacement"
+        after["runtime"]["rendering"] = False
+        self.assertTrue(restored(after, expected))
+        after["runtime"]["restored"] = False
+        self.assertFalse(restored(after, expected))
+        before["document"]["devices"][0]["routing"]["enabled"] = True
+        expected = contract(before, before["document"])
+        after["document"] = copy.deepcopy(before["document"])
+        after["runtime"]["restored"] = True
+        self.assertFalse(restored(after, expected))
+
     def setUp(self):
         self.before = snapshot()
         self.expected = contract(self.before, self.before["document"])

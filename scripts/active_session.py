@@ -117,7 +117,11 @@ def restored(state, expected):
         return False
     if expected["committed"] and not committed(state):
         return False
-    if expected["rendering"] and runtime.get("rendering") is not True:
+    render_needed = any(
+        device.get("routing", {}).get("enabled", True)
+        for device in expected["document"]["devices"]
+    )
+    if render_needed and expected["rendering"] and runtime.get("rendering") is not True:
         return False
     if expected["fullyRestored"] and runtime.get("restored") is not True:
         return False
@@ -353,7 +357,16 @@ class RoutingSession:
                 runtime = state["runtime"]
                 if (
                     committed(state)
-                    and runtime.get("rendering") is True
+                    and (
+                        runtime.get("rendering") is True
+                        or (
+                            not any(
+                                device.get("routing", {}).get("enabled", True)
+                                for device in document["devices"]
+                            )
+                            and runtime.get("restored") is True
+                        )
+                    )
                     and {item["id"] for item in runtime.get("devices", [])}
                     == {item["id"] for item in document["devices"]}
                 ):
