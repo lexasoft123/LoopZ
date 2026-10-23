@@ -72,7 +72,8 @@ struct EngineRuntime::Impl {
     std::unique_ptr<EditorController> editor;
     RenderThread render;
     GraphRecovery renderRecovery;
-    bool started{false}, renderDemanded{false};
+    bool started{false}, renderDemanded{false}, idleReady{false};
+    uint64_t nextIdlePoll{0}, statusRevision{0};
     uint64_t nextFilePoll{0};
     uint64_t renderEpochNs{0}, hardwareBufferGeneration{0};
     std::string documentError, controlError;
@@ -274,6 +275,7 @@ EngineRuntime::~EngineRuntime() {
 }
 void EngineRuntime::start() {
     if (!impl_->started) {
+        impl_->idleReady = false;
         impl_->started = true;
         impl_->renderRecovery.restart(hostNowNs() / 1000000);
         impl_->nextFilePoll = 0;
@@ -281,6 +283,7 @@ void EngineRuntime::start() {
     }
 }
 void EngineRuntime::stop() noexcept {
+    impl_->idleReady = false;
     impl_->started = false;
     impl_->renderDemanded = false;
     impl_->render.stop();
@@ -293,6 +296,10 @@ void EngineRuntime::poll() {
     if (!self.started)
         return;
     const auto now = hostNowNs() / 1000000;
+    if (self.idleReady && now < self.nextIdlePoll)
+        return;
+    self.idleReady = false;
+    ++self.statusRevision;
     if (self.controller && self.controller->desired())
         self.deviceSettings.setRoutingDocument(*self.controller->desired());
     self.deviceSettings.poll(now);
@@ -370,6 +377,14 @@ void EngineRuntime::poll() {
         }
     }
     self.renderer.collect();
+    // IPC and recovery operations invalidate idleReady immediately. The normal
+    // control loop still accepts commands at its existing cadence; only stable
+    // disabled graphs skip background driver/metadata work between ticks.
+    self.idleReady = !renderNeeded && status().restored;
+    self.nextIdlePoll = hostNowNs() / 1000000 + 1000;
+}
+std::optional<uint64_t> EngineRuntime::idleStatusToken() const noexcept {
+    return impl_->idleReady ? std::optional{impl_->statusRevision} : std::nullopt;
 }
 void EngineRuntime::setEditorPreview(bool enabled) noexcept {
     impl_->renderer.setEditorPreview(enabled && !impl_->options.installationValidation);
@@ -382,6 +397,7 @@ EngineRuntime::publicTimingObservations() const noexcept {
     return impl_->publicTiming ? impl_->publicTiming->observations() : nullptr;
 }
 std::string EngineRuntime::applyHardwareBuffer(std::string_view request) {
+    impl_->idleReady = false;
     if (impl_->options.installationValidation)
         throw std::invalid_argument("Buffer changes are disabled during installation validation");
     if (impl_->controller && impl_->controller->desired())
@@ -389,6 +405,7 @@ std::string EngineRuntime::applyHardwareBuffer(std::string_view request) {
     return impl_->deviceSettings.apply(request);
 }
 void EngineRuntime::retryNow() {
+    impl_->idleReady = false;
     const auto now = hostNowNs() / 1000000;
     impl_->nextFilePoll = 0;
     impl_->nextRatePoll = 0;
@@ -416,6 +433,7 @@ void EngineRuntime::audioServiceReset() {
     retryNow();
 }
 void EngineRuntime::setDesired(RouteDocument document, bool save) {
+    impl_->idleReady = false;
     if (impl_->controller && impl_->controller->desired()) {
         for (auto& device : document.devices)
             for (const auto& previous : impl_->controller->desired()->devices)
@@ -438,6 +456,7 @@ void EngineRuntime::setDesired(RouteDocument document, bool save) {
     }
 }
 void EngineRuntime::reloadDesired() {
+    impl_->idleReady = false;
     impl_->load();
 }
 EditorSnapshot EngineRuntime::editorSnapshot() const {
@@ -451,6 +470,7 @@ EditorSnapshot EngineRuntime::editorSnapshot() const {
 }
 EditorCommit EngineRuntime::applyEditor(const EditorRevision& expected,
                                         std::span<const edit::Command> commands) {
+    impl_->idleReady = false;
     if (impl_->options.installationValidation)
         throw std::invalid_argument("Editor changes are disabled during installation validation");
     // Observe pending external file changes before comparing generations. A
@@ -468,6 +488,7 @@ EditorCommit EngineRuntime::applyEditor(const EditorRevision& expected,
 }
 EditorCommit EngineRuntime::initializeEditor(const EditorRevision& expected,
                                              std::span<const edit::Command> commands) {
+    impl_->idleReady = false;
     const auto before = editorSnapshot();
     if (before.revision != expected || before.document)
         throw StaleEditorRevision();
@@ -482,6 +503,7 @@ EditorCommit EngineRuntime::initializeEditor(const EditorRevision& expected,
 }
 EditorCommit EngineRuntime::moveEditorHistory(const EditorRevision& expected,
                                               EditorHistoryDirection direction) {
+    impl_->idleReady = false;
     if (impl_->options.installationValidation)
         throw std::invalid_argument("Editor changes are disabled during installation validation");
     if (!impl_->options.documentPath.empty() &&

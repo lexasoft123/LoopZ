@@ -243,9 +243,23 @@ std::string runtimeSnapshot(EngineRuntime& runtime) {
 } // namespace
 
 EditorOperations runtimeEditorOperations(EngineRuntime& runtime) {
-    return {[&runtime] {
+    struct IdleSnapshot {
+        std::optional<uint64_t> token;
+        std::string bytes;
+    };
+    const auto cache = std::make_shared<IdleSnapshot>();
+    return {[&runtime, cache] {
                 @autoreleasepool {
-                    return runtimeSnapshot(runtime);
+                    const auto token = runtime.idleStatusToken();
+                    if (token && token == cache->token)
+                        return cache->bytes;
+                    auto bytes = runtimeSnapshot(runtime);
+                    cache->token = token;
+                    if (token)
+                        cache->bytes = bytes;
+                    else
+                        cache->bytes.clear();
+                    return bytes;
                 }
             },
             [&runtime](std::string_view json) {

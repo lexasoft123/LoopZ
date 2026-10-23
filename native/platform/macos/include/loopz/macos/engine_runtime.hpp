@@ -56,6 +56,10 @@ class EngineRuntime {
     void stop() noexcept;
     void poll();
     void retryNow();
+    // A fully restored, all-disabled graph has no live meters. Its status may
+    // be reused until the next maintenance tick or any control operation.
+    // Read only on the same serialized control owner as poll()/editor calls.
+    std::optional<uint64_t> idleStatusToken() const noexcept;
     // Only an authenticated interactive editor requests live source meters.
     // Closing its connection releases preview without changing saved routing.
     void setEditorPreview(bool enabled) noexcept;

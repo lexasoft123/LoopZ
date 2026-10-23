@@ -445,6 +445,68 @@ void runtimeRoundTrip(const std::string& requirement, const std::filesystem::pat
     assert(refused && validation.editorSnapshot().revision == beforeValidationEdit.revision);
     assert(loadRouteDocumentFile(path).document.devices[0].name == "Externally changed");
 }
+void idleSnapshotAndImmediateEnable(const std::string& requirement,
+                                    const std::filesystem::path& root) {
+    auto document = initial();
+    document.devices.resize(1);
+    document.devices.front().routing.enabled = false;
+    const auto path = root / "idle-routing.json";
+    saveRouteDocumentFile(path, document);
+    Link link;
+    EngineRuntimeOptions options;
+    options.documentPath = path;
+    EngineRuntime runtime(link, options, [](SourceKind, const std::string&, uint32_t channels) {
+        return std::make_shared<Input>(channels);
+    });
+    runtime.start();
+    until([&] {
+        runtime.poll();
+        return runtime.idleStatusToken().has_value();
+    });
+    auto operations = runtimeEditorOperations(runtime);
+    auto service = EditorService::anonymous(policy(requirement), operations);
+    EditorServiceClient client(endpoint(*service, requirement));
+    client.connect();
+    id before = parsed(perform(*service, &runtime, [&] {
+        return client.snapshot();
+    }));
+    assert(![before[@"runtime"][@"rendering"] boolValue]);
+    const auto rename = request(
+        before, @[ @{@"type" : @"renameDevice", @"device" : @"mix", @"name" : @"Idle renamed"} ]);
+    perform(*service, &runtime, [&] {
+        return client.edit(rename);
+    });
+    // Snapshot before another maintenance tick must expose the edit immediately.
+    id renamed = parsed(operations.snapshot());
+    assert([renamed[@"document"][@"devices"][0][@"name"] isEqual:@"Idle renamed"]);
+    until([&] {
+        runtime.poll();
+        return runtime.idleStatusToken().has_value();
+    });
+    const auto cached = operations.snapshot();
+    assert(cached == operations.snapshot());
+    const auto enable = request(parsed(cached), @[
+        @{@"type" : @"setDeviceControls",
+          @"device" : @"mix",
+          @"controls" : @{@"enabled" : @YES}}
+    ]);
+    const auto begun = now();
+    perform(*service, &runtime, [&] {
+        return client.edit(enable);
+    });
+    until(
+        [&] {
+            runtime.poll();
+            return runtime.status().restored && runtime.status().render.running &&
+                   peak(runtime, 0.4f);
+        },
+        500);
+    assert(now() - begun < 500);
+    assert(!runtime.idleStatusToken());
+    assert([parsed(operations.snapshot())[@"runtime"][@"rendering"] boolValue]);
+    client.disconnect();
+    service->stop();
+}
 
 struct Reply {
     std::atomic<bool> done{false};
@@ -884,6 +946,7 @@ int main(int argc, char** argv) {
                           [NSUUID UUID].UUIDString.UTF8String;
         std::filesystem::create_directories(root);
         runtimeRoundTrip(requirement, root);
+        idleSnapshotAndImmediateEnable(requirement, root);
         authenticationAndMalformedRequests(requirement);
         boundedQueuesAndCancellation(requirement);
         lateReplyDoesNotReplay(requirement);

@@ -20,7 +20,7 @@ using namespace loopz::macos;
 using namespace singz;
 class Link final : public DriverConfigurationLink {
   public:
-    uint64_t incarnation{1}, revision{0}, submissions{0};
+    uint64_t incarnation{1}, revision{0}, submissions{0}, polls{0};
     bool commit{true}, publicClients{false};
     uint32_t slowPollMs{0};
     std::vector<DriverRateRequest> rates;
@@ -33,6 +33,7 @@ class Link final : public DriverConfigurationLink {
         return incarnation;
     }
     void poll(uint64_t) override {
+        ++polls;
         if (slowPollMs)
             std::this_thread::sleep_for(std::chrono::milliseconds(slowPollMs));
         for (auto& device : mappings) {
@@ -268,10 +269,22 @@ void disabledDevicesSuspendRenderingAndResumeOnEnable() {
         return engine.status().restored;
     });
     assert(!engine.status().render.running && !fixture.output->opens);
+    const auto idleToken = engine.idleStatusToken();
+    assert(idleToken);
+    const auto idlePolls = fixture.link.polls;
+    for (unsigned poll = 0; poll < 100; ++poll)
+        fixture.tick();
+    assert(fixture.link.polls == idlePolls && engine.idleStatusToken() == idleToken);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1050));
+    fixture.tick();
+    assert(fixture.link.polls == idlePolls + 1 && engine.idleStatusToken() != idleToken);
 
     // Editor preview and recovery notifications cannot wake disabled audio.
     engine.setEditorPreview(true);
     engine.retryNow();
+    assert(!engine.idleStatusToken());
+    fixture.tick();
+    assert(fixture.link.polls == idlePolls + 2 && engine.idleStatusToken());
     const auto idleBlocks = engine.status().render.blocks;
     for (unsigned poll = 0; poll < 20; ++poll) {
         fixture.tick();
@@ -281,11 +294,14 @@ void disabledDevicesSuspendRenderingAndResumeOnEnable() {
            engine.status().render.blocks == idleBlocks && !fixture.output->opens);
 
     device.routing.enabled = true;
+    const auto enabledAt = hostNowNs();
     engine.setDesired(desired);
+    assert(!engine.idleStatusToken());
     fixture.until([&] {
         return engine.status().restored;
     });
     fixture.sample(0.1f);
+    assert(hostNowNs() - enabledAt < 500000000);
     const auto input = fixture.sources.at("input");
     assert(input->opened && fixture.output->opens == 1 && engine.status().render.running);
 
