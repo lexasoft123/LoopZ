@@ -50,6 +50,10 @@ import {
     beforeBufferReload,
     afterBufferReload,
 } from "../tests/webkit-buffer-scenarios.mjs";
+import {
+    beforeStatusReload,
+    afterStatusReload,
+} from "../tests/webkit-status-scenarios.mjs";
 
 assert.equal(
     process.platform,
@@ -61,6 +65,14 @@ const output = resolve(process.argv[2] || `${root}/artifacts/webkit-interface`);
 const keyboard = process.argv[3] === "keyboard";
 const sanitized = process.argv[4] === "sanitized";
 const profiles = new Map([
+    [
+        "status",
+        {
+            before: beforeStatusReload,
+            after: afterStatusReload,
+            label: "status-layout",
+        },
+    ],
     [
         "tour",
         {

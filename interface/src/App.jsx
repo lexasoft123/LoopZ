@@ -591,14 +591,6 @@ export default function App({
                                     is available.
                                 </Banner>
                             )}
-                        {state.connected &&
-                            state.service === "applying" &&
-                            state.pending && (
-                                <Banner heading="Applying saved changes">
-                                    The engine keeps the last working graph
-                                    until the new routing is confirmed.
-                                </Banner>
-                            )}
                         {problem && (
                             <Banner
                                 tone="danger"
