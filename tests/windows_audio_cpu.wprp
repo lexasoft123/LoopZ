@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Opt-in CPU attribution. Sampling perturbs timing: diagnostic only,
+     never use this recording as continuity acceptance. No CSwitch stack walks. -->
+<WindowsPerformanceRecorder Version="1.0" Author="LoopZ">
+  <Profiles>
+    <SystemCollector Id="LoopZCpuCollector" Name="LoopZ Audio CPU">
+      <BufferSize Value="1024"/>
+      <Buffers Value="128"/>
+    </SystemCollector>
+    <SystemProvider Id="LoopZCpuProvider">
+      <Keywords>
+        <Keyword Value="ProcessThread"/>
+        <Keyword Value="Loader"/>
+        <Keyword Value="SampledProfile"/>
+        <Keyword Value="DPC"/>
+        <Keyword Value="Interrupt"/>
+      </Keywords>
+      <Stacks>
+        <Stack Value="SampledProfile"/>
+      </Stacks>
+    </SystemProvider>
+    <Profile Id="LoopZAudioCpu.Verbose.File" Name="LoopZAudioCpu"
+             LoggingMode="File" DetailLevel="Verbose" Description="LoopZ CPU attribution with sampled stacks">
+      <Collectors>
+        <SystemCollectorId Value="LoopZCpuCollector">
+          <SystemProviderId Value="LoopZCpuProvider"/>
+        </SystemCollectorId>
+      </Collectors>
+    </Profile>
+  </Profiles>
+</WindowsPerformanceRecorder>

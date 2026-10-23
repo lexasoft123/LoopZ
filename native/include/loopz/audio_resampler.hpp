@@ -5,6 +5,7 @@
 namespace loopz {
 class SincKernel;
 class MinimumPhaseKernel;
+class UnityConvolutionPlan;
 enum class ResamplingFilter { LinearPhase, MinimumPhase };
 
 struct ResamplePosition {
@@ -38,6 +39,8 @@ struct ResampleOutput {
 // The provider supplies timestamp-addressed frames, including all filter wings.
 // Missing support is silent and counted, without a linear fallback or time shift.
 // The default keeps the existing symmetric kernel and aligned direct reads.
+// Wide equal-rate fractional blocks may evaluate that same kernel by FFT
+// convolution, with double intermediates and independent reader scratch.
 // Experimental minimum-phase mode uses past support only and always filters,
 // including integer-aligned targets, to keep its nonlinear phase continuous.
 class AudioResampler {
@@ -53,5 +56,6 @@ class AudioResampler {
   private:
     const SincKernel* const linear_;
     const MinimumPhaseKernel* const minimum_;
+    const UnityConvolutionPlan* const convolution_;
 };
 } // namespace loopz

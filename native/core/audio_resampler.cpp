@@ -1,6 +1,9 @@
 #include <loopz/audio_resampler.hpp>
 #include <loopz/sinc_kernel.hpp>
 #include <loopz/minimum_phase_kernel.hpp>
+#include "unity_convolution.hpp"
+#include "cached_fir.hpp"
+#include "finite_samples.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -29,7 +32,8 @@ AudioResampler::AudioResampler() : AudioResampler(ResamplingFilter::LinearPhase)
 AudioResampler::AudioResampler(ResamplingFilter filter)
     : linear_(filter == ResamplingFilter::LinearPhase ? &SincKernel::prepared() : nullptr),
       minimum_(filter == ResamplingFilter::MinimumPhase ? &MinimumPhaseKernel::prepared()
-                                                        : nullptr) {
+                                                        : nullptr),
+      convolution_(linear_ ? &UnityConvolutionPlan::prepared() : nullptr) {
     if (!linear_ && !minimum_)
         throw std::invalid_argument("Unsupported resampling filter");
 }
@@ -67,12 +71,47 @@ uint32_t AudioResampler::read(ResamplePosition read, ResampleOutput output, uint
     const bool sameRate = std::abs(read.sourceRate - read.outputRate) <= read.outputRate * 2e-9;
     const auto getFrame = [&](uint64_t position, std::span<float> values) {
         const auto result = provider(context, position, values.first(output.channels.size()));
-        if (result.valid)
-            for (size_t channel = 0; channel < output.channels.size(); ++channel)
-                if (channel >= result.availableChannels || !std::isfinite(values[channel]))
-                    values[channel] = 0;
+        if (result.valid) {
+            const auto count = static_cast<uint32_t>(output.channels.size());
+            const auto available = std::min(count, result.availableChannels);
+            detail::sanitizeFinite(values.data(), available);
+            std::fill(values.begin() + available, values.begin() + count, 0.0f);
+        }
         return result;
     };
+
+    if (convolution_ && step == 1 && frames >= 128 &&
+        frames <= UnityConvolutionPlan::kMaximumFrames) {
+        const auto integral = std::floor(read.offset);
+        const auto fraction = static_cast<double>(read.offset - integral);
+        if (fraction >= .0002 && fraction <= .9998 &&
+            integral >= -static_cast<long double>(read.anchor) &&
+            integral < static_cast<long double>(UINT64_MAX - read.anchor - 1)) {
+            const auto center = integral < 0 ? read.anchor - static_cast<uint64_t>(-integral)
+                                             : read.anchor + static_cast<uint64_t>(integral);
+            constexpr uint64_t radius = UnityConvolutionPlan::kSourceRadius;
+            bool constant = center >= radius && center <= UINT64_MAX - radius - frames;
+            for (uint32_t index = 1; constant && index < frames; ++index) {
+                const auto offset = read.offset + static_cast<long double>(index);
+                const auto whole = std::floor(offset);
+                // Adding an integer can round the fractional bits of a
+                // double-precision long double (MSVC). Admit only that tiny
+                // arithmetic noise, never a changing clock ratio or phase.
+                constant = whole == integral + index &&
+                           std::abs(static_cast<double>(offset - whole) - fraction) <= 1e-12;
+            }
+            if (constant)
+                return convolution_->read(center, fraction, output, frames, *linear_, getFrame,
+                                          availableFrames);
+        }
+    }
+
+    // A nearly equal measured clock is still a fractional FIR read. The cached
+    // reader preserves its phase/rate exactly and declines direct-copy frames.
+    if (linear_)
+        if (const auto cached =
+                CachedFir::read(read, output, frames, *linear_, cutoff, getFrame, availableFrames))
+            return *cached;
 
     // A 32-frame output tile needs 16 KiB of double accumulators at 64
     // channels. Read each source frame once per tile, rather than rereading its

@@ -1,18 +1,4 @@
-find_program(LOOPZ_NODE_EXECUTABLE node REQUIRED)
-file(GLOB_RECURSE LOOPZ_INTERFACE_SOURCES CONFIGURE_DEPENDS
-  "${PROJECT_SOURCE_DIR}/interface/src/*.jsx"
-  "${PROJECT_SOURCE_DIR}/interface/src/*.js"
-  "${PROJECT_SOURCE_DIR}/interface/src/*.css"
-  "${PROJECT_SOURCE_DIR}/interface/src/*.json")
-set(LOOPZ_INTERFACE_OUTPUT "${PROJECT_BINARY_DIR}/interface")
-add_custom_command(
-  OUTPUT "${LOOPZ_INTERFACE_OUTPUT}/index.html" "${LOOPZ_INTERFACE_OUTPUT}/loopz.js" "${LOOPZ_INTERFACE_OUTPUT}/loopz.css"
-  COMMAND "${LOOPZ_NODE_EXECUTABLE}" scripts/build.mjs "${LOOPZ_INTERFACE_OUTPUT}"
-  WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/interface"
-  DEPENDS ${LOOPZ_INTERFACE_SOURCES} "${PROJECT_SOURCE_DIR}/branding/mark.js" "${PROJECT_SOURCE_DIR}/interface/scripts/build.mjs"
-          "${PROJECT_SOURCE_DIR}/interface/package-lock.json" "${PROJECT_SOURCE_DIR}/interface/packages/singz-ui-1.9.5.tgz"
-  VERBATIM)
-add_custom_target(loopz-interface DEPENDS "${LOOPZ_INTERFACE_OUTPUT}/index.html" "${LOOPZ_INTERFACE_OUTPUT}/loopz.js" "${LOOPZ_INTERFACE_OUTPUT}/loopz.css")
+include("${PROJECT_SOURCE_DIR}/cmake/interface.cmake")
 add_library(loopz_desktop_session STATIC session.cpp session_host.mm session_process.cpp)
 loopz_macos_objc(loopz_desktop_session)
 target_link_libraries(loopz_desktop_session PUBLIC "-framework Foundation" "-framework Security")

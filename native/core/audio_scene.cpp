@@ -1,9 +1,11 @@
 #include <loopz/audio_scene.hpp>
+#include "finite_samples.hpp"
 #include <loopz/audio_resampler.hpp>
 #include <loopz/timeline.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <limits>
 #include <set>
 #include <stdexcept>
@@ -36,9 +38,7 @@ struct PlanarBlock {
     }
     void sanitize(uint32_t frames) noexcept {
         for (uint32_t channel = 0; channel < channels; ++channel)
-            for (uint32_t frame = 0; frame < frames; ++frame)
-                if (!std::isfinite(writable[channel][frame]))
-                    writable[channel][frame] = 0;
+            detail::sanitizeFinite(writable[channel], frames);
     }
 };
 constexpr size_t kNoDevice = std::numeric_limits<size_t>::max();
@@ -250,6 +250,7 @@ struct AudioScene::Impl {
         bool needed{false}, graphOK{true};
         std::atomic<bool> active{false};
         std::atomic<uint64_t> rendered{0}, graphFailures{0}, sinkFailures{0};
+        std::atomic<uint64_t> inputNs{0}, graphNs{0}, outputNs{0}, sinkNs{0};
         Device(const VirtualDeviceDefinition& route, uint32_t frames)
             : definition(route), output(route.routing.outputChannels, frames),
               meter(route.routing.outputChannels) {}
@@ -381,6 +382,18 @@ SceneRenderResult AudioScene::render(uint64_t firstFrame, uint32_t frames,
             continue;
         }
         ++result.activeDevices;
+        // Optional workbench profiling; ordinary rendering reads no stage clocks.
+        using StageClock = std::chrono::steady_clock;
+        auto stageStart = impl_->timing.stageTiming ? StageClock::now() : StageClock::time_point{};
+        const auto finishStage = [&](std::atomic<uint64_t>& total) noexcept {
+            if (!impl_->timing.stageTiming)
+                return;
+            const auto now = StageClock::now();
+            total.fetch_add(static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(now - stageStart).count()),
+                std::memory_order_relaxed);
+            stageStart = now;
+        };
         for (size_t source = 0; source < node.inputs.size(); ++source) {
             auto& input = *node.inputs[source];
             input.scratch.clear(frames);
@@ -476,22 +489,26 @@ SceneRenderResult AudioScene::render(uint64_t firstFrame, uint32_t frames,
                 input.meter.publishSilence(frames);
             node.views[source] = data;
         }
+        finishStage(node.inputNs);
         node.graphOK = node.graph->render(node.views, node.output.output(), frames, firstFrame);
         if (!node.graphOK) {
             node.output.clear(frames);
             node.graphFailures.fetch_add(1);
             ++result.failedGraphs;
         }
+        finishStage(node.graphNs);
         node.output.sanitize(frames);
         if (node.history)
             node.history->write(firstFrame, node.output.input(), frames);
         node.meter.publish(node.output.input(), frames);
         node.rendered.fetch_add(frames);
+        finishStage(node.outputNs);
         if (node.sink && !node.sink->publish(firstFrame, impl_->timing.renderRate,
                                              node.output.input(), frames)) {
             node.sinkFailures.fetch_add(1);
             ++result.failedSinks;
         }
+        finishStage(node.sinkNs);
     }
     impl_->timingReady.store(timingReady);
     impl_->rendered.store(true);
@@ -543,7 +560,8 @@ SceneDeviceStatus AudioScene::deviceStatus(size_t device) const noexcept {
         return {};
     const auto& node = *impl_->devices[device];
     return {node.active.load(), node.rendered.load(), node.graphFailures.load(),
-            node.sinkFailures.load()};
+            node.sinkFailures.load(), impl_->timing.stageTiming,
+            node.inputNs.load(), node.graphNs.load(), node.outputNs.load(), node.sinkNs.load()};
 }
 SceneSourceStatus AudioScene::sourceStatus(size_t device, size_t source) const noexcept {
     if (device >= impl_->devices.size() || source >= impl_->devices[device]->inputs.size())

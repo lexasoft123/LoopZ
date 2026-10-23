@@ -20,7 +20,7 @@ export function OutputControls({
             aria-label="Device output controls"
         >
             <div className="lz-output-control-heading">
-                <strong>Device output</strong>
+                <strong>{t("Device output")}</strong>
                 <span>{t("All pairs")}</span>
             </div>
             <div className="lz-output-gain-row">
@@ -102,7 +102,9 @@ export function OutputControls({
                 />
             </div>
             <div className="lz-output-setting lz-output-config">
-                <span>{d.channels} channels</span>
+                <span>
+                    {t("Channels")}: {d.channels}
+                </span>
                 <Button
                     size="sm"
                     icon

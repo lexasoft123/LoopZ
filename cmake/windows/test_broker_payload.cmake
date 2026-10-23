@@ -1,0 +1,8 @@
+if(NOT DEFINED INPUT OR NOT DEFINED TEST)
+  message(FATAL_ERROR "Broker input and payload test executable are required")
+endif()
+file(SHA256 "${INPUT}" expected)
+execute_process(COMMAND "${TEST}" "${expected}" RESULT_VARIABLE result)
+if(NOT result STREQUAL "0")
+  message(FATAL_ERROR "Embedded broker payload verification failed: ${result}")
+endif()

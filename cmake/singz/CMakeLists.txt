@@ -1,5 +1,5 @@
 # Narrow LoopZ composition. The upstream archive remains unchanged and hashed;
-# one explicitly pinned build overlay reduces graph containment overhead.
+# explicitly pinned build overlays reduce graph processing overhead.
 set(SINGZ_ROOT "${PROJECT_SOURCE_DIR}/vendor/singz")
 include("${SINGZ_ROOT}/cmake/SingZRealtimeTarget.cmake")
 add_library(singz_native_build_options INTERFACE)
@@ -21,6 +21,10 @@ include("${CMAKE_CURRENT_LIST_DIR}/graph_containment.cmake")
 loopz_singz_containment_source(SINGZ_CONTAINED_RUNNER)
 list(REMOVE_ITEM ZDSP_SOURCES "${SINGZ_ROOT}/zdsp/src/runtime/graph_runner.cpp")
 list(APPEND ZDSP_SOURCES "${SINGZ_CONTAINED_RUNNER}")
+include("${CMAKE_CURRENT_LIST_DIR}/planar_builtins.cmake")
+loopz_singz_planar_source(SINGZ_PLANAR_BUILTINS)
+list(REMOVE_ITEM ZDSP_SOURCES "${SINGZ_ROOT}/zdsp/src/runtime/builtin_nodes.cpp")
+list(APPEND ZDSP_SOURCES "${SINGZ_PLANAR_BUILTINS}")
 add_library(zdsp_runtime STATIC ${ZDSP_SOURCES})
 add_library(SingZ::zdsp_runtime ALIAS zdsp_runtime)
 target_link_libraries(zdsp_runtime PUBLIC zdsp_api)
@@ -44,4 +48,8 @@ add_dependencies(zdsp_runtime loopz-check-zdsp)
 
 if(LOOPZ_BUILD_MACOS_BACKEND)
   include("${CMAKE_CURRENT_LIST_DIR}/macos.cmake")
+endif()
+
+if(LOOPZ_BUILD_WINDOWS_BACKEND)
+  include("${CMAKE_CURRENT_LIST_DIR}/windows.cmake")
 endif()

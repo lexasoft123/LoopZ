@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Opt-in Windows shared-stream initialization diagnostics. Process/image
+     metadata resolves audio-event call stacks; no pool or sampling tracing.
+     Does not change endpoint or audio-service settings. -->
+<WindowsPerformanceRecorder Version="1.0" Author="LoopZ">
+  <Profiles>
+    <SystemCollector Id="ProcessImageCollector" Name="LoopZ Audio Process Images">
+      <BufferSize Value="64"/>
+      <Buffers Value="32"/>
+    </SystemCollector>
+    <SystemProvider Id="ProcessImages">
+      <Keywords>
+        <Keyword Value="ProcessThread"/>
+        <Keyword Value="Loader"/>
+      </Keywords>
+    </SystemProvider>
+    <EventCollector Id="AudioInitializationCollector" Name="LoopZ Audio Initialization">
+      <BufferSize Value="64"/>
+      <Buffers Value="64"/>
+    </EventCollector>
+    <EventProvider Id="WindowsAudio" Name="ae4bd3be-f36f-45b6-8d21-bdd6fb832853" Level="5" Stack="true"/>
+    <Profile Id="LoopZAudioInitialization.Verbose.File" Name="LoopZAudioInitialization"
+             LoggingMode="File" DetailLevel="Verbose" Description="Windows audio stream initialization">
+      <Collectors>
+        <SystemCollectorId Value="ProcessImageCollector">
+          <SystemProviderId Value="ProcessImages"/>
+        </SystemCollectorId>
+        <EventCollectorId Value="AudioInitializationCollector">
+          <EventProviders>
+            <EventProviderId Value="WindowsAudio"/>
+          </EventProviders>
+        </EventCollectorId>
+      </Collectors>
+    </Profile>
+  </Profiles>
+</WindowsPerformanceRecorder>

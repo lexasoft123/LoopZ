@@ -130,6 +130,53 @@ void deliveryTimingObservations() {
            !anchors.snapshot().unsupportedAnchorIntervals &&
            !anchors.snapshot().sourceFrameDiscontinuities && !anchors.snapshot().eventCount);
 }
+void audioHistoryCoverageAndMix() {
+    constexpr uint64_t origin = 7000000000ULL;
+    constexpr double rate = 48000;
+    AudioHistory a(2), b(2), silent(2);
+    std::array<float, kBlock> inputL{}, inputR{}, left{}, right{};
+    const std::array<const float*, 2> input{inputL.data(), inputR.data()};
+    inputL.fill(0.25f);
+    inputR.fill(-0.25f);
+    assert(a.append({input, kBlock}, kBlock, origin, rate, 0, true));
+    inputL.fill(0.5f);
+    inputR.fill(-0.5f);
+    assert(b.append({input, kBlock}, kBlock, origin + frameNs(128, rate), rate, 128, true));
+    const AudioHistory* histories[]{&a, &b};
+    AudioHistoryMixReader first, independent;
+    const auto time = origin + frameNs(64, rate);
+    const auto result = realtime([&] {
+        return sampleAudioHistoryMix(histories, time, rate, left.data(), right.data(), kBlock,
+                                     first);
+    });
+    assert(result.online && result.missingFrames == 128);
+    for (uint32_t frame = 0; frame < kBlock; ++frame) {
+        const auto expected = frame < 64 ? 0.25f : frame < 192 ? 0.75f : 0.5f;
+        assert(std::abs(left[frame] - expected) < 0.00001f &&
+               std::abs(right[frame] + expected) < 0.00001f);
+    }
+    assert(
+        sampleAudioHistoryMix(histories, time, rate, left.data(), right.data(), kBlock, independent)
+            .missingFrames == 128);
+    inputL.fill(0);
+    inputR.fill(0);
+    assert(silent.append({input, kBlock}, kBlock, origin, rate, 0, true));
+    const AudioHistory* withSilence[]{&a, &silent};
+    AudioHistoryMixReader zeroReader;
+    assert(sampleAudioHistoryMix(withSilence, origin, rate, left.data(), right.data(), kBlock,
+                                 zeroReader)
+               .missingFrames == 0);
+    for (auto value : left)
+        assert(value == 0.25f);
+    b.stop();
+    assert(sampleAudioHistoryMix(histories, time, rate, left.data(), right.data(), kBlock, first)
+               .missingFrames == kBlock);
+    assert(
+        sampleAudioHistoryMix({}, time, rate, left.data(), right.data(), 64, first).missingFrames ==
+        64);
+    for (unsigned frame = 0; frame < 64; ++frame)
+        assert(left[frame] == 0 && right[frame] == 0);
+}
 void captureCoverageAndMix() {
     constexpr uint64_t origin = 7000000000ULL;
     constexpr double rate = 48000;
@@ -402,6 +449,7 @@ void stopRestartAndMissingHistory() {
 int main() {
     deliveryTimingObservations();
     captureCoverageAndMix();
+    audioHistoryCoverageAndMix();
     concurrentCaptureMix();
     stereoSpectrum();
     stopRestartAndMissingHistory();

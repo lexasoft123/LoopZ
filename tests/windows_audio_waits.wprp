@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Opt-in scheduling diagnostics only. No sampled CPU or stack walking;
+     recorded audio under tracing is diagnostic, never continuity acceptance. -->
+<WindowsPerformanceRecorder Version="1.0" Author="LoopZ">
+  <Profiles>
+    <SystemCollector Id="LoopZWaitCollector" Name="LoopZ Audio Waits">
+      <BufferSize Value="1024"/>
+      <Buffers Value="128"/>
+    </SystemCollector>
+    <SystemProvider Id="LoopZWaitProvider">
+      <Keywords>
+        <Keyword Value="ProcessThread"/>
+        <Keyword Value="CSwitch"/>
+        <Keyword Value="ReadyThread"/>
+        <Keyword Value="ThreadPriority"/>
+        <Keyword Value="DPC"/>
+        <Keyword Value="Interrupt"/>
+      </Keywords>
+    </SystemProvider>
+    <Profile Id="LoopZAudioWaits.Verbose.File" Name="LoopZAudioWaits"
+             LoggingMode="File" DetailLevel="Verbose" Description="LoopZ scheduler waits without stack sampling">
+      <Collectors>
+        <SystemCollectorId Value="LoopZWaitCollector">
+          <SystemProviderId Value="LoopZWaitProvider"/>
+        </SystemCollectorId>
+      </Collectors>
+    </Profile>
+  </Profiles>
+</WindowsPerformanceRecorder>

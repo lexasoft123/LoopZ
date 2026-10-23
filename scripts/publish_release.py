@@ -11,7 +11,7 @@ from build_release import ROOT, VERSION
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag", required=True)
-    parser.add_argument("--output", type=Path, default=ROOT / "artifacts/release-0.2.0")
+    parser.add_argument("--output", type=Path, default=ROOT / "artifacts/release-0.2.1")
     parser.add_argument("--prerelease", action="store_true")
     args = parser.parse_args()
     if args.tag != "v" + VERSION:

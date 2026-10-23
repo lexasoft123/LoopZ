@@ -17,6 +17,41 @@ void rejects(const std::function<void()>& operation) {
     }
     assert(rejected);
 }
+void captureTreeRoots() {
+    std::vector<ProcessInstance> selected{{40, 300}, {30, 200}, {20, 100}, {50, 250}};
+    std::vector<ProcessTreeNode> nodes{{{20, 100}, 0},  {{25, 150}, 20}, {{30, 200}, 25},
+                                       {{40, 300}, 30}, {{50, 250}, 8},  {{8, 50}, 999}};
+    assert((selectProcessCaptureRoots(selected, nodes) ==
+            std::vector<ProcessInstance>{{20, 100}, {50, 250}}));
+    std::reverse(selected.begin(), selected.end());
+    assert((selectProcessCaptureRoots(selected, nodes) ==
+            std::vector<ProcessInstance>{{20, 100}, {50, 250}}));
+    const auto fails = [](const auto& wanted, const auto& ancestry) {
+        bool failed = false;
+        try {
+            (void)selectProcessCaptureRoots(wanted, ancestry);
+        } catch (const std::exception&) {
+            failed = true;
+        }
+        assert(failed);
+    };
+    auto missing = nodes;
+    missing.erase(missing.begin() + 1);
+    fails(selected, missing);
+    auto reused = nodes;
+    reused[1].process.generation = 201;
+    fails(selected, reused);
+    auto duplicate = selected;
+    duplicate.push_back(selected[0]);
+    fails(duplicate, nodes);
+    const std::vector<ProcessInstance> cycle{{20, 100}, {30, 100}};
+    const std::vector<ProcessTreeNode> cyclic{{{20, 100}, 30}, {{30, 100}, 20}};
+    fails(cycle, cyclic);
+    auto stale = selected;
+    stale[0].generation += 1;
+    fails(stale, nodes);
+    assert(selectProcessCaptureRoots({}, nodes).empty());
+}
 void groupingAndIsolation() {
     const std::vector<ApplicationProcessRoot> roots{{{20, 100}, "browser"}, {{21, 110}, "other"}};
     std::vector<AudioProcessAttribution> audio{
@@ -90,6 +125,7 @@ void malformedSnapshots() {
 }
 } // namespace
 int main() {
+    captureTreeRoots();
     groupingAndIsolation();
     instancesAndUnavailableOwnership();
     malformedSnapshots();

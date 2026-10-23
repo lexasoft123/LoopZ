@@ -270,7 +270,39 @@ export class EngineStore {
     };
 }
 
+let windowsSequence = 0;
+const windowsPending = new Map();
+let windowsBridge;
 export function nativeTransport(message) {
+    const windows = globalThis.chrome?.webview;
+    if (windows) {
+        if (windowsBridge !== windows) {
+            windowsBridge = windows;
+            windows.addEventListener("message", ({ data }) => {
+                const pending = windowsPending.get(data?.id);
+                if (!pending) return;
+                windowsPending.delete(data.id);
+                clearTimeout(pending.timer);
+                if (data.error) pending.reject(new Error(data.error));
+                else pending.resolve(data.result);
+            });
+        }
+        return new Promise((resolve, reject) => {
+            const id = ++windowsSequence;
+            const timer = setTimeout(() => {
+                windowsPending.delete(id);
+                reject(new Error("The audio engine did not reply in time."));
+            }, 15000);
+            windowsPending.set(id, { resolve, reject, timer });
+            try {
+                windows.postMessage({ id, message });
+            } catch (error) {
+                clearTimeout(timer);
+                windowsPending.delete(id);
+                reject(error);
+            }
+        });
+    }
     const bridge = globalThis.webkit?.messageHandlers?.loopz;
     if (!bridge)
         return Promise.reject(

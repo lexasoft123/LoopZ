@@ -83,10 +83,13 @@ struct SceneTiming {
     uint32_t blockFrames{256};
     uint32_t sourceDelayFrames{1024};
     uint32_t passThroughDelayFrames{128};
+    bool stageTiming{false};
 };
 struct SceneDeviceStatus {
     bool active{false};
     uint64_t renderedFrames{0}, graphFailures{0}, sinkFailures{0};
+    bool stageTiming{false};
+    uint64_t inputNs{0}, graphNs{0}, outputNs{0}, sinkNs{0};
 };
 // Control-domain timing, derived without opening providers or allocating audio
 // histories. Latencies use the render clock and follow document device order.

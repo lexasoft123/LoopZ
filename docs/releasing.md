@@ -4,6 +4,61 @@ LoopZ follows SingZ's tag-triggered release model and disposable Developer ID
 keychain mechanism. Its native AppKit/WebKit runtime does not use Electron's
 Windows updater or electron-builder installer.
 
+## Windows release path
+
+For the user-authorized v0.2.1 experimental release, use
+`scripts/package_windows_experimental.py` with the exact native candidate ZIP
+and checksum, reviewed commit/tree, and acceptance record. It includes
+`Install.cmd`, `Remove.cmd`, the bundled Windows PowerShell wrapper and the
+[setup/removal guide](../packaging/windows/experimental/WINDOWS-SETUP.md). The
+wrapper checks active Test Mode and payload identity, then requires explicit
+administrator consent for certificate trust and native maintenance. It never
+changes boot security or restarts Windows. Publish this only as a GitHub
+prerelease with the development-signing requirements and known limits visible.
+The production signing checks below remain unchanged.
+
+
+Windows currently remains a preview; use [the Windows acceptance record](windows.md)
+to identify the exact tested app, service and driver pair. A passing build or
+workbench recording does not replace format/lifecycle, hardware/client, clean
+Windows installation and signed-installer acceptance. The current user-approved
+acceptance scope includes the physical Windows 10 22H2 x64 Dell and the newly
+supplied Windows 11 x64 VM. Windows 11 inspection and normal-user launch alone
+do not establish driver, audio or clean-installer acceptance. Release claims must
+identify the tested Windows builds and completed checks.
+
+Build the app with `scripts\build_windows.cmd` and the kernel driver separately
+with `scripts\build_windows_driver.cmd`. Development signing may be distributed only as an explicitly labeled
+experimental preview with deliberate end-user Test Mode setup. Production packaging requires a Microsoft Hardware Dashboard
+signed driver catalog and valid application signatures; the development
+certificate is not a production signing substitute.
+
+`scripts/package_windows_release.ps1` takes `AppDirectory`,
+`SignedDriverDirectory`, `WebView2Installer`, a new `OutputDirectory` and `SignTool`. It verifies the
+application signatures, Microsoft catalog signer, kernel policy and INF/SYS
+catalog membership before staging. An input combined package's old driver
+folder and manifest are excluded; only the explicitly verified driver is staged,
+and a fresh SHA-256 payload manifest is generated. Supply the x64 Evergreen
+Standalone Installer from [Microsoft's WebView2 download page](https://developer.microsoft.com/microsoft-edge/webview2/).
+Its Microsoft Authenticode signature is required and verified. Old prerequisite
+files are excluded; the explicit installer is included in the payload manifest.
+Use the standalone installer for offline setup, rather than the network bootstrapper.
+
+`scripts/build_windows_installer.ps1` takes those inputs plus `InnoCompiler`,
+`SigningCertificateThumbprint`, HTTPS `TimestampUrl` and `Version`. It packages,
+compiles and signs Setup/Uninstall, then verifies the installer. Use matching
+reviewed source and component versions, and verify clean install, upgrade/repair,
+uninstall, saved routing/defaults and normal-user launch on each promised Windows version
+before release. Keep signature checks enabled and retain artifact hashes and
+acceptance reports. Release tags and publication still require authorization.
+
+Setup checks for a machine-wide Evergreen runtime before installing app files.
+When missing, it extracts the bundled installer and runs `/silent /install`,
+then verifies runtime registration. Failure or a required restart stops setup
+before app/driver installation. A machine-wide check also covers setup elevated
+under a different administrator account. LoopZ uninstall leaves the shared
+Microsoft runtime installed. This follows [Microsoft's deployment guidance](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution).
+
 ## Distribution
 
 A DMG contains one signed LoopZ.app and an Applications shortcut. The app carries

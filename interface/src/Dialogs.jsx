@@ -24,6 +24,7 @@ import { initialDeviceRate, sampleRateLabel } from "./sample-rates.js";
 import OutputPairRemoval from "./OutputPairRemoval.jsx";
 import HardwareBufferSettings from "./HardwareBufferSettings.jsx";
 import { installationComponents } from "./installation.js";
+import { windowsMicrophoneStatus } from "./windows-microphones.js";
 function ModalFocus({ returnFocus, kind }) {
     const currentKind = useRef(kind);
     useEffect(() => {
@@ -98,7 +99,7 @@ export default function Dialogs({
     const sourceState = source ? sourceCondition(state, source) : null;
     const monitor = d?.monitors.find((m) => m.id === modal.id);
     const [name, setName] = useState(
-        modal.kind === "rename" ? d?.name || "" : "Untitled Mix",
+        modal.kind === "rename" ? d?.name || "" : t("Untitled Mix"),
     );
     const [count, setCount] = useState(d?.channels || 2);
     const [rate, setRate] = useState(() => initialDeviceRate(state));
@@ -106,6 +107,7 @@ export default function Dialogs({
     const [extraApp, setExtraApp] = useState(null);
     const [localError, setLocalError] = useState("");
     const [backgroundBusy, setBackgroundBusy] = useState(false);
+    const [backgroundNotice, setBackgroundNotice] = useState("");
     const [microphoneBusy, setMicrophoneBusy] = useState(false);
     const [microphoneNotice, setMicrophoneNotice] = useState("");
     const microphonePending = useRef(false);
@@ -116,6 +118,7 @@ export default function Dialogs({
         if (modal.kind === "channels") setCount(d?.channels || 2);
         setQuery("");
         setLocalError("");
+        setBackgroundNotice("");
     }, [modal.kind]);
     const commit = async (action) => {
         if (
@@ -179,6 +182,7 @@ export default function Dialogs({
         if (backgroundBusy) return;
         setBackgroundBusy(true);
         setLocalError("");
+        setBackgroundNotice("");
         try {
             const result = await transport({
                 version: 1,
@@ -190,6 +194,12 @@ export default function Dialogs({
                     result?.detail ||
                         "The background setting could not be updated.",
                 );
+            if (result.microphoneSelectionsChanged)
+                setBackgroundNotice(
+                    t(
+                        "Microphones were updated. Select your LoopZ microphones again in recording and calling apps.",
+                    ),
+                );
             await refresh();
         } catch (error) {
             setLocalError(error.message);
@@ -198,7 +208,8 @@ export default function Dialogs({
         }
     };
     const titles = {
-        create: t("New virtual device"),
+        create:
+            state.platform === "windows" ? "New mix" : t("New virtual device"),
         rename: t("Rename virtual device"),
         device: t("Device options"),
         "add-source": t("Add a source"),
@@ -316,7 +327,8 @@ export default function Dialogs({
                         >
                             {Array.from(
                                 {
-                                    length: 32,
+                                    length:
+                                        state.platform === "windows" ? 1 : 32,
                                 },
                                 (_, i) => (i + 1) * 2,
                             ).map((n) => (
@@ -429,13 +441,16 @@ export default function Dialogs({
                         }
                     />
                 </div>
-                {source.kind === "app" && (
+                {source.kind === "app" && state.canRouteAppPlayback && (
                     <div className="lz-setting-row">
                         <div>
                             <strong>{t("Mute original playback")}</strong>
                             <p>
-                                Capture the app here while silencing its
-                                original output.
+                                {state.platform === "windows"
+                                    ? t(
+                                          "Route the app’s original output through LoopZ after capture is ready. Turn this off to restore its previous output.",
+                                      )
+                                    : "Capture the app here while silencing its original output."}
                             </p>
                         </div>
                         <Switch
@@ -521,7 +536,11 @@ export default function Dialogs({
                 group: t("Applications"),
             })),
             ...state.inventory.devices
-                .filter((x) => x.inputChannels > 0)
+                .filter(
+                    (x) =>
+                        x.inputChannels > 0 &&
+                        x.virtualRole !== "loopz-microphone",
+                )
                 .map((input) => ({
                     name: input.name,
                     selector: input.uid,
@@ -570,27 +589,38 @@ export default function Dialogs({
                         onChange={(event) => setQuery(event.target.value)}
                     />
                 </label>
-                <Button
-                    size="sm"
-                    onClick={async () => {
-                        try {
-                            const app = await transport({
-                                version: 1,
-                                operation: "choose-application",
-                            });
-                            if (app) {
-                                setExtraApp(app);
-                                await refresh();
+                {state.platform !== "windows" && (
+                    <Button
+                        size="sm"
+                        onClick={async () => {
+                            try {
+                                const app = await transport({
+                                    version: 1,
+                                    operation: "choose-application",
+                                });
+                                if (app) {
+                                    setExtraApp(app);
+                                    await refresh();
+                                }
+                            } catch {
+                                setLocalError(
+                                    "The application could not be selected.",
+                                );
                             }
-                        } catch {
-                            setLocalError(
-                                "The application could not be selected.",
-                            );
-                        }
-                    }}
-                >
-                    {t("Choose another application\u2026")}
-                </Button>
+                        }}
+                    >
+                        {t("Choose another application\u2026")}
+                    </Button>
+                )}
+                {state.platform === "windows" && (
+                    <p>
+                        {t(
+                            state.canRouteAppPlayback
+                                ? "Start playback in an application to list it here. You can route its original playback in Source options."
+                                : "Start playback in an application to list it here. Capturing an app preserves its original playback.",
+                        )}
+                    </p>
+                )}
                 {[
                     t("Applications"),
                     t("Input devices"),
@@ -674,7 +704,7 @@ export default function Dialogs({
                     >
                         {Array.from(
                             {
-                                length: 32,
+                                length: state.platform === "windows" ? 1 : 32,
                             },
                             (_, i) => (i + 1) * 2,
                         ).map((n) => (
@@ -890,6 +920,7 @@ export default function Dialogs({
                     .filter(
                         (x) =>
                             x.outputChannels > 0 &&
+                            x.virtualRole !== "loopz-feed" &&
                             x.name.toLowerCase().includes(query.toLowerCase()),
                     )
                     .map((output) => (
@@ -1041,7 +1072,109 @@ export default function Dialogs({
                 </Button>
             </>
         );
-    } else if (modal.kind === "settings")
+    } else if (modal.kind === "settings" && state.platform === "windows")
+        content = (
+            <>
+                <div className="lz-setting-row">
+                    <strong>{t("Language")}</strong>
+                    <Language />
+                </div>
+                <p>{t(state.previewNotice)}</p>
+                <div className="lz-setting-row">
+                    <div>
+                        <strong>{t("Start routing at login")}</strong>
+                        <p>
+                            {t(
+                                "Start the audio engine when you sign in to Windows.",
+                            )}
+                        </p>
+                    </div>
+                    <Switch
+                        checked={!!state.background.login?.registered}
+                        label={t("Start routing at login")}
+                        disabled={
+                            backgroundBusy || !state.background.login?.available
+                        }
+                        onChange={(enabled) =>
+                            backgroundAction("login", { enabled })
+                        }
+                    />
+                </div>
+                <div className="lz-setting-row">
+                    <div>
+                        <strong>{t("LoopZ microphones")}</strong>
+                        <p>
+                            {t(
+                                "Install the microphone service once. Saved mix changes then update microphones automatically. Windows asks for administrator approval during installation or repair.",
+                            )}
+                        </p>
+                    </div>
+                    <Button
+                        disabled={backgroundBusy}
+                        onClick={() => backgroundAction("driver-sync")}
+                    >
+                        {t("Install or repair microphones")}
+                    </Button>
+                </div>
+                <p role="status">{t(windowsMicrophoneStatus(state).message)}</p>
+                {windowsMicrophoneStatus(state).detail && (
+                    <details>
+                        <summary>{t("Setup details")}</summary>
+                        <p>{windowsMicrophoneStatus(state).detail}</p>
+                    </details>
+                )}
+                {backgroundNotice && <p role="status">{backgroundNotice}</p>}
+                <div className="lz-setting-row">
+                    <strong>{t("Getting started")}</strong>
+                    <Button onClick={startTour}>{t("Take a tour")}</Button>
+                </div>
+                <div className="lz-setting-row">
+                    <div>
+                        <strong>{t("Audio engine")}</strong>
+                        <p>
+                            {t(
+                                "Routing continues when this window closes. Open LoopZ again to reconnect.",
+                            )}
+                        </p>
+                    </div>
+                    <Button
+                        disabled={backgroundBusy}
+                        onClick={() => backgroundAction("retry-session")}
+                    >
+                        {t("Retry now")}
+                    </Button>
+                </div>
+                <Button
+                    disabled={backgroundBusy}
+                    onClick={() => backgroundAction("shutdown")}
+                >
+                    {t("Stop routing and quit")}
+                </Button>
+                <p>
+                    {t(
+                        "Each mix keeps its saved sample rate and channel layout. Changing a microphone format can briefly interrupt recording.",
+                    )}
+                </p>
+                <p>
+                    {t(
+                        "If your microphone is unavailable, allow desktop microphone access in Windows Settings → Privacy → Microphone.",
+                    )}
+                </p>
+                <div className="lz-setting-row">
+                    <strong>{t("Appearance")}</strong>
+                    <SegmentedControl
+                        aria-label={t("Appearance")}
+                        options={appearanceOptions.map((option) => ({
+                            ...option,
+                            label: t(option.label),
+                        }))}
+                        value={state.theme}
+                        onChange={(value) => send({ type: "theme", value })}
+                    />
+                </div>
+            </>
+        );
+    else if (modal.kind === "settings")
         content = (
             <>
                 <div className="lz-setting-row">
@@ -1230,11 +1363,19 @@ export default function Dialogs({
                     <dd>Adjust sliders and selectors</dd>
                     <dt>Escape</dt>
                     <dd>Dismiss a modal or socket selection</dd>
-                    <dt>⌘ N / ⌘ ,</dt>
+                    <dt>
+                        {state.platform === "windows"
+                            ? "Ctrl N / Ctrl ,"
+                            : "⌘ N / ⌘ ,"}
+                    </dt>
                     <dd>New device / Settings</dd>
                     {state.history.supported && (
                         <>
-                            <dt>⌘ Z / ⇧ ⌘ Z</dt>
+                            <dt>
+                                {state.platform === "windows"
+                                    ? "Ctrl Z / Ctrl Shift Z"
+                                    : "⌘ Z / ⇧ ⌘ Z"}
+                            </dt>
                             <dd>Undo / Redo a routing change</dd>
                         </>
                     )}

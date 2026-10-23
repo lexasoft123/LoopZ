@@ -19,6 +19,9 @@ enum class AudioHistoryMissingReason : uint32_t {
 struct AudioHistoryReadSnapshot {
     bool enabled{false};
     uint64_t reads{}, requestedFrames{};
+    // Actual resampler calls after clock segmentation: 1–31, 32–127,
+    // 128–256 and >256 logical frames. Diagnostic only.
+    std::array<uint64_t, 4> resampleBlockCounts{};
     std::array<uint64_t, static_cast<size_t>(AudioHistoryMissingReason::Count)> missingFrames{};
     // Failed source-sample lookups, not missing output frames. Several filter
     // taps may fail for one output frame, so these counters are not additive
@@ -66,6 +69,10 @@ class AudioHistory final : public AudioSource {
                 double sourceFrame = 0, bool sourceFrameValid = false) noexcept;
     void stop() noexcept;
     AudioHistoryStatus status() const noexcept;
+    // Exclusive nominal-clock endpoint of the last fully published block.
+    // Zero means offline or an overlapping publication. This is a readiness
+    // hint, not a guarantee about retained samples, gaps or filter support.
+    uint64_t publishedBlockEndHostNs() const noexcept;
     // Optional counters allocate on construction, remain disabled by default,
     // and survive stop/reopen. Read after joining readers for a coherent final
     // snapshot; live snapshots are independent atomic observations.

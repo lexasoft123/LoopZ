@@ -3,6 +3,7 @@
 #include <loopz/output_clock.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -259,6 +260,43 @@ void changingSignalRateConversion() {
         const float expected = static_cast<float>((1000 + frame * 48000.0 / 44100) * 0.00005);
         near(output.samples[0][frame], expected);
         near(output.samples[1][frame], -expected);
+    }
+}
+
+void publicationChunksPreserveSignalAndClock() {
+    auto route = device();
+    auto bus = std::make_shared<MonitorBus>(2, 48000);
+    Planes input(2);
+    for (uint32_t block = 0; block < 16; ++block) {
+        for (uint32_t frame = 0; frame < kBlock; ++frame) {
+            input.samples[0][frame] = (block * kBlock + frame) * 0.0001f;
+            input.samples[1][frame] = -input.samples[0][frame];
+        }
+        assert(bus->publish(48000 + block * kBlock, 48000, input.input(), kBlock));
+    }
+    for (const auto rate : {44100u, 48000u, 88200u, 96000u, 176400u, 192000u}) {
+        const auto frames = rate / 100;
+        const auto time = frameNs(50000, 48000);
+        MonitorProgram whole(route, route.monitors[0], bus->source(), {48000, double(rate), 1000});
+        MonitorProgram partitioned(route, route.monitors[0], bus->source(), {48000, double(rate), 1000});
+        Planes expected(2, frames), actual(2, frames);
+        const auto full = realtime([&] {
+            return whole.render(time, rate, expected.output(), frames, 44000);
+        });
+        assert(full.validBlock && !full.missingFrames && !full.failedChunks);
+        for (uint32_t offset = 0; offset < frames; offset += 256) {
+            const auto count = std::min(frames - offset, 256u);
+            std::array<float*, 2> planes{actual.writable[0] + offset, actual.writable[1] + offset};
+            const auto part = realtime([&] {
+                return partitioned.render(time + frameNs(offset, rate), rate,
+                                          {planes, count}, count, 44000 + offset);
+            });
+            assert(part.validBlock && !part.missingFrames && !part.failedChunks);
+        }
+        for (uint32_t channel = 0; channel < 2; ++channel)
+            for (uint32_t frame = 0; frame < frames; ++frame)
+                assert(std::isfinite(actual.samples[channel][frame]) &&
+                       std::abs(actual.samples[channel][frame] - expected.samples[channel][frame]) < 1e-7f);
     }
 }
 
@@ -648,8 +686,25 @@ int main(int argc, char** argv) {
         return 0;
     }
     assert(argc == 1);
+    // Diagnostic reads remain opt-in and report unavailable audio without
+    // allocating in the realtime read path.
+    for (const bool enabled : {false, true}) {
+        MonitorBus bus(2, 48000, 32768, enabled);
+        const auto history = std::dynamic_pointer_cast<const AudioHistory>(bus.source());
+        assert(history && history->readDiagnostics().enabled == enabled);
+        AudioReadCursor cursor;
+        Planes output(2);
+        realtime([&] {
+            return history->read(1000000000, 48000, output.output(), kBlock, cursor);
+        });
+        const auto diagnostics = history->readDiagnostics();
+        assert(diagnostics.reads == (enabled ? 1 : 0));
+        assert(diagnostics.missingFrames[static_cast<size_t>(AudioHistoryMissingReason::Offline)] ==
+               (enabled ? kBlock : 0));
+    }
     independentRatesWiringAndMeters();
     changingSignalRateConversion();
+    publicationChunksPreserveSignalAndClock();
     monitorDemandRunsVirtualDependenciesWithoutPublicClients();
     largeCallbackAndPhysicalChannelChanges();
     absenceAndRestartAreSilenceNotHardwareFailure();

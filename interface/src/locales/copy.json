@@ -1,4 +1,99 @@
 {
+    "Original playback routing off": [
+        "Маршрутизация исходного звука выключена",
+        "原始播放路由已关闭"
+    ],
+    "Original playback routed": [
+        "Исходный звук направлен в LoopZ",
+        "原始播放已路由至 LoopZ"
+    ],
+    "Routing original playback…": [
+        "Настраивается маршрут исходного звука…",
+        "正在路由原始播放…"
+    ],
+    "Route the app’s original output through LoopZ after capture is ready. Turn this off to restore its previous output.": [
+        "После подготовки захвата направляйте исходный звук приложения через LoopZ. Выключите этот параметр, чтобы восстановить прежний выход.",
+        "捕获就绪后，将应用的原始输出路由至 LoopZ。关闭此选项可恢复之前的输出。"
+    ],
+    "Start playback in an application to list it here. You can route its original playback in Source options.": [
+        "Начните воспроизведение в приложении, чтобы оно появилось здесь. Маршрутизацию исходного звука можно включить в параметрах источника.",
+        "开始在应用中播放音频以在此列出。您可以在音源选项中设置原始播放路由。"
+    ],
+    "Start playback in an application to list it here. Capturing an app preserves its original playback.": [
+        "Начните воспроизведение в приложении, чтобы оно появилось здесь. Захват приложения сохраняет его исходное воспроизведение.",
+        "开始在应用中播放音频以在此列出。捕获应用时会保留其原始播放。"
+    ],
+    "Windows preview: microphone and app mixing with hardware monitoring. A virtual microphone driver is not installed.": [
+        "Предварительная версия для Windows: микширование приложений и микрофонов с аппаратным мониторингом. Драйвер виртуального микрофона не установлен.",
+        "Windows 预览版：支持麦克风和应用混音以及硬件监听。尚未安装虚拟麦克风驱动程序。"
+    ],
+    "Windows preview: each installed mix publishes its own microphone. Saved mix changes update microphones automatically.": [
+        "Предварительная версия для Windows: у каждого установленного микса есть свой микрофон. Сохранённые изменения миксов обновляют микрофоны автоматически.",
+        "Windows 预览版：每个已安装的混音都有独立麦克风。保存混音更改后，麦克风会自动更新。"
+    ],
+    "If your microphone is unavailable, allow desktop microphone access in Windows Settings → Privacy → Microphone.": [
+        "Если микрофон недоступен, разрешите классическим приложениям доступ к микрофону: Параметры Windows → Конфиденциальность → Микрофон.",
+        "如果麦克风不可用，请在 Windows 设置 → 隐私 → 麦克风中允许桌面应用访问麦克风。"
+    ],
+    "Stop routing and quit": [
+        "Остановить маршрутизацию и выйти",
+        "停止路由并退出"
+    ],
+    "Routing continues when this window closes. Open LoopZ again to reconnect.": [
+        "Маршрутизация продолжится после закрытия окна. Снова откройте LoopZ, чтобы подключиться к аудиодвижку.",
+        "关闭此窗口后，音频路由仍会继续。重新打开 LoopZ 即可再次连接。"
+    ],
+    "Start the audio engine when you sign in to Windows.": [
+        "Запускать аудиодвижок при входе в Windows.",
+        "登录 Windows 时启动音频引擎。"
+    ],
+    "Setup details": ["Сведения о настройке", "设置详情"],
+    "Setting up microphones. Your mixes are saved.": [
+        "Настройка микрофонов. Ваши миксы сохранены.",
+        "正在设置麦克风。您的混音已保存。"
+    ],
+    "Microphones are ready.": ["Микрофоны готовы.", "麦克风已就绪。"],
+    "Microphone setup needs attention. Try installing or repairing microphones.": [
+        "Не удалось завершить настройку микрофонов. Попробуйте установить или восстановить микрофоны.",
+        "麦克风设置需要处理。请尝试安装或修复麦克风。"
+    ],
+    "Restart Windows to finish microphone setup.": [
+        "Перезапустите Windows, чтобы завершить настройку микрофонов.",
+        "请重启 Windows 以完成麦克风设置。"
+    ],
+    "Create a mix to set up its microphone.": [
+        "Создайте микс, чтобы настроить его микрофон.",
+        "创建混音以设置其麦克风。"
+    ],
+    "Save a mix change to resume microphone setup after recovery.": [
+        "Сохраните изменение микса, чтобы возобновить настройку микрофонов после восстановления.",
+        "恢复后，请保存一次混音更改以继续设置麦克风。"
+    ],
+    "Install or repair microphones to enable automatic setup.": [
+        "Установите или восстановите микрофоны, чтобы включить автоматическую настройку.",
+        "安装或修复麦克风以启用自动设置。"
+    ],
+    "Waiting for the audio engine.": [
+        "Ожидание аудиодвижка.",
+        "正在等待音频引擎。"
+    ],
+    "Install the microphone service once. Saved mix changes then update microphones automatically. Windows asks for administrator approval during installation or repair.": [
+        "Установите службу микрофонов один раз. После этого сохранённые изменения миксов автоматически обновляют микрофоны. Для установки или восстановления Windows запросит права администратора.",
+        "只需安装一次麦克风服务。之后保存混音更改时，麦克风会自动更新。安装或修复时，Windows 会请求管理员批准。"
+    ],
+    "Install or repair microphones": [
+        "Установить или восстановить микрофоны",
+        "安装或修复麦克风"
+    ],
+    "LoopZ microphones": ["Микрофоны LoopZ", "LoopZ 麦克风"],
+    "Microphones were updated. Select your LoopZ microphones again in recording and calling apps.": [
+        "Микрофоны обновлены. Выберите микрофоны LoopZ заново в приложениях для записи и звонков.",
+        "麦克风已更新。请在录音和通话应用中重新选择 LoopZ 麦克风。"
+    ],
+    "Each mix keeps its saved sample rate and channel layout. Changing a microphone format can briefly interrupt recording.": [
+        "Для каждого микса сохраняются частота дискретизации и схема каналов. Изменение формата микрофона может ненадолго прервать запись.",
+        "每个混音都会保留已保存的采样率和通道布局。更改麦克风格式可能会短暂中断录音。"
+    ],
     "Settings": ["Настройки", "设置"],
     "Appearance": ["Внешний вид", "外观"],
     "Virtual devices": ["Виртуальные устройства", "虚拟设备"],
@@ -478,5 +573,48 @@
     ],
     "Choose what goes in": ["Выберите источники звука", "选择输入声音"],
     "Connect your channels": ["Соедините каналы", "连接通道"],
-    "Hear your mix, if you want": ["Слушайте микс, если нужно", "按需监听混音"]
+    "Hear your mix, if you want": ["Слушайте микс, если нужно", "按需监听混音"],
+    "+ New mix": ["+ Новый микс", "+ 新混音"],
+    "New mix": ["Новый микс", "新混音"],
+    "Untitled Mix": ["Новый микс", "未命名混音"],
+    "Microphone ready": ["Микрофон готов", "麦克风已就绪"],
+    "Set up your microphone": ["Подключите микрофон микса", "设置混音麦克风"],
+    "Your mix is saved. Install its microphone to use it in other apps.": [
+        "Микс сохранён. Установите его микрофон, чтобы использовать звук в других приложениях.",
+        "混音已保存。安装其麦克风即可在其他应用中使用。"
+    ],
+    "Choose this mix in your recording app.": [
+        "Выберите этот микс в приложении для записи.",
+        "在录音应用中选择此混音。"
+    ],
+    "Application · stereo": ["Приложение · стерео", "应用 · 立体声"],
+    "Device output": ["Выход микса", "混音输出"],
+    "Available · stereo": ["Доступно · стерео", "可用 · 立体声"],
+    "Keeps routing active without a recording app.": [
+        "Слушайте микс, даже когда запись не запущена.",
+        "未打开录音应用时仍保持路由运行。"
+    ],
+    "Enable to listen without a recording app.": [
+        "Включите, чтобы слушать микс без записи.",
+        "启用后可在不打开录音应用的情况下监听。"
+    ],
+    "Reconnecting automatically. Connections retained.": [
+        "Подключаемся повторно. Соединения сохранены.",
+        "正在自动重新连接。连接已保留。"
+    ],
+    "as the input in your recording app.": [
+        "как вход в приложении для записи.",
+        "作为录音应用的输入。"
+    ],
+    "Source waiting": ["Ожидание источника", "等待音源"],
+    "Waiting for application audio": [
+        "Ожидание звука приложения",
+        "等待应用音频"
+    ],
+    "Waiting for input device": ["Ожидание устройства ввода", "等待输入设备"],
+    "wiring saved": ["соединения сохранены", "连线已保存"],
+    "Drag between sockets to connect. Click a wire to select it.": [
+        "Соединяйте каналы перетаскиванием. Нажмите на соединение, чтобы выбрать его.",
+        "拖动接口以连接。点击连线以选中。"
+    ]
 }

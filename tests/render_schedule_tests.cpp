@@ -60,6 +60,11 @@ int main() {
         for (auto quantum : {32U, 64U, 128U, 256U})
             for (auto lead : {0U, quantum / 2})
                 cadence(rate, quantum, lead);
+    // An 8 ms preparation lead is not necessarily block-aligned or even an
+    // integral number of milliseconds in sample frames (e.g. 1411 at 176.4k).
+    // Verify exact wake rounding and no duplicate blocks at all device rates.
+    for (auto rate : {44100U, 48000U, 88200U, 96000U, 176400U, 192000U})
+        cadence(rate, 256, rate * 8 / 1000);
     boundedCatchupAndWakeRecovery();
     for (auto timing : {RenderScheduleTiming{0, 64, 32, 1024},
                         {48000, 16, 32, 1024},

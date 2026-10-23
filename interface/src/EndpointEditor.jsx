@@ -109,30 +109,34 @@ export default function EndpointEditor({
                     ))}
                 </select>
             </label>
-            {node.kind === "app" && kind === "source" && (
-                <Button
-                    size="sm"
-                    onClick={async () => {
-                        setError("");
-                        try {
-                            const app = await transport({
-                                version: 1,
-                                operation: "choose-application",
-                            });
-                            if (app) {
-                                setExtraApp(app);
-                                setSelector(app.bundle);
-                                setConfirmation(null);
-                                await refresh();
+            {node.kind === "app" &&
+                kind === "source" &&
+                state.platform !== "windows" && (
+                    <Button
+                        size="sm"
+                        onClick={async () => {
+                            setError("");
+                            try {
+                                const app = await transport({
+                                    version: 1,
+                                    operation: "choose-application",
+                                });
+                                if (app) {
+                                    setExtraApp(app);
+                                    setSelector(app.bundle);
+                                    setConfirmation(null);
+                                    await refresh();
+                                }
+                            } catch {
+                                setError(
+                                    "The application could not be selected.",
+                                );
                             }
-                        } catch {
-                            setError("The application could not be selected.");
-                        }
-                    }}
-                >
-                    {t("Choose another application\u2026")}
-                </Button>
-            )}
+                        }}
+                    >
+                        {t("Choose another application\u2026")}
+                    </Button>
+                )}
             {adjustable ? (
                 <label className="lz-field">
                     {kind === "monitor"

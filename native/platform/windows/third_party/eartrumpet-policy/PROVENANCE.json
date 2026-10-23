@@ -1,0 +1,14 @@
+{
+  "project": "EarTrumpet",
+  "repository": "https://github.com/File-New-Project/EarTrumpet",
+  "tag": "2.3.0.0",
+  "commit": "3b44acbbaf8726ed542c330994b4eb53f62480ec",
+  "license": "MIT",
+  "usage": "Private audio-policy ABI declarations and render-interface encoding, adapted to C++; no EarTrumpet binary is linked.",
+  "upstreamSha256": {
+    "EarTrumpet/Interop/MMDeviceAPI/IAudioPolicyConfigFactoryVariantFor21H2.cs": "4a0010a3ec4933e80be256713184bccdf1476737c844ecd1c534f4e5d4c6911c",
+    "EarTrumpet/Interop/MMDeviceAPI/IAudioPolicyConfigFactoryVariantForDownlevel.cs": "0d7445ab94584a2a395090fe856e10d2ee064a8581993b1ba251bbf956242049",
+    "EarTrumpet/DataModel/WindowsAudio/Internal/AudioPolicyConfigService.cs": "d817763b77308f8a5ac22818047b517d345e27905ab275f0668ed2332bd4daa3",
+    "LICENSE": "f1dabe4995657d9bd2997976514be69878abf72a28b9d96ba3ea82cb53abfefd"
+  }
+}

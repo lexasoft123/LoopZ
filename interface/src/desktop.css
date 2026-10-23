@@ -97,3 +97,37 @@ html[data-loopz-native="true"] .lz-titlebar {
     position: relative;
     z-index: 30;
 }
+
+/* Compact Windows setup guidance keeps the routing canvas in view. */
+.lz-windows .lz-recovery {
+    margin-bottom: 0;
+}
+.lz-windows-status {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 22px;
+    border-bottom: 1px solid var(--sz-line);
+    background: var(--sz-glass-fill);
+    flex-wrap: wrap;
+}
+.lz-windows-status > div {
+    flex: 1;
+    min-width: 220px;
+}
+.lz-windows-status strong {
+    font-size: 12px;
+    font-weight: 600;
+}
+.lz-windows-status p {
+    font-size: 11px;
+    margin-top: 2px;
+}
+.lz-windows .lz-device-header {
+    padding: 16px 22px;
+}
+
+/* Persistent warnings stay visible without continuously compositing the window. */
+.win .lz-window .dot.warn {
+    animation: none;
+}

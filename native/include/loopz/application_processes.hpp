@@ -25,6 +25,15 @@ struct AudioProcessAttribution {
     std::optional<ProcessInstance> responsible;
     bool independentApplication{false};
 };
+struct ProcessTreeNode {
+    ProcessInstance process;
+    uint64_t parent{};
+};
+// Selected instances and ancestry are authenticated by the provider. Drop a
+// selected descendant only when its chain reaches another selected instance.
+// Missing, cyclic or reused ancestry fails rather than double-capturing a tree.
+std::vector<ProcessInstance> selectProcessCaptureRoots(std::span<const ProcessInstance> selected,
+                                                       std::span<const ProcessTreeNode> ancestry);
 // Control-only policy. Providers supply one coherent, same-user snapshot and
 // stable process instances. Unknown ownership never means "capture all".
 std::vector<uint64_t> selectApplicationProcesses(const std::string& application,

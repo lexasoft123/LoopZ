@@ -93,6 +93,11 @@ export default function App({
     };
     const returnFocus = useRef(null);
     const d = selected(state);
+    const windowsMicrophone =
+        state.platform === "windows"
+            ? state.snapshot?.runtime?.devices?.find((row) => row.id === d?.id)
+                  ?.microphone
+            : null;
     const setupIssue = installationCondition(state);
     const backupNotice = backupRecoveryNotice(state);
     const layoutIdentity = JSON.stringify(
@@ -299,7 +304,9 @@ export default function App({
             : "");
     return (
         <MeterUpdates.Provider value={!modal}>
-            <div className="app lz-window">
+            <div
+                className={`app lz-window${state.platform === "windows" ? " lz-windows" : ""}`}
+            >
                 <header className="lz-titlebar">
                     <div className="lz-brand">
                         <LoopZMark />
@@ -481,7 +488,9 @@ export default function App({
                                 )
                             }
                         >
-                            {t("+ New virtual device")}
+                            {state.platform === "windows"
+                                ? t("+ New mix")
+                                : t("+ New virtual device")}
                         </Button>
                         <p>
                             {t("Close this window to leave")}
@@ -492,6 +501,59 @@ export default function App({
                 </aside>
                 <main className="lz-main">
                     <div className="lz-recovery">
+                        {state.platform === "windows" &&
+                            !tourOpen &&
+                            d &&
+                            state.connected && (
+                                <div
+                                    className="lz-windows-status"
+                                    role="status"
+                                >
+                                    <div>
+                                        <strong>
+                                            {t(
+                                                windowsMicrophone?.connected
+                                                    ? "Microphone ready"
+                                                    : "Set up your microphone",
+                                            )}
+                                        </strong>
+                                        <p>
+                                            {t(
+                                                windowsMicrophone?.connected
+                                                    ? "Choose this mix in your recording app."
+                                                    : "Your mix is saved. Install its microphone to use it in other apps.",
+                                            )}
+                                        </p>
+                                    </div>
+                                    <Button
+                                        size="sm"
+                                        onClick={(event) =>
+                                            open(
+                                                { kind: "settings" },
+                                                event.currentTarget,
+                                            )
+                                        }
+                                    >
+                                        {t("Settings")}
+                                    </Button>
+                                    {showWelcome && (
+                                        <LinkButton onClick={startTour}>
+                                            {t("Take a tour")}
+                                        </LinkButton>
+                                    )}
+                                    {showWelcome && (
+                                        <LinkButton onClick={dismissWelcome}>
+                                            {t("Not now")}
+                                        </LinkButton>
+                                    )}
+                                </div>
+                            )}
+                        {state.platform !== "windows" &&
+                            state.previewNotice && (
+                                <Banner heading="Windows preview">
+                                    {state.previewNotice}
+                                </Banner>
+                            )}
                         {tourOpen && (
                             <Banner heading={t("Demo project")}>
                                 {t(
@@ -499,25 +561,32 @@ export default function App({
                                 )}
                             </Banner>
                         )}
-                        {showWelcome && !tourOpen && (
-                            <Banner
-                                heading={t("New to LoopZ?")}
-                                footer={
-                                    <div className="lz-welcome-actions">
-                                        <Button size="sm" onClick={startTour}>
-                                            {t("Take a tour")}
-                                        </Button>
-                                        <LinkButton onClick={dismissWelcome}>
-                                            {t("Not now")}
-                                        </LinkButton>
-                                    </div>
-                                }
-                            >
-                                {t(
-                                    "Learn how to combine sound and use your mix in other apps. You can replay this tour from Settings.",
-                                )}
-                            </Banner>
-                        )}
+                        {showWelcome &&
+                            !tourOpen &&
+                            state.platform !== "windows" && (
+                                <Banner
+                                    heading={t("New to LoopZ?")}
+                                    footer={
+                                        <div className="lz-welcome-actions">
+                                            <Button
+                                                size="sm"
+                                                onClick={startTour}
+                                            >
+                                                {t("Take a tour")}
+                                            </Button>
+                                            <LinkButton
+                                                onClick={dismissWelcome}
+                                            >
+                                                {t("Not now")}
+                                            </LinkButton>
+                                        </div>
+                                    }
+                                >
+                                    {t(
+                                        "Learn how to combine sound and use your mix in other apps. You can replay this tour from Settings.",
+                                    )}
+                                </Banner>
+                            )}
                         {backupNotice && (
                             <Banner
                                 tone="warning"
@@ -583,6 +652,7 @@ export default function App({
                         {!setupIssue &&
                             state.connected &&
                             state.service === "driver" &&
+                            state.platform !== "windows" &&
                             state.snapshot?.restoration?.phase !==
                                 "no-document" && (
                                 <Banner heading="Waiting for the audio service">
@@ -653,8 +723,8 @@ export default function App({
                                             </Button>
                                         </div>
                                         <p>
-                                            {d.sources.length} sources ·{" "}
-                                            {d.channels} output channels
+                                            {t("Sources")}: {d.sources.length} ·{" "}
+                                            {t("Output channels")}: {d.channels}
                                         </p>
                                     </div>
                                     <div className="lz-header-controls">
@@ -838,7 +908,7 @@ export default function App({
                                 )
                             }
                         >
-                            ⌘
+                            {state.platform === "windows" ? "?" : "⌘"}
                         </Button>
                     </div>
                 </footer>

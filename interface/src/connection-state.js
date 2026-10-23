@@ -5,7 +5,7 @@ const nativeKinds = {
 };
 const condition = (kind, label, detail = "", action = null) => ({
     kind,
-    label,
+    label: t(label),
     detail,
     action,
     available: ["available", "idle", "disabled"].includes(kind),

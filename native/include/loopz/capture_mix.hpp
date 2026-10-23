@@ -4,6 +4,13 @@
 #include <array>
 
 namespace loopz {
+struct AudioHistoryMixReader {
+    std::array<AudioReadCursor, kMaximumRoutingSources> streams{};
+};
+// Same unity/coverage contract for native providers publishing AudioHistory.
+AudioReadResult sampleAudioHistoryMix(std::span<const AudioHistory* const>, uint64_t firstHostNs,
+                                      double rate, float* left, float* right, uint32_t frames,
+                                      AudioHistoryMixReader&) noexcept;
 struct CaptureMixReader {
     std::array<CaptureBuffer::ReaderState, kMaximumRoutingSources> streams{};
 };

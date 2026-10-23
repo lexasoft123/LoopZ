@@ -138,7 +138,8 @@ export function project(
                 "retry",
             ].includes(phase)
           ? "driver"
-          : phase === "restored"
+          : phase === "restored" ||
+              (envelope?.platform === "windows" && phase === "partial")
             ? "ready"
             : "applying";
     const monitorFaults = {};
@@ -166,6 +167,9 @@ export function project(
         sampleRates: supportedSampleRates(snapshot),
         canRemoveOutputPair:
             snapshot?.runtime?.editCapabilities?.removeOutputPair === true,
+        canRouteAppPlayback:
+            envelope?.platform !== "windows" ||
+            snapshot?.runtime?.editCapabilities?.appOutputRouting === true,
         inventory,
         snapshot,
         envelope,
@@ -206,8 +210,29 @@ export function project(
         permissions: snapshot?.runtime?.permissions || {},
         permissionSetup: envelope?.permissionSetup || {},
         installation: envelope?.installation || null,
+        microphoneSetup: envelope?.microphoneSetup || null,
         background: envelope?.background || {},
+        platform: envelope?.platform || "macos",
+        previewNotice: envelope?.previewNotice || "",
     };
+}
+export function appPlaybackLabel(state, source) {
+    if (state.platform !== "windows")
+        return `Original playback muted: ${source.muteOriginal ? t("On") : t("Off")}`;
+    if (!source.muteOriginal) return t("Original playback routing off");
+    const current =
+        state.connected && state.transportReady && !state.meterExpired;
+    const verified =
+        current &&
+        state.snapshot?.runtime?.sources?.some(
+            (value) =>
+                value.kind === "application" &&
+                value.selector === source.selector &&
+                value.playbackRouting?.verified === true,
+        );
+    return t(
+        verified ? "Original playback routed" : "Routing original playback…",
+    );
 }
 function telemetry(state, device) {
     const current =
@@ -260,7 +285,7 @@ export function health(state, device) {
     if (state.service === "driver") return "Waiting for audio service";
     if (state.pending) return "Applying changes";
     if (device.sources.some((s) => !sourceCondition(state, s).available))
-        return "Source waiting";
+        return t("Source waiting");
     if (
         state.snapshot?.runtime?.monitors?.some(
             (m) =>
@@ -319,7 +344,11 @@ export function endpointChoices(state, device, node, kind, extraApp) {
     let items;
     if (kind === "monitor")
         items = state.inventory.devices
-            .filter((item) => item.outputChannels > 0)
+            .filter(
+                (item) =>
+                    item.outputChannels > 0 &&
+                    item.virtualRole !== "loopz-feed",
+            )
             .map((item) => ({
                 selector: item.uid,
                 name: item.name,
@@ -344,7 +373,11 @@ export function endpointChoices(state, device, node, kind, extraApp) {
                         ?.inputChannels || null,
             },
             ...state.inventory.devices
-                .filter((item) => item.inputChannels > 0)
+                .filter(
+                    (item) =>
+                        item.inputChannels > 0 &&
+                        item.virtualRole !== "loopz-microphone",
+                )
                 .map((item) => ({
                     selector: item.uid,
                     name: item.name,
@@ -556,7 +589,9 @@ export function commandsFor(state, action) {
                     kind: nativeKinds[action.source.kind],
                     selector: action.source.selector || "",
                     channels: action.source.channels,
-                    muteOriginal: action.source.kind === "app",
+                    muteOriginal:
+                        action.source.kind === "app" &&
+                        state.platform !== "windows",
                     connectByDefault: false,
                 },
             ];

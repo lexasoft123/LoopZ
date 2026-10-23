@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{A6B9F03D-20AD-4625-BFC7-61308E79E1B2}</ProjectGuid>
+    <RootNamespace>LoopZAudio</RootNamespace>
+    <LoopZKitPackages Condition="'$(LoopZKitPackages)'==''">$(MSBuildThisFileDirectory)packages</LoopZKitPackages>
+  </PropertyGroup>
+  <Import Project="$(LoopZKitPackages)\Microsoft.Windows.WDK.x64.10.0.26100.6584\build\native\Microsoft.Windows.WDK.x64.props" />
+  <Import Project="$(LoopZKitPackages)\Microsoft.Windows.SDK.CPP.x64.10.0.26100.1\build\native\Microsoft.Windows.SDK.cpp.x64.props" />
+  <Import Project="$(LoopZKitPackages)\Microsoft.Windows.SDK.CPP.10.0.26100.1\build\native\Microsoft.Windows.SDK.cpp.props" />
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <TargetVersion>Windows10</TargetVersion>
+    <DriverTargetPlatform>Universal</DriverTargetPlatform>
+    <DriverType>KMDF</DriverType>
+    <KMDF_VERSION_MAJOR>1</KMDF_VERSION_MAJOR>
+    <KMDF_VERSION_MINOR>31</KMDF_VERSION_MINOR>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
+    <ConfigurationType>Driver</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <SignMode>Off</SignMode>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <TargetName>LoopZAudio</TargetName>
+    <ExecutablePath>$(WDKContentRoot)\bin\10.0.26100.0\x64;$(ExecutablePath)</ExecutablePath>
+    <OutDir>$(MSBuildThisFileDirectory)build\$(Platform)\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)build\obj\$(Platform)\</IntDir>
+    <EnableInf2cat>false</EnableInf2cat>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)Source\Inc;$(MSBuildThisFileDirectory)Source\Main;$(MSBuildThisFileDirectory)Source\Filters;$(MSBuildThisFileDirectory)Source\Utilities;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_WIN32;UNICODE;_UNICODE;PC_IMPLEMENTATION;_USE_WAVERT_;_NEW_DELETE_OPERATORS_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+    </ClCompile>
+    <Link><AdditionalDependencies>portcls.lib;stdunk.lib;libcntpr.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Inf><TimeStamp>0.4.0.25</TimeStamp></Inf>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="Source\Main\adapter.cpp" />
+    <ClCompile Include="Source\Main\basetopo.cpp" />
+    <ClCompile Include="Source\Main\common.cpp" />
+    <ClCompile Include="Source\Main\mintopo.cpp" />
+    <ClCompile Include="Source\Main\minwavert.cpp" />
+    <ClCompile Include="Source\Main\minwavertstream.cpp" />
+    <ClCompile Include="Source\Main\NewDelete.cpp" />
+    <ClCompile Include="Source\Filters\micarraytopo.cpp" />
+    <ClCompile Include="Source\Filters\speakertopo.cpp" />
+    <ClCompile Include="Source\Utilities\hw.cpp" />
+    <ClCompile Include="Source\Utilities\kshelper.cpp" />
+    <ResourceCompile Include="Source\Main\SimpleAudioSample.rc" />
+    <Inf Include="LoopZAudio.inx" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

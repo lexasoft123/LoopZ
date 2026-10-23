@@ -1,4 +1,5 @@
 #include <loopz/audio_history.hpp>
+#include "finite_samples.hpp"
 #include <loopz/timeline.hpp>
 #include <loopz/audio_resampler.hpp>
 #include <loopz/sample_clock.hpp>
@@ -26,6 +27,7 @@ struct FrameTag {
 };
 struct ReadDiagnostics {
     std::atomic<uint64_t> reads{0}, requestedFrames{0}, publishedEnd{0};
+    std::array<std::atomic<uint64_t>, 4> resampleBlockCounts{};
     std::array<std::atomic<uint64_t>, static_cast<size_t>(AudioHistoryMissingReason::Count)>
         missingFrames{};
     std::atomic<uint64_t> unpublishedSampleReads{0}, expiredSampleReads{0}, racingSampleReads{0},
@@ -87,7 +89,11 @@ struct AudioHistory::Impl {
         uint32_t selectedAvailable = 0;
         for (uint32_t channel = 0; channel < destination.size(); ++channel) {
             const auto source = selection.empty() ? channel : selection[channel];
-            destination[channel] = std::bit_cast<float>(samples[slot * channels + source].load());
+            // Observing a newer payload synchronizes with its release store:
+            // that writer's odd revision precedes our final revision check,
+            // which must reject the overwritten frame. Retain SC frame tags.
+            destination[channel] = std::bit_cast<float>(
+                samples[slot * channels + source].load(std::memory_order_acquire));
             selectedAvailable += source < frameAvailable;
         }
         const bool valid = tag.frame.load() == position && tag.revision.load() == revision;
@@ -191,8 +197,8 @@ bool AudioHistory::append(RoutingInput input, uint32_t frames, uint64_t firstHos
         for (uint32_t channel = 0; channel < channels(); ++channel) {
             const float value =
                 channel < input.channels.size() ? input.channels[channel][index] : 0;
-            self.samples[slot * channels() + channel].store(
-                std::bit_cast<uint32_t>(std::isfinite(value) ? value : 0));
+            self.samples[slot * channels() + channel].store(detail::finiteSampleBits(value),
+                                                            std::memory_order_release);
         }
         tag.available.store(static_cast<uint32_t>(input.channels.size()));
         tag.frame.store(position);
@@ -256,6 +262,19 @@ AudioHistoryStatus AudioHistory::status() const noexcept {
             self.anchorNs.load(),        self.callbacks.load(),
             self.discontinuities.load(), std::bit_cast<double>(self.rateBits.load())};
 }
+uint64_t AudioHistory::publishedBlockEndHostNs() const noexcept {
+    const auto& self = *impl_;
+    const auto version = self.version.load();
+    if ((version & 1) || !self.online.load())
+        return 0;
+    const auto start = self.anchorNs.load();
+    const auto frames = self.anchorFrames.load();
+    const auto rate = std::bit_cast<double>(self.nominalBits.load());
+    if (!start || !frames || !validRate(rate) || self.version.load() != version ||
+        !self.online.load())
+        return 0;
+    return start + frameNs(frames, rate);
+}
 AudioHistoryReadSnapshot AudioHistory::readDiagnostics() const noexcept {
     const auto* counters = impl_->diagnostics.get();
     if (!counters)
@@ -264,6 +283,9 @@ AudioHistoryReadSnapshot AudioHistory::readDiagnostics() const noexcept {
     result.enabled = true;
     result.reads = counters->reads.load(std::memory_order_relaxed);
     result.requestedFrames = counters->requestedFrames.load(std::memory_order_relaxed);
+    for (size_t index = 0; index < result.resampleBlockCounts.size(); ++index)
+        result.resampleBlockCounts[index] =
+            counters->resampleBlockCounts[index].load(std::memory_order_relaxed);
     result.maximumVerifiedClockStepNs =
         counters->maximumVerifiedClockStepNs.load(std::memory_order_relaxed);
     result.verifiedClockSteps = counters->verifiedClockSteps.load(std::memory_order_relaxed);
@@ -384,6 +406,7 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
     std::array<float*, kMaximumRoutingChannels> planes{};
     const Impl::ReadContext readContext{&self, selection};
     uint32_t missing = 0, clockMissing = 0;
+    std::array<uint64_t, 4> resampleBlocks{};
     for (uint32_t offset = 0; offset < frames;) {
         // Preserve the fractional output grid instead of rounding each split
         // to another whole nanosecond. Absolute timestamps remain integers.
@@ -407,6 +430,8 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
         }
         for (size_t channel = 0; channel < output.channels.size(); ++channel)
             planes[channel] = output.channels[channel] + offset;
+        if (self.diagnostics)
+            ++resampleBlocks[count < 32 ? 0 : count < 128 ? 1 : count <= 256 ? 2 : 3];
         missing += resampler.read(
             {point.frame, point.offset, point.rate, rate, point.localClockCorrection, nominal},
             {{planes.data(), output.channels.size()}, output.capacityFrames - offset}, count,
@@ -415,6 +440,11 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
                                     : availableFrames.subspan(offset, count));
         offset += count;
     }
+    if (self.diagnostics)
+        for (size_t index = 0; index < resampleBlocks.size(); ++index)
+            if (resampleBlocks[index])
+                self.diagnostics->resampleBlockCounts[index].fetch_add(resampleBlocks[index],
+                                                                       std::memory_order_relaxed);
     if (self.generation.load() != generation || !self.online.load()) {
         silence(output, frames);
         std::fill_n(availableFrames.begin(), std::min<size_t>(frames, availableFrames.size()),

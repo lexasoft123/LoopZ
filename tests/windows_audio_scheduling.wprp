@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Opt-in scheduler diagnostics: process/thread metadata, CPU samples,
+     context switches and DPC/ISR events. No audio samples or pool tracing. -->
+<WindowsPerformanceRecorder Version="1.0" Author="LoopZ">
+  <Profiles>
+    <SystemCollector Id="LoopZSchedulerCollector" Name="LoopZ Audio Scheduling">
+      <BufferSize Value="1024"/>
+      <Buffers Value="128"/>
+    </SystemCollector>
+    <SystemProvider Id="LoopZSchedulerProvider">
+      <Keywords>
+        <Keyword Value="ProcessThread"/>
+        <Keyword Value="Loader"/>
+        <Keyword Value="CSwitch"/>
+        <Keyword Value="ReadyThread"/>
+        <Keyword Value="ThreadPriority"/>
+        <Keyword Value="SampledProfile"/>
+        <Keyword Value="DPC"/>
+        <Keyword Value="Interrupt"/>
+      </Keywords>
+      <Stacks>
+        <Stack Value="CSwitch"/>
+        <Stack Value="ReadyThread"/>
+        <Stack Value="SampledProfile"/>
+      </Stacks>
+    </SystemProvider>
+    <Profile Id="LoopZAudioScheduling.Verbose.File" Name="LoopZAudioScheduling"
+             LoggingMode="File" DetailLevel="Verbose" Description="LoopZ graph scheduling and DPC timing">
+      <Collectors>
+        <SystemCollectorId Value="LoopZSchedulerCollector">
+          <SystemProviderId Value="LoopZSchedulerProvider"/>
+        </SystemCollectorId>
+      </Collectors>
+    </Profile>
+  </Profiles>
+</WindowsPerformanceRecorder>

@@ -1,7 +1,12 @@
+#if defined(LOOPZ_TEST_WINDOWS_AUDIO_KERNELS)
+#include "audio_kernels.hpp"
+#endif
 #include <loopz/audio_history.hpp>
 #include <loopz/audio_resampler.hpp>
+#include <loopz/sinc_kernel.hpp>
 #include <loopz/timeline.hpp>
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <cmath>
@@ -153,7 +158,7 @@ void spectralQuality() {
                     value.frequency, result.maximumGainDb);
         assert(result.maximumGainDb < -90);
     }
-    for (uint32_t channels : {2U, 8U, 64U}) {
+    for (uint32_t channels : {2U, 8U, 32U, 64U}) {
         const auto result = quality(48000, 44100, 1000, channels);
         assert(std::abs(result.gainDb) < 0.002 && result.snrDb > 90);
     }
@@ -392,6 +397,9 @@ void historyReadFailureDiagnostics() {
     observed = history.readDiagnostics();
     assert(observed.enabled && observed.reads - before.reads == 2000);
     assert(observed.requestedFrames - before.requestedFrames == 128000);
+    assert(observed.resampleBlockCounts[1] - before.resampleBlockCounts[1] == 2000);
+    for (size_t bin : {size_t{0}, size_t{2}, size_t{3}})
+        assert(observed.resampleBlockCounts[bin] == before.resampleBlockCounts[bin]);
     assert(observed.missingFrames == before.missingFrames);
     // Continuous sample counters do not justify an unbounded host-clock jump.
     // This still fails as a clock mapping, without blaming late sample delivery.
@@ -473,6 +481,180 @@ ResampleFrame partialRawFrame(const void* context, uint64_t position,
     result.availableChannels = 2;
     return result;
 }
+struct ConvolutionInput {
+    const Planes* planes;
+    bool gaps;
+    mutable uint64_t calls{};
+};
+ResampleFrame convolutionFrame(const void* raw, uint64_t position,
+                               std::span<float> values) noexcept {
+    const auto& input = *static_cast<const ConvolutionInput*>(raw);
+    ++input.calls;
+    auto result = rawFrame(input.planes, position, values);
+    if (input.gaps) {
+        if (position == 592)
+            result.valid = false;
+        if (position >= 712 && position <= 720)
+            result.availableChannels /= 2;
+    }
+    return result;
+}
+struct ConvolutionSlice {
+    const ConvolutionInput* input;
+    uint32_t first;
+};
+ResampleFrame convolutionSlice(const void* raw, uint64_t position,
+                               std::span<float> values) noexcept {
+    const auto& slice = *static_cast<const ConvolutionSlice*>(raw);
+    std::array<float, 64> full{};
+    auto result =
+        convolutionFrame(slice.input, position, {full.data(), slice.input->planes->channels});
+    std::copy_n(full.data() + slice.first, values.size(), values.data());
+    result.availableChannels = result.availableChannels > slice.first
+                                   ? std::min<uint32_t>(static_cast<uint32_t>(values.size()),
+                                                        result.availableChannels - slice.first)
+                                   : 0;
+    return result;
+}
+void blockConvolutionMatchesFir(double sourceRate = 176400, double outputRate = 176400,
+                                bool narrow = false, bool windowsCable = false) {
+    const auto step = sourceRate / outputRate;
+    const bool conversion = sourceRate != outputRate;
+    const bool nearUnity = std::abs(sourceRate - outputRate) <= outputRate * 2e-9;
+    const AudioResampler resampler;
+    for (uint32_t channels : windowsCable  ? std::initializer_list<uint32_t>{52}
+                             : narrow      ? std::initializer_list<uint32_t>{1, 2, 8}
+                             : !conversion ? std::initializer_list<uint32_t>{1, 2, 4, 6, 7, 8, 10,
+                                                                             12, 14, 16, 17, 32, 64}
+                                           : std::initializer_list<uint32_t>{16, 17, 32, 64}) {
+        Planes input(channels, narrow ? 4096 : 1024), block(channels, 768),
+            reference(channels, 768);
+        for (unsigned scenario = 0; scenario < 3; ++scenario) {
+            std::array<double, 64> peaks{};
+            for (uint32_t channel = 0; channel < channels; ++channel) {
+                const double gain = scenario != 2  ? .5
+                                    : channel == 0 ? double(std::numeric_limits<float>::max()) / 32
+                                    : channel == 1 ? std::numeric_limits<float>::denorm_min()
+                                    : channel == 2 ? 0
+                                    : channel == 3 ? 1e-18
+                                    : channel == 4 ? 16384
+                                                   : .5;
+                peaks[channel] = gain;
+                for (uint32_t frame = 0; frame < input.frames; ++frame)
+                    input.write[channel][frame] =
+                        static_cast<float>(gain * std::sin(frame * (.031 + channel * .007)));
+            }
+            if (scenario == 1) {
+                input.write[0][600] = std::numeric_limits<float>::quiet_NaN();
+                input.write[channels > 1 ? 1 : 0][601] = std::numeric_limits<float>::infinity();
+            }
+            const ConvolutionInput context{&input, scenario == 1};
+            for (uint32_t frames : windowsCable ? std::initializer_list<uint32_t>{201U, 240U}
+                                                : std::initializer_list<uint32_t>{128U, 193U, 256U})
+                for (uint32_t stride : {1U, 3U})
+                    for (long double phase :
+                         conversion&& nearUnity
+                             ? std::initializer_list<long double>{.37L, .99979L, -511.63L, .0L,
+                                                                  .99979999L, .00020001L}
+                             : std::initializer_list<long double>{.37L, .99979L, -511.63L, .0L}) {
+                        if (!conversion && phase == 0)
+                            continue;
+                        const uint64_t anchor = phase < 0 ? 1024 : 512;
+                        std::fill(block.values.begin(), block.values.end(), -17.f);
+                        std::fill(reference.values.begin(), reference.values.end(), -17.f);
+                        std::array<uint8_t, 256> available{}, expectedAvailable{};
+                        context.calls = 0;
+                        const auto missing = realtime([&] {
+                            return resampler.read({anchor, phase, sourceRate, outputRate},
+                                                  {{block.write.data(), channels}, frames, stride},
+                                                  frames, convolutionFrame, &context,
+                                                  {available.data(), frames});
+                        });
+                        const auto radius = static_cast<uint32_t>(std::ceil(
+                            SincKernel::kRadius /
+                            (SincKernel::kCutoff * std::min(1.0, outputRate / sourceRate))));
+                        const auto window =
+                            static_cast<uint32_t>(
+                                std::floor(phase + static_cast<long double>(frames - 1) * step) -
+                                std::floor(phase)) +
+                            2 * radius + 1;
+                        bool hasDirect = false;
+                        for (uint32_t frame = 0; nearUnity && frame < frames; ++frame) {
+                            const auto position = phase + static_cast<long double>(frame) * step;
+                            const auto fraction =
+                                static_cast<double>(position - std::floor(position));
+                            hasDirect = hasDirect || fraction < .0002 || fraction > .9998;
+                        }
+                        if (hasDirect)
+                            assert(context.calls >= frames); // Preserve mixed direct/FIR behavior.
+                        else if (!conversion || window <= (narrow ? 2048U : 512U))
+                            assert(context.calls == window); // Fast path is exercised.
+                        else
+                            assert(context.calls > window); // Oversized windows retain tiled FIR.
+                        uint32_t expectedMissing = 0;
+                        if (conversion && nearUnity) {
+                            // Keep the complete output time grid at direct/FIR
+                            // boundaries. Eight-channel strips cannot select
+                            // CachedFir, and the non-unity ratio cannot select
+                            // the unity FFT. This independently exercises the
+                            // original tiled FIR without regrouping phase sums.
+                            std::fill_n(expectedAvailable.begin(), frames, uint8_t{1});
+                            for (uint32_t first = 0; first < channels; first += 8) {
+                                const auto count = std::min(8U, channels - first);
+                                std::array<float*, 8> planes{};
+                                for (uint32_t lane = 0; lane < count; ++lane)
+                                    planes[lane] = reference.write[first + lane];
+                                std::array<uint8_t, 256> partAvailable{};
+                                const ConvolutionSlice slice{&context, first};
+                                realtime([&] {
+                                    return resampler.read({anchor, phase, sourceRate, outputRate},
+                                                          {{planes.data(), count}, frames, stride},
+                                                          frames, convolutionSlice, &slice,
+                                                          {partAvailable.data(), frames});
+                                });
+                                for (uint32_t frame = 0; frame < frames; ++frame)
+                                    expectedAvailable[frame] &= partAvailable[frame];
+                            }
+                            expectedMissing = static_cast<uint32_t>(
+                                std::count(expectedAvailable.begin(),
+                                           expectedAvailable.begin() + frames, uint8_t{0}));
+                        } else {
+                            // Short requests always use the original direct FIR
+                            // implementation, independently of the block fast path.
+                            for (uint32_t begin = 0; begin < frames; begin += 32) {
+                                const auto length = std::min(32U, frames - begin);
+                                std::array<float*, 64> planes{};
+                                for (uint32_t channel = 0; channel < channels; ++channel)
+                                    planes[channel] = reference.write[channel] + begin * stride;
+                                expectedMissing += realtime([&] {
+                                    return resampler.read(
+                                        {anchor, phase + static_cast<long double>(begin) * step,
+                                         sourceRate, outputRate},
+                                        {{planes.data(), channels}, length, stride}, length,
+                                        convolutionFrame, &context,
+                                        {expectedAvailable.data() + begin, length});
+                                });
+                            }
+                        }
+                        assert(missing == expectedMissing && available == expectedAvailable);
+                        for (uint32_t channel = 0; channel < channels; ++channel)
+                            for (uint32_t frame = 0; frame < frames * stride; ++frame) {
+                                const auto actual = block.write[channel][frame];
+                                const auto expected = reference.write[channel][frame];
+                                assert(std::isfinite(actual));
+                                if (frame % stride || peaks[channel] == 0)
+                                    assert(actual == expected);
+                                else {
+                                    assert(std::abs(double(actual) - expected) <=
+                                           std::max(2e-7 * peaks[channel], 1e-44));
+                                }
+                            }
+                    }
+        }
+    }
+    std::puts("Block filtering: FIR reference, gaps, tails, strides, extreme magnitudes "
+              "and exercised fast path passed");
+}
 void stridedOutputAndInvalidRequests() {
     Fixture fixture(8, 48000, 1000);
     AudioResampler reader;
@@ -526,10 +708,131 @@ void stridedOutputAndInvalidRequests() {
         for (uint32_t channel = 2; channel < 8; ++channel)
             assert(interleaved[1 + frame * 8 + channel] == 0);
 }
-void benchmark(bool callbackAnchors = false, double driftPpm = 0) {
-    for (uint32_t channels : {2U, 8U, 64U})
-        for (const auto& rates : {std::pair{48000U, 48000U}, std::pair{48000U, 44100U},
-                                  std::pair{96000U, 48000U}, std::pair{192000U, 8000U}}) {
+void historyPayloadCoherence() {
+    for (const uint32_t channels : {2U, 32U, 64U}) {
+        AudioHistory history(channels, 512);
+        std::atomic<uint64_t> published{0}, accepted{0};
+        std::atomic<unsigned> ready{0};
+        std::atomic<bool> finished{false};
+        constexpr uint64_t origin = 9000000000ULL;
+        const auto reader = [&] {
+            Planes output(channels, 1);
+            AudioReadCursor cursor;
+            ready.fetch_add(1);
+            while (!finished.load(std::memory_order_acquire)) {
+                const auto end = published.load(std::memory_order_acquire);
+                if (end < 256) {
+                    std::this_thread::yield();
+                    continue;
+                }
+                const auto position = end - 128;
+                const auto result = realtime([&] {
+                    return history.read(origin + frameNs(position, 48000), 48000,
+                                        output.output(), 1, cursor);
+                });
+                if (!result.online || result.missingFrames)
+                    continue; // Overwritten/racing frames must be rejected.
+                for (uint32_t channel = 0; channel < channels; ++channel)
+                    assert(output.write[channel][0] ==
+                           static_cast<float>(position * channels + channel + 1));
+                accepted.fetch_add(1, std::memory_order_relaxed);
+            }
+        };
+        std::thread first(reader), second(reader);
+        Planes input(channels, 32);
+        while (ready.load() != 2)
+            std::this_thread::yield();
+        for (uint64_t position = 0; position < 32768; position += 32) {
+            for (uint32_t channel = 0; channel < channels; ++channel)
+                for (uint32_t frame = 0; frame < 32; ++frame)
+                    input.write[channel][frame] =
+                        static_cast<float>((position + frame) * channels + channel + 1);
+            assert(realtime([&] {
+                return history.append(input.input(), 32, origin + frameNs(position, 48000),
+                                      48000, static_cast<double>(position), true);
+            }));
+            published.store(position + 32, std::memory_order_release);
+            std::this_thread::yield();
+        }
+        finished.store(true, std::memory_order_release);
+        first.join();
+        second.join();
+        assert(accepted.load() > 0); // The concurrent check must not be vacuous.
+    }
+}
+void publicationHorizon() {
+    Planes input(1, 256);
+    for (const uint32_t rate : {44100U, 48000U, 88200U, 96000U, 176400U, 192000U}) {
+        AudioHistory history(1, 1024);
+        assert(history.publishedBlockEndHostNs() == 0);
+        assert(realtime([&] { return history.append(input.input(), 256, 10000000000ULL, rate); }));
+        assert(realtime([&] { return history.publishedBlockEndHostNs(); }) ==
+               10000000000ULL + uint64_t(256) * 1000000000 / rate);
+        assert(history.append(input.input(), 1, 11000000000ULL, rate));
+        assert(history.publishedBlockEndHostNs() == 11000000000ULL + 1000000000 / rate);
+        history.stop();
+        assert(history.publishedBlockEndHostNs() == 0);
+    }
+    AudioHistory history(1, 1024);
+    std::atomic<bool> done{false};
+    std::thread writer([&] {
+        for (uint64_t i = 1; i <= 5000; ++i) {
+            const auto rate = i & 1 ? 44100U : 192000U;
+            const auto frames = i & 1 ? 256U : 1U;
+            assert(history.append(input.input(), frames, 10000000000ULL + i * 10000000, rate));
+        }
+        done.store(true);
+    });
+    const auto check = [&] {
+        const auto end = history.publishedBlockEndHostNs();
+        if (!end) return;
+        const auto i = (end - 10000000000ULL) / 10000000;
+        assert(i >= 1 && i <= 5000);
+        const auto rate = i & 1 ? 44100U : 192000U;
+        const auto frames = i & 1 ? 256U : 1U;
+        assert(end == 10000000000ULL + i * 10000000 + uint64_t(frames) * 1000000000 / rate);
+    };
+    while (!done.load()) check();
+    writer.join();
+    check();
+    assert(history.publishedBlockEndHostNs() != 0);
+}
+void benchmarkPublication() {
+    for (const uint32_t channels : {2U, 32U, 64U}) {
+        AudioHistory history(channels);
+        Planes input(channels, 256);
+        std::fill(input.values.begin(), input.values.end(), .125f);
+        std::array<double, 64> timings{};
+        for (uint64_t block = 0; block < 68; ++block) {
+            const auto position = block * 256;
+            const auto started = std::chrono::steady_clock::now();
+            assert(realtime([&] {
+                return history.append(input.input(), 256,
+                    9000000000ULL + frameNs(position, 176400), 176400,
+                    static_cast<double>(position), true);
+            }));
+            if (block >= 4)
+                timings[block - 4] = std::chrono::duration<double, std::micro>(
+                    std::chrono::steady_clock::now() - started).count();
+        }
+        std::sort(timings.begin(), timings.end());
+        std::printf("{\"channels\":%u,\"frames\":256,\"sampleRate\":176400,"
+                    "\"medianMicroseconds\":%.3f,\"maximumMicroseconds\":%.3f}\n",
+                    channels, timings[32], timings.back());
+    }
+}
+void benchmark(bool callbackAnchors = false, double driftPpm = 0, bool fractional = false,
+               uint32_t frames = 64, unsigned profile = 0) {
+    const std::array ratesToCheck = profile == 2
+        ? std::array{std::pair{48000U, 44100U}, std::pair{44100U, 48000U},
+                     std::pair{48000U, 96000U}, std::pair{96000U, 48000U}}
+        : profile == 1
+        ? std::array{std::pair{176400U, 176400U}, std::pair{192000U, 192000U},
+                     std::pair{48000U, 176400U}, std::pair{44100U, 192000U}}
+        : std::array{std::pair{48000U, 48000U}, std::pair{48000U, 44100U},
+                     std::pair{96000U, 48000U}, std::pair{192000U, 8000U}};
+    for (uint32_t channels : {2U, 8U, 32U, 64U})
+        for (const auto& rates : ratesToCheck) {
             Fixture fixture(channels, rates.first, 1000);
             if (callbackAnchors) {
                 fixture.history.stop();
@@ -547,8 +850,8 @@ void benchmark(bool callbackAnchors = false, double driftPpm = 0) {
             std::array<double, 20> timings{};
             for (uint32_t block = 0; block < 24; ++block) {
                 const auto start = std::chrono::steady_clock::now();
-                const auto result = fixture.history.read(fixture.start(false), rates.second,
-                                                         fixture.output.output(), 64, cursor);
+                const auto result = fixture.history.read(fixture.start(fractional), rates.second,
+                                                         fixture.output.output(), frames, cursor);
                 assert(!result.missingFrames);
                 if (block >= 4)
                     timings[block - 4] = std::chrono::duration<double, std::micro>(
@@ -556,15 +859,45 @@ void benchmark(bool callbackAnchors = false, double driftPpm = 0) {
                                              .count();
             }
             std::sort(timings.begin(), timings.end());
-            std::printf("{\"channels\":%u,\"sourceRate\":%u,\"outputRate\":%u,\"frames\":64,"
+            std::printf("{\"channels\":%u,\"sourceRate\":%u,\"outputRate\":%u,\"frames\":%u,"
                         "\"medianMicroseconds\":%.3f,\"maximumMicroseconds\":%.3f,"
                         "\"periodMicroseconds\":%.3f}\n",
-                        channels, rates.first, rates.second, timings[10], timings.back(),
-                        64e6 / rates.second);
+                        channels, rates.first, rates.second, frames, timings[10], timings.back(),
+                        frames * 1e6 / rates.second);
         }
 }
 } // namespace
 int main(int argc, char** argv) {
+#if defined(LOOPZ_TEST_WINDOWS_AUDIO_KERNELS)
+    std::puts(loopz::windows::prepareAudioKernels() ? "Windows AVX2 kernel enabled"
+                                                    : "Windows baseline kernel retained");
+#endif
+    if (argc == 2 && std::string_view(argv[1]) == "--test-near-unity") {
+        blockConvolutionMatchesFir(88200 * (1 + 1e-10), 88200);
+        blockConvolutionMatchesFir(88200 * (1 - 1e-10), 88200);
+        return 0;
+    }
+    if (argc == 2 && std::string_view(argv[1]) == "--test-integer-decimation") {
+        blockConvolutionMatchesFir(96000, 48000, true);
+        blockConvolutionMatchesFir(192000, 48000, true);
+        return 0;
+    }
+    if (argc == 2 && std::string_view(argv[1]) == "--benchmark-clock-conversion") {
+        benchmark(true, 0, true, 256, 2);
+        return 0;
+    }
+    if (argc == 2 && std::string_view(argv[1]) == "--benchmark-high-rate") {
+        benchmark(true, 0, true, 256, true);
+        return 0;
+    }
+    if (argc == 2 && std::string_view(argv[1]) == "--benchmark-unity-fractional") {
+        benchmark(true, 0, true);
+        return 0;
+    }
+    if (argc == 2 && std::string_view(argv[1]) == "--benchmark-publication") {
+        benchmarkPublication();
+        return 0;
+    }
     if (argc == 2 && std::string_view(argv[1]) == "--benchmark") {
         benchmark();
         return 0;
@@ -578,11 +911,22 @@ int main(int argc, char** argv) {
         return 0;
     }
     assert(argc == 1);
+    publicationHorizon();
+    blockConvolutionMatchesFir();
+    blockConvolutionMatchesFir(48000, 44100);
+    blockConvolutionMatchesFir(44100, 48000);
+    blockConvolutionMatchesFir(48000, 44100, false, true);
+    blockConvolutionMatchesFir(44100, 48000, false, true);
+    blockConvolutionMatchesFir(48000, 96000);
+    blockConvolutionMatchesFir(96000, 48000);
+    blockConvolutionMatchesFir(96000, 48000, true);
+    blockConvolutionMatchesFir(192000, 48000, true);
     spectralQuality();
     sparseChannelsMatchFullHistory();
     boundariesAndPartitioning();
     contiguousHardwareTimestampCorrections();
     historyReadFailureDiagnostics();
+    historyPayloadCoherence();
     drift();
     finiteContainment();
     stridedOutputAndInvalidRequests();

@@ -9,7 +9,8 @@ namespace loopz {
 // An unchanged bus survives public endpoint rate/mapping and scene replacement.
 class MonitorBus final {
   public:
-    MonitorBus(uint32_t channels, uint32_t renderRate, uint32_t capacityFrames = 32768);
+    MonitorBus(uint32_t channels, uint32_t renderRate, uint32_t capacityFrames = 32768,
+               bool readDiagnostics = false);
     uint32_t channels() const noexcept;
     uint32_t renderRate() const noexcept;
     std::shared_ptr<const AudioSource> source() const noexcept;

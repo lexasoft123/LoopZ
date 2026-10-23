@@ -101,18 +101,14 @@ try {
         .waitFor();
     await tour.locator("svg > rect[stroke]").waitFor();
     await tour.getByRole("button", { name: "Next", exact: true }).click();
-    await tour
-        .getByRole("heading", { name: "Choose what goes in" })
-        .waitFor();
+    await tour.getByRole("heading", { name: "Choose what goes in" }).waitFor();
     await page.screenshot({ path: new URL("sources.png", output).pathname });
     await tour.getByRole("button", { name: "Next", exact: true }).click();
     await tour
         .getByRole("heading", { name: "When to use Pass-through" })
         .waitFor();
     await tour.getByRole("button", { name: "Back", exact: true }).click();
-    await tour
-        .getByRole("heading", { name: "Choose what goes in" })
-        .waitFor();
+    await tour.getByRole("heading", { name: "Choose what goes in" }).waitFor();
     await tour.getByRole("button", { name: "Next", exact: true }).click();
     await tour.getByRole("button", { name: "Next", exact: true }).click();
     await tour

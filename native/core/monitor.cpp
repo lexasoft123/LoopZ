@@ -1,4 +1,6 @@
 #include <loopz/monitor.hpp>
+#include <loopz/audio_resampler.hpp>
+#include "finite_samples.hpp"
 #include <loopz/timeline.hpp>
 
 #include <algorithm>
@@ -17,8 +19,11 @@ void clear(RoutingOutput output, uint32_t frames) noexcept {
             std::fill_n(channel, std::min(frames, output.capacityFrames), 0.0f);
 }
 } // namespace
-MonitorBus::MonitorBus(uint32_t channels, uint32_t renderRate, uint32_t capacityFrames)
-    : history_(std::make_shared<AudioHistory>(channels, capacityFrames)), rate_(renderRate) {
+MonitorBus::MonitorBus(uint32_t channels, uint32_t renderRate, uint32_t capacityFrames,
+                       bool readDiagnostics)
+    : history_(std::make_shared<AudioHistory>(channels, capacityFrames,
+                                              ResamplingFilter::LinearPhase, readDiagnostics)),
+      rate_(renderRate) {
     if (!validRate(renderRate))
         throw std::invalid_argument("Invalid monitor bus rate");
 }
@@ -201,10 +206,10 @@ MonitorRenderResult MonitorProgram::render(uint64_t firstOutputHostNs, double ou
         result.sourceOnline = result.sourceOnline && read.online;
         result.missingFrames += !read.online ? count : std::min(read.missingFrames, count);
         for (uint32_t channel = 0; channel < self.inputChannels; ++channel)
-            for (uint32_t frame = 0; frame < count; ++frame)
-                if (!read.online || read.missingFrames > count ||
-                    !std::isfinite(self.input[channel][frame]))
-                    self.input[channel][frame] = 0;
+            if (!read.online || read.missingFrames > count)
+                std::fill_n(self.input[channel].data(), count, 0.0f);
+            else
+                detail::sanitizeFinite(self.input[channel].data(), count);
         const RoutingInput view{{self.inputRead.data(), self.inputChannels}, kBlock};
         const RoutingOutput routed{{self.outputPlanes.data(), self.outputChannels}, kBlock};
         if (!self.graph.render({&view, 1}, routed, count, position + offset))
@@ -212,10 +217,10 @@ MonitorRenderResult MonitorProgram::render(uint64_t firstOutputHostNs, double ou
         // Keep unavailable logical hardware channels silent in the meter as
         // well. A narrower profile must not rewrite the saved channel map.
         for (uint32_t channel = 0; channel < self.outputChannels; ++channel)
-            for (uint32_t frame = 0; frame < count; ++frame)
-                if (channel >= output.channels.size() ||
-                    !std::isfinite(self.output[channel][frame]))
-                    self.output[channel][frame] = 0;
+            if (channel >= output.channels.size())
+                std::fill_n(self.output[channel].data(), count, 0.0f);
+            else
+                detail::sanitizeFinite(self.output[channel].data(), count);
         for (uint32_t channel = 0; channel < output.channels.size(); ++channel) {
             if (channel < self.outputChannels)
                 std::copy_n(self.output[channel].data(), count, output.channels[channel] + offset);

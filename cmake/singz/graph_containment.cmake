@@ -10,6 +10,12 @@ function(loopz_singz_containment_source result)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${input}")
   file(READ "${input}" source)
 
+  string(REPLACE "#include <cmath>" [==[#include <cmath>
+#include <cstdint>
+#if defined(__SSE2__) || defined(_M_X64)
+#include <emmintrin.h>
+#endif]==] source "${source}")
+
   string(REPLACE [==[    ++*invalidSamples;
   return 0.0f;
 }
@@ -24,7 +30,29 @@ function(loopz_singz_containment_source result)
 void copyContained(const float* source, float* destination, uint32_t frames,
                    uint32_t* invalidSamples) noexcept {
   uint32_t invalid = 0;
-  for (uint32_t frame = 0; frame < frames; ++frame) {
+  uint32_t frame = 0;
+#if defined(__SSE2__) || defined(_M_X64)
+  // Partial overlap retains the upstream forward-copy semantics. Ordinary
+  // graph buffers are disjoint or exactly in-place; both can use full vectors.
+  const auto from = reinterpret_cast<uintptr_t>(source);
+  const auto to = reinterpret_cast<uintptr_t>(destination);
+  const auto distance = from < to ? to - from : from - to;
+  const bool partialOverlap = from != to && distance / sizeof(float) < frames;
+  if (!partialOverlap) {
+    const auto magnitude = _mm_set1_epi32(0x7fffffff);
+    const auto infinity = _mm_set1_epi32(0x7f800000);
+    for (; frames - frame >= 4; frame += 4) {
+      const auto raw = _mm_loadu_ps(source + frame);
+      const auto finite = _mm_cmpgt_epi32(
+          infinity, _mm_and_si128(_mm_castps_si128(raw), magnitude));
+      _mm_storeu_ps(destination + frame, _mm_and_ps(raw, _mm_castsi128_ps(finite)));
+      const auto mask = static_cast<uint32_t>(_mm_movemask_ps(_mm_castsi128_ps(finite)));
+      invalid += 4U - ((mask & 1U) + ((mask >> 1) & 1U) +
+                      ((mask >> 2) & 1U) + ((mask >> 3) & 1U));
+    }
+  }
+#endif
+  for (; frame < frames; ++frame) {
     const float value = source[frame];
     const bool finite = std::isfinite(value);
     destination[frame] = finite ? value : 0.0f;
@@ -100,7 +128,7 @@ void copyContained(const float* source, float* destination, uint32_t frames,
 ]==] source "${source}")
 
   string(SHA256 output_sha "${source}")
-  if(NOT output_sha STREQUAL "15d311f8a26b4c249c74ebbe9aa5790c06b0557aff5bb8572a4dcfa2f480bf73")
+  if(NOT output_sha STREQUAL "91a1ca4bcc7c8fbaeac5cec11bcc5a65675bdeab12974fcd790c5ee93f55cfae")
     message(FATAL_ERROR "SingZ graph containment overlay produced unexpected source")
   endif()
   set(output "${CMAKE_CURRENT_BINARY_DIR}/contained-runtime/graph_runner.cpp")

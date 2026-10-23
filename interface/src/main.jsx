@@ -11,6 +11,9 @@ import "./components/level-meter.css";
 import { EngineStore, nativeTransport } from "./store.js";
 import App from "./App.jsx";
 
+// The shared kit's Windows surfaces avoid costly full-window backdrop blur.
+if (globalThis.chrome?.webview) document.body.classList.add("win");
+
 let preferences = {};
 try {
     preferences = JSON.parse(localStorage.getItem("loopz-appearance") || "{}");

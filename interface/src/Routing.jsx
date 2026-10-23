@@ -7,6 +7,7 @@ import { sourceCondition } from "./connection-state.js";
 import { outputPairRemoval } from "./output-pairs.js";
 import {
     sourceStatus,
+    appPlaybackLabel,
     sourceLive,
     outputAmplitude,
     gainText,
@@ -145,6 +146,8 @@ function SourceNode({
     const condition = sourceCondition(state, s);
     const status = condition.label;
     const available = condition.available;
+    const showPlaybackRouting =
+        state.platform === "windows" && s.kind === "app" && s.muteOriginal;
     const recover = (event) => {
         switch (condition.action?.kind) {
             case "settings":
@@ -217,7 +220,7 @@ function SourceNode({
                     <h3>{s.name}</h3>
                     <p>
                         {s.kind === "app"
-                            ? "Application · stereo"
+                            ? t("Application · stereo")
                             : s.kind === "pass"
                               ? t(
                                     "Sound from apps using this device as their speaker",
@@ -298,7 +301,9 @@ function SourceNode({
                     </details>
                 )}
             </div>
-            <div className={`lz-node-foot ${!available ? "attention" : ""}`}>
+            <div
+                className={`lz-node-foot ${!available || showPlaybackRouting ? "attention" : ""}`}
+            >
                 <StatusDot
                     tone={
                         !available
@@ -310,11 +315,11 @@ function SourceNode({
                 />
                 <span>
                     {!available
-                        ? `${status} · wiring saved`
+                        ? `${status} · ${t("wiring saved")}`
                         : condition.kind === "idle"
                           ? t("Ready when used \xB7 connections retained")
                           : s.kind === "app"
-                            ? `Original playback muted: ${s.muteOriginal ? t("On") : t("Off")}`
+                            ? appPlaybackLabel(state, s)
                             : s.enabled
                               ? t("Enabled \xB7 pre-gain meters")
                               : t("Disabled \xB7 connections retained")}
@@ -448,7 +453,7 @@ function MonitorNode({
                         />
                         {waiting ||
                             (m.enabled
-                                ? "Available · stereo"
+                                ? t("Available · stereo")
                                 : t("Monitor disabled"))}
                     </p>
                 </div>
@@ -540,10 +545,10 @@ function MonitorNode({
                 <Icon name="speaker" size={13} />
                 <span>
                     {waiting
-                        ? "Reconnecting automatically. Connections retained."
+                        ? t("Reconnecting automatically. Connections retained.")
                         : m.enabled
-                          ? "Keeps routing active without a recording app."
-                          : "Enable to listen without a recording app."}
+                          ? t("Keeps routing active without a recording app.")
+                          : t("Enable to listen without a recording app.")}
                 </span>
             </div>
         </article>
@@ -1045,8 +1050,9 @@ export function Routing({
                         />
                     ))}
                     <p className="lz-canvas-note">
-                        Drag between sockets to connect. Click a wire to select
-                        it.
+                        {t(
+                            "Drag between sockets to connect. Click a wire to select it.",
+                        )}
                         <br />
                         <LinkButton
                             onClick={(event) =>
@@ -1160,8 +1166,8 @@ export function Routing({
                         {t("Listen here. Record anywhere.")}
                         <br />
                         {t("Choose") + " "}
-                        <strong>{d.name}</strong> as the input in your recording
-                        app.
+                        <strong>{d.name}</strong>{" "}
+                        {t("as the input in your recording app.")}
                     </p>
                 </section>
             </div>
