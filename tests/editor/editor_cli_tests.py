@@ -34,3 +34,48 @@ with tempfile.TemporaryDirectory(prefix="loopz-editor-cli-") as temporary:
     assert "Installation validation cannot expose editor commands" in result.stderr
     assert not result.stdout
     assert document.read_text() == '{"version":2,"devices":[]}'
+
+    for extra in (
+        ["--installation-validation", "true", "--validation-stop-file", "", "--seconds", "1"],
+        [
+            "--installation-validation",
+            "true",
+            "--validation-stop-file",
+            str(Path(temporary) / ".." / "stop"),
+            "--seconds",
+            "1",
+        ],
+        ["--validation-stop-file", str(Path(temporary) / "stop"), "--seconds", "1"],
+        [
+            "--installation-validation",
+            "true",
+            "--validation-stop-file",
+            "relative",
+            "--seconds",
+            "1",
+        ],
+        [
+            "--installation-validation",
+            "true",
+            "--validation-stop-file",
+            str(Path(temporary) / "stop"),
+        ],
+        [
+            "--installation-validation",
+            "true",
+            "--validation-stop-file",
+            str(Path(temporary) / "stop"),
+            "--seconds",
+            "61",
+        ],
+    ):
+        result = subprocess.run(
+            [sys.argv[1], "--routing-document", str(document), *extra],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.returncode == 2, (result.stdout, result.stderr)
+        assert "A validation stop file requires bounded installation validation" in result.stderr
+        assert not result.stdout
+        assert document.read_text() == '{"version":2,"devices":[]}'

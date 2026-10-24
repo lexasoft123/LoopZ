@@ -18,6 +18,7 @@
 #include <array>
 #include <future>
 #include <chrono>
+#include <cerrno>
 #include <optional>
 #include <set>
 #include <thread>
@@ -458,7 +459,8 @@ void brokerStart() {
 }
 NSDictionary* catalog(const fs::path& payload) {
     return dictionary(
-        command({(payload / "loopz-routing-install-check").string(), "--snapshot"}).output);
+        command({(payload / "loopz-routing-install-check").string(), "--snapshot"}, true, 20s)
+            .output);
 }
 
 struct DriverNotDiscovered : std::runtime_error {
@@ -555,13 +557,28 @@ NSDictionary* temporaryGraph(Session& session, const fs::path& payload, const fs
     require([bytes writeToFile:text(file) atomically:YES],
             "The temporary audio check could not be prepared.");
     require(!chmod(file.c_str(), 0644), "The temporary audio check could not be opened.");
+    const auto stopFile = directory / "validation.stop";
+    fs::remove(stopFile);
     auto child = std::async(std::launch::async, [&] {
         return session.userCommand(
             {(payload / "LoopZ Engine.app/Contents/MacOS/LoopZ Engine").string(),
              "--routing-document", file.string(), "--installation-validation", "true", "--seconds",
-             "5"},
-            true, 12s);
+             "25", "--validation-stop-file", stopFile.string()},
+            true, 35s);
     });
+    struct ValidationStop {
+        fs::path path;
+        bool request() const {
+            const int fd =
+                open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+            if (fd < 0)
+                return errno == EEXIST;
+            return close(fd) == 0;
+        }
+        ~ValidationStop() {
+            request();
+        }
+    } stop{stopFile}; // Signal before the future waits, including on a failed catalog check.
     const auto model = decodeRouteDocumentJSON(json);
     const auto uid =
         publish ? "com.lexasoft.loopz.device." + model.devices.front().id : std::string{};
@@ -588,6 +605,7 @@ NSDictionary* temporaryGraph(Session& session, const fs::path& payload, const fs
             break;
         std::this_thread::sleep_for(100ms);
     } while (child.wait_for(0ms) != std::future_status::ready);
+    require(stop.request(), "The temporary audio check could not be stopped.");
     const auto result = child.get();
     bool configured = false;
     NSDictionary* last = nil;

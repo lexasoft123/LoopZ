@@ -1,4 +1,5 @@
 #include "routing_main.hpp"
+#include "validation_control.hpp"
 #include <loopz/macos/engine_runtime.hpp>
 #include <loopz/macos/routing_service.hpp>
 #include <loopz/macos/editor_service.hpp>
@@ -7,10 +8,12 @@
 #include <loopz/macos/source_diagnostics.hpp>
 #import <Foundation/Foundation.h>
 
+#include <algorithm>
 #include <cmath>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 
 namespace loopz::macos {
 namespace {
@@ -205,6 +208,8 @@ int routingMain(int argc, char** argv) {
         try {
             EngineRuntimeOptions options;
             uint32_t seconds = 0;
+            std::filesystem::path validationStopFile;
+            bool validationStopSpecified = false;
             bool editorEnabled = false, statusLevels = false;
             bool applicationTimingExplicit = false;
             for (int index = 1; index < argc; ++index) {
@@ -221,7 +226,10 @@ int routingMain(int argc, char** argv) {
                     statusLevels = true;
                 else if (key == "--seconds")
                     seconds = number(value, 86400);
-                else if (key == "--block-frames")
+                else if (key == "--validation-stop-file") {
+                    validationStopSpecified = true;
+                    validationStopFile = value;
+                } else if (key == "--block-frames")
                     options.scene.blockFrames = number(value, 256);
                 else if (key == "--render-rate")
                     options.scene.renderRate = number(value, 192000);
@@ -278,6 +286,14 @@ int routingMain(int argc, char** argv) {
             if (editorEnabled && options.installationValidation)
                 throw std::invalid_argument(
                     "Installation validation cannot expose editor commands");
+            if (validationStopSpecified &&
+                (!options.installationValidation || !seconds || seconds > 60 ||
+                 !validationStopFile.is_absolute() || validationStopFile.string().size() > 4096 ||
+                 std::ranges::any_of(validationStopFile, [](const auto& part) {
+                     return part == "..";
+                 })))
+                throw std::invalid_argument("A validation stop file requires bounded installation "
+                                            "validation and an absolute path");
             if (editorEnabled)
                 options.deviceSettingsPath = options.documentPath.string() + ".audio-settings.json";
             InstalledDriverLink link;
@@ -312,6 +328,15 @@ int routingMain(int argc, char** argv) {
                         runtime.retryNow();
                     }
                     runtime.poll();
+                    if (!validationStopFile.empty() &&
+                        std::filesystem::exists(validationStopFile)) {
+                        const auto state = runtime.status();
+                        if (installationValidationCanStop(true, state.configuration)) {
+                            emit(state, runtime.devices(), link.lastError(), link.session(),
+                                 options, statusLevels ? &details : nullptr, events.get());
+                            break;
+                        }
+                    }
                     const auto now = hostNowNs();
                     if (editor && !editor->status().listening)
                         editor.reset();

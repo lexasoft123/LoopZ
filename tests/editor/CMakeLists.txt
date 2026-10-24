@@ -140,7 +140,7 @@ if(LOOPZ_BUILD_MACOS_BACKEND)
   set_tests_properties(loopz-editor-service-process PROPERTIES TIMEOUT 100)
   add_test(NAME loopz-editor-cli COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/editor_cli_tests.py" "$<TARGET_FILE:loopz-engine>")
-  set_tests_properties(loopz-editor-cli PROPERTIES TIMEOUT 15)
+  set_tests_properties(loopz-editor-cli PROPERTIES TIMEOUT 60)
   add_test(NAME loopz-desktop-model COMMAND "${LOOPZ_NODE_EXECUTABLE}" --test
     "${PROJECT_SOURCE_DIR}/interface/tests/model.test.mjs")
 endif()

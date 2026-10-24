@@ -1,4 +1,5 @@
 #include <loopz/macos/engine_runtime.hpp>
+#include "../../../native/platform/macos/engine/validation_control.hpp"
 #include <loopz/macos/capture.hpp>
 #include <loopz/timeline.hpp>
 
@@ -880,8 +881,21 @@ void installationValidationNeverConstructsHardware() {
             throw std::runtime_error("Validation must not construct hardware output adapters");
         });
     const auto desired = document();
+    link.commit = false;
     runtime.setDesired(desired);
     runtime.start();
+    const auto applyingDeadline = hostNowNs() + 3000000000ULL;
+    while (runtime.status().configuration.phase != RestorationPhase::Applying &&
+           hostNowNs() < applyingDeadline) {
+        runtime.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    assert(runtime.status().configuration.phase == RestorationPhase::Applying);
+    // The parent can observe HAL publication and request stop before the
+    // control owner receives the committed transaction. Keep validation alive.
+    assert(!installationValidationCanStop(true, runtime.status().configuration));
+    assert(!sourceFactories && !monitorFactories);
+    link.outcome.phase = DriverConfigurationPhase::Committed;
     const auto deadline = hostNowNs() + 3000000000ULL;
     do {
         runtime.poll();
@@ -891,6 +905,8 @@ void installationValidationNeverConstructsHardware() {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     } while (hostNowNs() < deadline);
     assert(runtime.status().configuration.phase == RestorationPhase::Restored);
+    assert(installationValidationCanStop(true, runtime.status().configuration));
+    assert(!installationValidationCanStop(false, runtime.status().configuration));
     assert(runtime.status().render.blocks > 0 && !sourceFactories && !monitorFactories);
     assert(runtime.devices().size() == desired.devices.size());
     assert(runtime.observe()->document().devices[0].monitors.size() ==
