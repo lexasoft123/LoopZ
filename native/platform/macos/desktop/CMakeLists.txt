@@ -61,7 +61,7 @@ add_custom_command(TARGET loopz-desktop POST_BUILD
   VERBATIM)
 
 # Managed privileged maintenance service; the packager supplies its sealed payload.
-add_library(loopz_audio_maintenance STATIC audio_maintenance.mm audio_maintenance_service.mm maintenance_files.mm maintenance_host_policy.cpp)
+add_library(loopz_audio_maintenance STATIC audio_maintenance.mm audio_maintenance_service.mm catalog_channel.cpp maintenance_files.mm maintenance_host_policy.cpp)
 loopz_macos_objc(loopz_audio_maintenance)
 target_link_libraries(loopz_audio_maintenance PUBLIC loopz_desktop_session loopz_route_store
   "-framework Foundation" "-framework Security" "-framework CoreAudio")

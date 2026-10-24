@@ -161,3 +161,15 @@ if(LOOPZ_BUILD_MACOS_BACKEND)
   target_link_libraries(loopz-audio-maintenance-tests PRIVATE loopz_audio_maintenance)
   add_test(NAME loopz-audio-maintenance COMMAND loopz-audio-maintenance-tests)
 endif()
+
+if(LOOPZ_BUILD_MACOS_BACKEND)
+  add_executable(loopz-catalog-channel-tests catalog_channel_tests.cpp
+    ../../native/platform/macos/desktop/catalog_channel.cpp)
+  loopz_test_target(loopz-catalog-channel-tests)
+  target_link_libraries(loopz-catalog-channel-tests PRIVATE Threads::Threads)
+  add_test(NAME loopz-catalog-channel COMMAND loopz-catalog-channel-tests)
+  add_test(NAME loopz-catalog-server COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/catalog_server_tests.py" "$<TARGET_FILE:loopz-routing-install-check>")
+  set_tests_properties(loopz-catalog-channel PROPERTIES TIMEOUT 15)
+  set_tests_properties(loopz-catalog-server PROPERTIES TIMEOUT 60)
+endif()

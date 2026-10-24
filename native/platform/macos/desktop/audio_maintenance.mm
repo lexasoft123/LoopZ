@@ -3,6 +3,7 @@
 #include "maintenance_files.hpp"
 #include "maintenance_host_policy.hpp"
 #include "session_host.hpp"
+#include "catalog_channel.hpp"
 #include <loopz/macos/route_store.hpp>
 #import <Security/Security.h>
 #include <CoreAudio/CoreAudio.h>
@@ -457,11 +458,38 @@ void brokerStart() {
     if (result.exitCode)
         command({"/bin/launchctl", "bootstrap", "system", daemon.string()});
 }
-NSDictionary* catalog(const fs::path& payload) {
-    return dictionary(
-        command({(payload / "loopz-routing-install-check").string(), "--snapshot"}, true, 20s)
-            .output);
-}
+class AudioCatalog {
+  public:
+    explicit AudioCatalog(fs::path payload)
+        : checker_(std::move(payload) / "loopz-routing-install-check") {}
+    NSDictionary* read() {
+        if (!worker_)
+            worker_ = std::make_unique<CatalogChannel>(
+                std::vector<std::string>{checker_.string(), "--snapshot-server"});
+        const auto sequence = ++sequence_;
+        NSDictionary* reply = nil;
+        try {
+            reply = dictionary(worker_->exchange("snapshot " + std::to_string(sequence) + "\n"));
+        } catch (...) {
+            worker_.reset();
+            throw;
+        }
+        require([reply[@"request"] isKindOfClass:NSNumber.class] &&
+                    [reply[@"request"] unsignedLongLongValue] == sequence && reply.count == 2,
+                "The audio catalog checker returned an invalid acknowledgement.");
+        if ([reply[@"error"] isKindOfClass:NSString.class])
+            throw std::runtime_error("The audio catalog did not settle: " +
+                                     std::string([reply[@"error"] UTF8String]));
+        require([reply[@"catalog"] isKindOfClass:NSDictionary.class],
+                "The audio catalog checker returned an invalid snapshot.");
+        return reply[@"catalog"];
+    }
+
+  private:
+    fs::path checker_;
+    uint64_t sequence_{0};
+    std::unique_ptr<CatalogChannel> worker_;
+};
 
 struct DriverNotDiscovered : std::runtime_error {
     DriverNotDiscovered() : std::runtime_error("macOS has not discovered the new audio driver.") {}
@@ -500,12 +528,11 @@ Process activateAudioService(const Process& previous) {
     throw std::runtime_error(
         "The audio service is still restarting. Wait, then choose Repair audio.");
 }
-void restoreAudioDefaults(NSDictionary* before, const fs::path& payload,
-                          bool physicalOnly = false) {
+void restoreAudioDefaults(NSDictionary* before, AudioCatalog& catalog, bool physicalOnly = false) {
     const auto deadline = std::chrono::steady_clock::now() + 15s;
     while (true) {
         try {
-            NSDictionary* after = catalog(payload);
+            NSDictionary* after = catalog.read();
             const std::array<std::pair<NSString*, AudioObjectPropertySelector>, 3> selections{
                 {{@"defaultInput", kAudioHardwarePropertyDefaultInputDevice},
                  {@"defaultOutput", kAudioHardwarePropertyDefaultOutputDevice},
@@ -533,7 +560,7 @@ void restoreAudioDefaults(NSDictionary* before, const fs::path& payload,
                                                     nullptr, sizeof(device), &device),
                         "The original audio selection could not be restored.");
             }
-            after = catalog(payload);
+            after = catalog.read();
             for (const auto& [key, selector] : selections) {
                 (void)selector;
                 if (physicalOnly && [before[key] hasPrefix:@"com.lexasoft.loopz.device."])
@@ -550,7 +577,7 @@ void restoreAudioDefaults(NSDictionary* before, const fs::path& payload,
     }
 }
 NSDictionary* temporaryGraph(Session& session, const fs::path& payload, const fs::path& directory,
-                             bool publish) {
+                             bool publish, AudioCatalog& catalog) {
     const auto file = directory / "validation.json";
     const auto json = audioValidationDocument(publish);
     NSData* bytes = [NSData dataWithBytes:json.data() length:json.size()];
@@ -585,7 +612,7 @@ NSDictionary* temporaryGraph(Session& session, const fs::path& payload, const fs
     NSDictionary* visibleDevice = nil;
     bool catalogVerified = false;
     do {
-        NSDictionary* state = catalog(payload);
+        NSDictionary* state = catalog.read();
         NSArray* devices = state[@"routingDevices"];
         if ([devices isKindOfClass:NSArray.class]) {
             if (!publish && devices.count == 0)
@@ -781,7 +808,8 @@ NSDictionary* maintainAudioComponents(const fs::path& app, bool allowAudioActiva
         validateInstalledEntry(entry.target, entry.target == engine, console.st_uid);
     AudioInstallTransaction transaction(support, plan);
     bool prepared = false, filesPromoted = false;
-    const auto originalCatalog = catalog(payload);
+    AudioCatalog catalog(payload);
+    const auto originalCatalog = catalog.read();
     session.inspect();
     NSMutableSet* savedDevices = [NSMutableSet set];
     if (session.loaded && session.expected)
@@ -817,7 +845,7 @@ NSDictionary* maintainAudioComponents(const fs::path& app, bool allowAudioActiva
         // Idle public endpoints can remain published while their service is
         // repaired; the validation graph replaces them after service recovery.
         // Never depend on the broken service to withdraw its own devices.
-        requireIdle(catalog(payload), savedDevices);
+        requireIdle(catalog.read(), savedDevices);
         const bool hadDriver = fs::exists(driver);
         const bool changedDriver =
             audioTreeDigest(driver) != audioTreeDigest(payload / "LoopZAudio.driver");
@@ -836,7 +864,7 @@ NSDictionary* maintainAudioComponents(const fs::path& app, bool allowAudioActiva
         require(coreAudio() == originalCore, "Core Audio changed during audio maintenance.");
         const auto pendingActivation = [&]() -> NSDictionary* {
             recordPendingActivation(console.st_uid);
-            const auto after = catalog(payload);
+            const auto after = catalog.read();
             for (NSString* key in @[ @"defaultInput", @"defaultOutput", @"defaultSystemOutput" ])
                 require([after[key] isEqual:originalCatalog[key]],
                         "System audio selections changed during maintenance.");
@@ -860,7 +888,7 @@ NSDictionary* maintainAudioComponents(const fs::path& app, bool allowAudioActiva
             requireSameUser();
             expectedCore = activateAudioService(expectedCore);
             audioServiceActivated = true;
-            restoreAudioDefaults(originalCatalog, payload, true);
+            restoreAudioDefaults(originalCatalog, catalog, true);
         };
         if (changedDriver && hadDriver && !host &&
             [originalCatalog[@"routingPlugIn"][@"registered"] isEqual:@YES]) {
@@ -873,10 +901,10 @@ NSDictionary* maintainAudioComponents(const fs::path& app, bool allowAudioActiva
         while (true) {
             loadDriver();
             try {
-                validatedDevice = temporaryGraph(session, payload, snapshot, true);
+                validatedDevice = temporaryGraph(session, payload, snapshot, true, catalog);
                 break;
             } catch (const DriverNotDiscovered&) {
-                const auto state = catalog(payload);
+                const auto state = catalog.read();
                 const bool missing = !host && [state[@"routingPlugIn"][@"registered"] isEqual:@NO];
                 if (missing && allowAudioActivation && !audioServiceActivated) {
                     activate();
@@ -891,12 +919,12 @@ NSDictionary* maintainAudioComponents(const fs::path& app, bool allowAudioActiva
                 std::this_thread::sleep_for(250ms);
             }
         }
-        temporaryGraph(session, payload, snapshot, false);
+        temporaryGraph(session, payload, snapshot, false, catalog);
         requireSameUser();
         session.restore();
         // Restore saved virtual defaults only after their original graph is back.
         // macOS may temporarily choose another input while validation runs.
-        restoreAudioDefaults(originalCatalog, payload);
+        restoreAudioDefaults(originalCatalog, catalog);
         require(coreAudio() == expectedCore, "The audio service changed during audio validation.");
         transaction.commit();
         prepared = false;
@@ -932,7 +960,7 @@ NSDictionary* maintainAudioComponents(const fs::path& app, bool allowAudioActiva
                     reload(isolatedHost());
             }
             session.restore();
-            restoreAudioDefaults(originalCatalog, payload);
+            restoreAudioDefaults(originalCatalog, catalog);
             fs::remove(context);
         } catch (...) {
             throw std::runtime_error("Audio repair could not finish. Recovery files were retained; "

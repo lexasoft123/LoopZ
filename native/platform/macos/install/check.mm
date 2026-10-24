@@ -14,6 +14,10 @@
 #include <string>
 #include <cmath>
 #include <cstring>
+#include <charconv>
+#include <csignal>
+#include <iostream>
+#include <unistd.h>
 
 namespace {
 template <class T>
@@ -261,6 +265,15 @@ NSDictionary* snapshot(std::string& failure) {
         @"loopzRunning" : @(running != 0)
     };
 }
+NSDictionary* settledSnapshot(std::string& failure) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    do {
+        if (NSDictionary* state = snapshot(failure))
+            return state;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    } while (std::chrono::steady_clock::now() < deadline);
+    return nil;
+}
 bool emit(NSDictionary* object, const std::string& path = "") {
     if (!object)
         return false;
@@ -307,6 +320,40 @@ struct Guard {
 } // namespace
 int main(int argc, char** argv) {
     @autoreleasepool {
+        if (argc == 2 && std::string_view(argv[1]) == "--snapshot-server") {
+            std::signal(SIGALRM, SIG_DFL);
+            alarm(180); // Bound an orphaned metadata worker even if its caller disappears.
+            char request[64];
+            while (std::cin.getline(request, sizeof(request))) {
+                if (std::cin.eof())
+                    return 2;
+                const std::string_view line(request);
+                if (line == "quit")
+                    return 0;
+                constexpr std::string_view prefix = "snapshot ";
+                if (!line.starts_with(prefix))
+                    return 2;
+                uint64_t sequence = 0;
+                const auto parsed = std::from_chars(line.data() + prefix.size(),
+                                                    line.data() + line.size(), sequence);
+                if (parsed.ec != std::errc{} || parsed.ptr != line.data() + line.size() ||
+                    !sequence)
+                    return 2;
+                @autoreleasepool {
+                    std::string failure;
+                    NSDictionary* state = settledSnapshot(failure);
+                    NSDictionary* reply =
+                        state
+                            ? @{@"request" : @(sequence),
+                                @"catalog" : state}
+                            : @{@"request" : @(sequence),
+                                @"error" : @(failure.c_str())};
+                    if (!emit(reply))
+                        return 1;
+                }
+            }
+            return std::cin.eof() ? 0 : 2;
+        }
         std::string guardUID, stopFile, report;
         double seconds = 90;
         for (int i = 1; i < argc; ++i) {
@@ -317,12 +364,8 @@ int main(int argc, char** argv) {
                 // HAL object IDs can disappear while a virtual device is withdrawn.
                 // Retry the entire catalog; never admit a partial safety snapshot.
                 std::string failure;
-                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-                do {
-                    if (NSDictionary* state = snapshot(failure))
-                        return emit(state) ? 0 : 1;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                } while (std::chrono::steady_clock::now() < deadline);
+                if (NSDictionary* state = settledSnapshot(failure))
+                    return emit(state) ? 0 : 1;
                 std::fprintf(stderr, "Audio catalog did not settle: %s\n", failure.c_str());
                 return 1;
             }
