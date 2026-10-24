@@ -147,7 +147,7 @@ def main(arguments=None):
                                 "Unfinished uninstall recovery appeared before lock acquisition"
                             )
                         work = Path(tempfile.mkdtemp(prefix="loopz-uninstall-", dir="/private/tmp"))
-                        workspaces = DiagnosticWorkspaces(owner=0)
+                        workspaces = DiagnosticWorkspaces(owner=0, report_owner=host.uid)
                         workspace = workspaces.describe(work)
                         try:
                             result = remove_product(

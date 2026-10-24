@@ -6,6 +6,9 @@ from uninstall_policy import validate_preserved
 def recover_product(journal, host_factory, workspaces):
     """Caller holds the installer lock; source paths come only from validated journal state."""
     value = journal.load()
+    report_owner = value["plan"].get("before", {}).get("consoleUID")
+    if type(report_owner) is int and report_owner > 0:
+        workspaces.report_owner = report_owner
     committed = value["phase"] in ("purging", "removed")
     result = {
         "status": "recoveryRequired",

@@ -192,6 +192,56 @@ class WorkspaceTests(JournalFixture, unittest.TestCase):
             self.manager.clean(self.value)
         self.assertTrue(self.work.exists())
 
+    def test_console_reports_require_the_recorded_owner(self):
+        reports = self.work / "hardware-guard"
+        reports.mkdir(mode=0o700)
+        report = reports / "guard.json"
+        report.write_text('{"passed":true}')
+        report.chmod(0o600)
+        with self.assertRaises(RuntimeError):
+            self.manager.clean(self.value)
+        self.manager.report_owner = os.getuid() + 1
+        with self.assertRaises(RuntimeError):
+            self.manager.clean(self.value)
+        self.manager.report_owner = os.getuid()
+        self.manager.clean(self.value)
+        self.assertFalse(self.work.exists())
+
+    def test_console_reports_preserve_foreign_files_and_links(self):
+        reports = self.work / "hardware-guard"
+        reports.mkdir(mode=0o700)
+        self.manager.report_owner = os.getuid()
+        foreign = reports / "notes.txt"
+        foreign.write_text("preserve")
+        with self.assertRaises(RuntimeError):
+            self.manager.clean(self.value)
+        self.assertEqual(foreign.read_text(), "preserve")
+        foreign.unlink()
+        report = reports / "guard.json"
+        report.symlink_to(self.targets["broker"])
+        with self.assertRaises(RuntimeError):
+            self.manager.clean(self.value)
+        self.assertTrue(report.is_symlink())
+        report.unlink()
+        os.link(self.targets["broker"], report)
+        with self.assertRaises(RuntimeError):
+            self.manager.clean(self.value)
+        self.assertTrue(self.targets["broker"].exists())
+
+    def test_console_report_writable_permissions_block_cleanup(self):
+        reports = self.work / "hardware-guard"
+        reports.mkdir(mode=0o700)
+        self.manager.report_owner = os.getuid()
+        report = reports / "guard.json"
+        report.write_text("{}")
+        report.chmod(0o660)
+        with self.assertRaises(RuntimeError):
+            self.manager.clean(self.value)
+        report.chmod(0o600)
+        reports.chmod(0o770)
+        with self.assertRaises(RuntimeError):
+            self.manager.clean(self.value)
+
     def test_missing_workspace_is_safe_only_without_matching_diagnostic(self):
         self.work.rmdir()
         self.manager.clean(self.value)

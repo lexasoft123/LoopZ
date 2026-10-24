@@ -31,10 +31,17 @@ def diagnostic_processes(path):
 
 
 class DiagnosticWorkspaces:
-    def __init__(self, root=Path("/private/tmp"), owner=None, processes=diagnostic_processes):
+    def __init__(
+        self,
+        root=Path("/private/tmp"),
+        owner=None,
+        processes=diagnostic_processes,
+        report_owner=None,
+    ):
         self.root = Path(root)
         self.owner = os.geteuid() if owner is None else owner
         self.processes = processes
+        self.report_owner = report_owner
 
     def create(self):
         return Path(tempfile.mkdtemp(prefix="loopz-uninstall-", dir=self.root))
@@ -110,6 +117,31 @@ class DiagnosticWorkspaces:
             if descriptor is not None:
                 os.close(descriptor)
 
+    def validate_reports(self, descriptor):
+        reports = os.open(
+            "hardware-guard", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor
+        )
+        try:
+            info = os.fstat(reports)
+            if (
+                self.report_owner is None
+                or info.st_uid != self.report_owner
+                or info.st_mode & 0o077
+            ):
+                raise RuntimeError("Diagnostic reports have an unexpected owner or permissions")
+            for name in os.listdir(reports):
+                info = os.stat(name, dir_fd=reports, follow_symlinks=False)
+                if (
+                    name != "guard.json"
+                    or not stat.S_ISREG(info.st_mode)
+                    or info.st_uid != self.report_owner
+                    or info.st_mode & 0o022
+                    or info.st_nlink != 1
+                ):
+                    raise RuntimeError("Foreign or unsafe diagnostic report is retained")
+        finally:
+            os.close(reports)
+
     def clean(self, value):
         descriptor = self.open(value)
         if descriptor is None:
@@ -121,6 +153,9 @@ class DiagnosticWorkspaces:
                 raise RuntimeError("Diagnostic workspace is still in use")
             for name in os.listdir(descriptor):
                 info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                if name == "hardware-guard" and stat.S_ISDIR(info.st_mode):
+                    self.validate_reports(descriptor)
+                    continue
                 if (
                     name not in CONTENTS
                     or not stat.S_ISREG(info.st_mode)
