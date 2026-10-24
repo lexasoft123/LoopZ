@@ -8,7 +8,16 @@ import subprocess
 
 HAL = Path("/Library/Audio/Plug-Ins/HAL")
 DRIVER = HAL / "LoopZAudio.driver"
-IDENTITY = 'anchor apple and identifier "com.apple.audio.Core-Audio-Driver-Service.helper"'
+HOST_NAMES = (
+    "com.apple.audio.Core-Audio-Driver-Service",
+    "com.apple.audio.Core-Audio-Driver-Service.helper",
+)
+HOST_BASE = "/System/Library/Frameworks/CoreAudio.framework/Versions/A/XPCServices/"
+IDENTITY = "anchor apple and (" + " or ".join(f'identifier "{name}"' for name in HOST_NAMES) + ")"
+
+
+def isolated_host_path(path):
+    return any(path == f"{HOST_BASE}{name}.xpc/Contents/MacOS/{name}" for name in HOST_NAMES)
 
 
 def command(*args):
@@ -70,10 +79,7 @@ def process_identity(pid):
     if lib.proc_pidpath(pid, buffer, len(buffer)) <= 0:
         raise RuntimeError("Cannot inspect isolated host executable")
     path = buffer.value.decode()
-    if (
-        not path.startswith("/System/Library/")
-        or Path(path).name != "com.apple.audio.Core-Audio-Driver-Service.helper"
-    ):
+    if not isolated_host_path(path):
         raise RuntimeError("Refusing to signal a non-isolated audio service")
     return {
         "pid": pid,

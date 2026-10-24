@@ -280,6 +280,25 @@ class InstallTests(unittest.TestCase):
             info.st_ino,
         )
 
+    def test_isolated_host_paths_cover_both_macos_generations(self):
+        import driver_host
+
+        for name in driver_host.HOST_NAMES:
+            path = f"{driver_host.HOST_BASE}{name}.xpc/Contents/MacOS/{name}"
+            self.assertTrue(driver_host.isolated_host_path(path))
+            self.assertIn(f'identifier "{name}"', driver_host.IDENTITY)
+            for changed in (
+                path.replace("/System/Library/", "/Library/"),
+                path.replace("/System/Library/", "/tmp/System/Library/"),
+                path + ".other",
+                path.replace(".xpc/", ".other.xpc/"),
+                path.replace("/Contents/MacOS/", "/Contents/MacOS/../MacOS/"),
+            ):
+                self.assertFalse(driver_host.isolated_host_path(changed))
+        self.assertFalse(driver_host.isolated_host_path("/usr/sbin/coreaudiod"))
+        self.assertFalse(driver_host.isolated_host_path("/System/Library/coreaudiod"))
+        self.assertNotIn('identifier "com.apple.audio.coreaudiod"', driver_host.IDENTITY)
+
     def test_apple_identity_uses_a_requirement_expression(self):
         import driver_host
 
