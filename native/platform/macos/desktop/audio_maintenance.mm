@@ -149,8 +149,14 @@ void saveSessionContext(uid_t uid, bool loaded) {
 }
 SessionCommandResult command(std::vector<std::string> args, bool checked = true,
                              std::chrono::milliseconds timeout = 10s) {
-    auto result =
-        sessionCommand(args, timeout, nullptr, SessionCommandOutput::Combined, 32 * 1024 * 1024);
+    SessionCommandResult result;
+    try {
+        result = sessionCommand(args, timeout, nullptr, SessionCommandOutput::Combined,
+                                32 * 1024 * 1024);
+    } catch (const std::runtime_error& error) {
+        throw std::runtime_error("Audio maintenance: " +
+                                 fs::path(args.front()).filename().string() + ": " + error.what());
+    }
     if (checked && result.exitCode != 0)
         throw std::runtime_error(
             "Audio maintenance: " + fs::path(args.front()).filename().string() + " failed (" +
@@ -293,7 +299,12 @@ struct Session {
                                         "-u",
                                         "#" + std::to_string(uid)};
         prefix.insert(prefix.end(), args.begin(), args.end());
-        return command(std::move(prefix), checked, timeout);
+        try {
+            return command(std::move(prefix), checked, timeout);
+        } catch (const std::runtime_error& error) {
+            throw std::runtime_error(fs::path(args.front()).filename().string() + ": " +
+                                     error.what());
+        }
     }
     bool isLoaded() {
         auto result = command({"/bin/launchctl", "print", label}, false);
@@ -449,6 +460,7 @@ NSDictionary* catalog(const fs::path& payload) {
     return dictionary(
         command({(payload / "loopz-routing-install-check").string(), "--snapshot"}).output);
 }
+
 struct DriverNotDiscovered : std::runtime_error {
     DriverNotDiscovered() : std::runtime_error("macOS has not discovered the new audio driver.") {}
 };

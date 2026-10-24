@@ -157,12 +157,15 @@ NSDictionary* snapshot(std::string& failure) {
         if ([candidateUID hasPrefix:@"com.lexasoft.loopz.device."]) {
             UInt32 live = 0, active = 0, inputLatency = 0;
             Float64 rate = 0;
-            if (!get(candidate, kAudioDevicePropertyDeviceIsAlive, live) ||
-                !get(candidate, kAudioDevicePropertyDeviceIsRunning, active) ||
-                !get(candidate, kAudioDevicePropertyNominalSampleRate, rate) ||
-                !get(candidate, kAudioDevicePropertyLatency, inputLatency,
+            if (!get(candidate, kAudioDevicePropertyDeviceIsAlive, live))
+                return unavailable("routing device alive");
+            if (!get(candidate, kAudioDevicePropertyDeviceIsRunning, active))
+                return unavailable("routing device running");
+            if (!get(candidate, kAudioDevicePropertyNominalSampleRate, rate))
+                return unavailable("routing device sample rate");
+            if (!get(candidate, kAudioDevicePropertyLatency, inputLatency,
                      kAudioObjectPropertyScopeInput))
-                return unavailable("routing device state");
+                return unavailable("routing device input latency");
             std::array<UInt32, 2> channels{};
             for (size_t direction = 0; direction < channels.size(); ++direction) {
                 const auto scope = direction == 0 ? kAudioObjectPropertyScopeInput
