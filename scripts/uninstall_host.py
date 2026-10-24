@@ -306,7 +306,7 @@ class UninstallHost(DesktopHost):
         # The console-owned guard must traverse this root-owned private folder.
         # Grant only that account search access; keep the checker and stop file
         # root-owned and keep every mode/journal privacy check in force.
-        command("/bin/chmod", "+a", f"user:{self.uid} allow search", work)
+        command("/bin/chmod", "+a", f"user:{self.user.pw_name} allow search", work)
         return super().start_guard(work, before)
 
     def driver_transition(self, removal):
