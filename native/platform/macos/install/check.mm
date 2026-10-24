@@ -101,24 +101,28 @@ NSDictionary* bridgeStatus() {
     xpc_connection_cancel(connection);
     return result;
 }
-NSDictionary* snapshot() {
+NSDictionary* snapshot(std::string& failure) {
+    const auto unavailable = [&](const char* stage) -> NSDictionary* {
+        failure = stage;
+        return nil;
+    };
     AudioObjectID input = 0, output = 0, system = 0;
     if (!get(kAudioObjectSystemObject, kAudioHardwarePropertyDefaultInputDevice, input) ||
         !get(kAudioObjectSystemObject, kAudioHardwarePropertyDefaultOutputDevice, output) ||
         !get(kAudioObjectSystemObject, kAudioHardwarePropertyDefaultSystemOutputDevice, system) ||
         !uid(output))
-        return nil;
+        return unavailable("audio defaults");
     auto virtualDevice = device(@(loopz::kDeviceUID));
     UInt32 alive = 0, running = 0;
     if (virtualDevice &&
         (!get(virtualDevice, kAudioDevicePropertyDeviceIsAlive, alive) ||
          !get(virtualDevice, kAudioDevicePropertyDeviceIsRunningSomewhere, running)))
-        return nil;
+        return unavailable("legacy device state");
     UInt32 period = 0, latency = 0;
     if (virtualDevice &&
         (!get(virtualDevice, kAudioDevicePropertyZeroTimeStampPeriod, period) ||
          !get(virtualDevice, kAudioDevicePropertyLatency, latency, kAudioObjectPropertyScopeInput)))
-        return nil;
+        return unavailable("legacy device timing");
     NSDictionary* timing = @{};
     AudioObjectPropertyAddress timingAddress{0x4c5a746d, kAudioObjectPropertyScopeGlobal,
                                              kAudioObjectPropertyElementMain};
@@ -127,10 +131,10 @@ NSDictionary* snapshot() {
         UInt32 size = sizeof(value);
         if (AudioObjectGetPropertyData(virtualDevice, &timingAddress, 0, nullptr, &size, &value) ||
             !value)
-            return nil;
+            return unavailable("legacy timing property");
         id object = CFBridgingRelease(value);
         if (![object isKindOfClass:NSDictionary.class])
-            return nil;
+            return unavailable("legacy timing payload");
         timing = object;
     }
     UInt32 listSize = 0;
@@ -140,11 +144,11 @@ NSDictionary* snapshot() {
     if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &listAddress, 0, nullptr,
                                        &listSize) ||
         listSize > 1024 * 1024 || listSize % sizeof(AudioObjectID))
-        return nil;
+        return unavailable("audio device list size");
     std::vector<AudioObjectID> devices(listSize / sizeof(AudioObjectID));
     if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &listAddress, 0, nullptr, &listSize,
                                    devices.data()))
-        return nil;
+        return unavailable("audio device list");
     NSMutableDictionary<NSString*, NSArray*>* members = [NSMutableDictionary dictionary];
     NSMutableArray* routing = [NSMutableArray array];
     NSMutableSet* busy = [NSMutableSet set];
@@ -158,7 +162,7 @@ NSDictionary* snapshot() {
                 !get(candidate, kAudioDevicePropertyNominalSampleRate, rate) ||
                 !get(candidate, kAudioDevicePropertyLatency, inputLatency,
                      kAudioObjectPropertyScopeInput))
-                return nil;
+                return unavailable("routing device state");
             std::array<UInt32, 2> channels{};
             for (size_t direction = 0; direction < channels.size(); ++direction) {
                 const auto scope = direction == 0 ? kAudioObjectPropertyScopeInput
@@ -168,17 +172,17 @@ NSDictionary* snapshot() {
                 UInt32 size = 0;
                 if (AudioObjectGetPropertyDataSize(candidate, &streams, 0, nullptr, &size) ||
                     size > 64 * sizeof(AudioObjectID) || size % sizeof(AudioObjectID))
-                    return nil;
+                    return unavailable("routing stream list size");
                 std::vector<AudioObjectID> ids(size / sizeof(AudioObjectID));
                 if (size &&
                     AudioObjectGetPropertyData(candidate, &streams, 0, nullptr, &size, ids.data()))
-                    return nil;
+                    return unavailable("routing stream list");
                 for (const auto stream : ids) {
                     AudioStreamBasicDescription format{};
                     if (!get(stream, kAudioStreamPropertyVirtualFormat, format) ||
                         format.mChannelsPerFrame > 64 ||
                         channels[direction] > 64 - format.mChannelsPerFrame)
-                        return nil;
+                        return unavailable("routing stream format");
                     channels[direction] += format.mChannelsPerFrame;
                 }
             }
@@ -194,7 +198,7 @@ NSDictionary* snapshot() {
         }
         AudioClassID type = 0;
         if (!get(candidate, kAudioObjectPropertyClass, type))
-            return nil;
+            return unavailable("audio device class");
         if (type != kAudioAggregateDeviceClassID)
             continue;
         NSString* name = uid(candidate);
@@ -204,14 +208,14 @@ NSDictionary* snapshot() {
             !list || !get(candidate, kAudioDevicePropertyDeviceIsRunningSomewhere, active)) {
             if (list)
                 CFRelease(list);
-            return nil;
+            return unavailable("aggregate device state");
         }
         id object = CFBridgingRelease(list);
         if (![object isKindOfClass:NSArray.class])
-            return nil;
+            return unavailable("aggregate device members");
         for (id member in (NSArray*)object)
             if (![member isKindOfClass:NSString.class])
-                return nil;
+                return unavailable("aggregate member identity");
         members[name] = object;
         if (active || [name isEqualToString:uid(input)] || [name isEqualToString:uid(output)] ||
             [name isEqualToString:uid(system)])
@@ -306,8 +310,19 @@ int main(int argc, char** argv) {
             const std::string arg = argv[i];
             if (arg == "--bridge-status" && argc == 2)
                 return emit(bridgeStatus()) ? 0 : 1;
-            if (arg == "--snapshot" && argc == 2)
-                return emit(snapshot()) ? 0 : 1;
+            if (arg == "--snapshot" && argc == 2) {
+                // HAL object IDs can disappear while a virtual device is withdrawn.
+                // Retry the entire catalog; never admit a partial safety snapshot.
+                std::string failure;
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+                do {
+                    if (NSDictionary* state = snapshot(failure))
+                        return emit(state) ? 0 : 1;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                } while (std::chrono::steady_clock::now() < deadline);
+                std::fprintf(stderr, "Audio catalog did not settle: %s\n", failure.c_str());
+                return 1;
+            }
             if (i + 1 >= argc)
                 return 2;
             if (arg == "--guard")
