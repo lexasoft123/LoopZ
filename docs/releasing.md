@@ -84,5 +84,5 @@ release-download page, and never accepts executable commands or installation
 paths from release JSON.
 
 With hosted signing disabled, create and push the version tag after local
-validation, then run `python3 scripts/publish_release.py --tag v0.2.2 --output
+validation, then run `python3 scripts/publish_release.py --tag v0.2.3 --output
 <notarized-artifact-directory>` to upload the exact notarized DMG and checksums.

@@ -37,7 +37,7 @@ def main():
         environment = os.environ.copy()
         environment["LOOPZ_MAC_P12_PASSWORD"] = os.environ[needed[1]]
         environment["SINGZ_ASC_KEY_PATH"] = str(key)
-        output = ROOT / "artifacts/release-0.2.2"
+        output = ROOT / "artifacts/release-0.2.3"
         subprocess.run(
             [
                 sys.executable,
@@ -52,7 +52,7 @@ def main():
             check=True,
             env=environment,
         )
-        records = list(output.glob("LoopZ-0.2.2-*.json"))
+        records = list(output.glob("LoopZ-0.2.3-*.json"))
         if len(records) != 1:
             raise SystemExit("Expected one release architecture per job")
         record = records[0]

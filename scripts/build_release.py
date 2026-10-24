@@ -15,7 +15,7 @@ from desktop_install import requirement
 from distribution_signing import require_distribution_signature
 from stage_signed import ROOT, certificate_password, signing_environment
 
-VERSION = "0.2.2"
+VERSION = "0.2.3"
 TEAM = "USJ7H3X44X"
 
 
@@ -144,7 +144,7 @@ def build(build_dir, output, config):
             run([helper, "--verify-payload"])
             (image / "Applications").symlink_to("/Applications")
             (image / "Read me.txt").write_text(
-                "LoopZ 0.2.2 for macOS 14.2 or later\n\n"
+                "LoopZ 0.2.3 for macOS 14.2 or later\n\n"
                 "Drag LoopZ to Applications, then open it. On a fresh Mac, choose\n"
                 "Settings > Install audio components and authorize macOS once.\n"
                 "The driver and background service stay installed separately.\n"
@@ -204,7 +204,7 @@ def build(build_dir, output, config):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build", type=Path, default=ROOT / "build/editor-release")
-    parser.add_argument("--output", type=Path, default=ROOT / "artifacts/release-0.2.2")
+    parser.add_argument("--output", type=Path, default=ROOT / "artifacts/release-0.2.3")
     parser.add_argument("--config", type=Path, default=ROOT / ".local/macos-signing.json")
     args = parser.parse_args()
     build(args.build.resolve(), args.output.resolve(), json.loads(args.config.read_text()))
