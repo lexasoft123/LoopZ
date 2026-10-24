@@ -9,8 +9,8 @@
     <key>CFBundleName</key><string>LoopZ Routing Audio</string>
     <key>CFBundlePackageType</key><string>BNDL</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleShortVersionString</key><string>0.2.0</string>
-    <key>CFBundleVersion</key><string>5</string>
+    <key>CFBundleShortVersionString</key><string>0.2.2</string>
+    <key>CFBundleVersion</key><string>6</string>
     <key>CFPlugInFactories</key>
     <dict>
         <key>F2F8AC9D-AE84-4550-955C-E35A027F56B2</key><string>LoopZAudio_Create</string>
