@@ -99,8 +99,9 @@ class InspectorTests(PrivateFixture):
         self.assertEqual(policy.file_owner, 0)
         self.assertNotEqual(policy.host_owner, 0)
         self.assertEqual(policy.host.name, "com.apple.audio.Core-Audio-Driver-Service.helper")
-        self.assertIn(
-            'anchor apple and identifier "com.apple.audio.Core-Audio-Driver-Service.helper"',
+        self.assertEqual(
+            'anchor apple and (identifier "com.apple.audio.Core-Audio-Driver-Service" or '
+            'identifier "com.apple.audio.Core-Audio-Driver-Service.helper")',
             policy.host_requirement,
         )
 
