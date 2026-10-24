@@ -117,7 +117,7 @@ class DriverRemoval:
                 k: v for k, v in self.original.items() if k != "HALBundles"
             }:
                 raise RuntimeError("The isolated driver host changed before removal")
-            driver_host.signal_checked(audited)
+            driver_host.signal_checked(audited, force=True)
             self.signalled = True
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:

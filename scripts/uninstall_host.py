@@ -323,13 +323,25 @@ class UninstallHost(DesktopHost):
             raise RuntimeError("LoopZ services did not stop")
 
     def restore_services(self, before):
+        current = self.jobs()
         for label, state in before["jobs"].items():
-            if state is not None and self.jobs()[label] is None:
+            if state is not None and current[label] is None:
                 command("/bin/launchctl", "bootstrap", "system", JOBS[label][0])
-        if {key: value is not None for key, value in self.jobs().items()} != {
-            key: value is not None for key, value in before["jobs"].items()
-        }:
-            raise RuntimeError("LoopZ service registration was not restored")
+        expected = {key: value is not None for key, value in before["jobs"].items()}
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                observed = {key: value is not None for key, value in self.jobs().items()}
+                if observed == expected:
+                    return
+            except RuntimeError as error:
+                # launchd can publish the PID before exec replaces its launcher.
+                # Never accept that process or signal it; wait for full identity.
+                if str(error) != "The LoopZ job executable differs from its protected definition":
+                    raise
+            if time.monotonic() >= deadline:
+                raise RuntimeError("LoopZ service registration was not restored")
+            time.sleep(0.05)
 
     def wait_removed(self):
         deadline = time.monotonic() + 10

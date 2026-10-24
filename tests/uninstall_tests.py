@@ -709,7 +709,7 @@ class DriverInventoryTests(unittest.TestCase):
             patch.object(uninstall_driver.driver_host, "signal_checked") as signal,
         ):
             transition.deactivate(removal)
-            signal.assert_called_once_with(audited)
+            signal.assert_called_once_with(audited, force=True)
         self.assertTrue(transition.signalled)
 
     def test_automatic_unload_never_signals_a_replacement(self):

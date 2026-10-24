@@ -301,6 +301,31 @@ class NativeAdmissionTests(unittest.TestCase):
                 UninstallHost.for_recovery(SimpleNamespace(), before)
             verify.assert_not_called()
 
+    def test_service_restoration_waits_for_authenticated_exec(self):
+        host = UninstallHost.__new__(UninstallHost)
+        label = "system/com.lexasoft.loopz.routing"
+        empty = {key: None for key in JOBS}
+        ready = {**empty, label: "verified process"}
+        mismatch = RuntimeError("The LoopZ job executable differs from its protected definition")
+        with (
+            patch.object(host, "jobs", side_effect=[empty, mismatch, ready]),
+            patch.object(uninstall_host, "command") as command,
+            patch.object(uninstall_host.time, "sleep"),
+        ):
+            host.restore_services({"jobs": ready})
+        command.assert_called_once_with("/bin/launchctl", "bootstrap", "system", JOBS[label][0])
+
+    def test_foreign_job_definition_is_never_accepted_during_restore(self):
+        host = UninstallHost.__new__(UninstallHost)
+        label = "system/com.lexasoft.loopz.routing"
+        empty = {key: None for key in JOBS}
+        with (
+            patch.object(host, "jobs", side_effect=[empty, RuntimeError("A foreign job")]),
+            patch.object(uninstall_host, "command"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "foreign job"):
+                host.restore_services({"jobs": {**empty, label: "verified process"}})
+
     def test_restore_observer_has_no_signal_authority(self):
         source = SimpleNamespace(
             originals={"driver": {"recorded": True}},
