@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""Verify the reviewed source snapshot without accessing a sibling checkout."""
-import hashlib
-import json
+"""Verify the pinned zCore submodule without fetching or modifying it."""
+
 from pathlib import Path
+import subprocess
+import sys
 
 root = Path(__file__).resolve().parents[1]
-lock = json.loads((root / "vendor/singz.lock.json").read_text())
-base = root / "vendor/singz"
-actual = {
-    p.relative_to(base).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-    for p in base.rglob("*")
-    if p.is_file()
-}
-if actual != lock["sha256"]:
-    raise SystemExit("SingZ snapshot differs from its lock manifest")
-print(f"Verified {len(actual)} files at {lock['revision']}")
+subprocess.run(
+    [
+        sys.executable,
+        str(root / "scripts/verify-zcore-submodule.py"),
+        "--root",
+        str(root),
+        "--path",
+        "vendor/zcore",
+        "--print-revision",
+    ],
+    check=True,
+)

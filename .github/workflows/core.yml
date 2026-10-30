@@ -13,6 +13,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          submodules: recursive
       - name: Configure without platform backend
         run: cmake -S . -B build/core -DLOOPZ_BUILD_MACOS_BACKEND=OFF -DCMAKE_BUILD_TYPE=Release
       - name: Build

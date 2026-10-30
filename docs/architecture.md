@@ -1,30 +1,21 @@
 # LoopZ architecture
 
-## Installed reproducible graph containment overlay
+## Pinned zCore runtime
 
-`cmake/singz/graph_containment.cmake` verifies the original pinned runner hash,
-applies five explicit replacements and verifies the complete generated hash.
-It writes a separate build-tree translation unit only when its content changes.
-The original vendor archive is unchanged. The generated runner uses the same
-realtime compiler options and source checker; no platform dependency is added.
-Unknown SDK or output bytes fail configuration, rather than silently skipping
-or adapting the optimization. Tests cover both rejection paths and reproducibility.
+LoopZ builds its portable shared engine from the zCore Git submodule in
+`vendor/zcore`. The parent repository's gitlink pins the exact source revision.
+`scripts/verify_vendor.py` and CMake verify that the submodule is initialized at
+that revision and clean without fetching or modifying it.
 
-The helper contains each plane's non-finite values and reduces their count
-locally, then folds it into the existing saturating block total. This removes
-the per-sample dependent saturating update and permits compiler SIMD. Its local
-count cannot exceed the uint32 frame count. Forward-overlap behavior, in-place
-processing, signed zero, finite bits and the null-counter path match the scalar
-reference. The four call sites are external input copies, undelayed bypass,
-processor-output containment and external output copies. Delay-state processing
-and all graph, buffer, scheduling and timing contracts remain unchanged.
+The graph runner, planar gain/limiter code, and reusable graph/runtime tests come
+from zCore. LoopZ no longer generates a local runtime overlay. The shared
+runtime includes finite-sample containment, planar processing, and pre-limit
+limiter peak/RMS telemetry. Initialize the dependency before configuring a fresh
+checkout:
 
-The exact helper, upstream graph golden output, routing, renderer, runtime,
-sanitizer and portable checks pass. The signed app pair is installed, and both
-private and installed six-client mixed routing checks pass. Full-wide native
-acceptance remains pending. Offline graph and full portable-scene measurements
-are recorded separately from live audio evidence in
-`artifacts/graph-containment-delivery-proof.json`.
+```sh
+git submodule update --init --recursive
+```
 
 ## Candidate: separate callback dimensions, 21 October
 
@@ -582,7 +573,7 @@ macOS product backend. The baseline before this refactor is commit `92ce955`.
 | --- | --- | --- |
 | Portable core | `native/core`, `native/include/loopz` | Routing graph and device document, source history, timestamp interpolation, atomic timeline, marker analysis |
 | macOS backend | `native/platform/macos` | Core Audio capture/driver, Mach clock and scheduling, XPC transport, consent, inventory and process lifecycle |
-| Dependency composition | `cmake/singz` | Portable zdsp runtime; optional macOS zcore device host in `macos.cmake` |
+| Dependency composition | `cmake/zcore` | Portable zdsp runtime and platform audio-host targets from the pinned submodule |
 | Validation | `tests` | Standard C++ core tests; separate POSIX process test and macOS driver/installer tests |
 
 `CaptureBuffer::append` accepts samples, frame positions and nanosecond host

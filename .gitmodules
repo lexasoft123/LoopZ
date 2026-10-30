@@ -1,0 +1,3 @@
+[submodule "vendor/zcore"]
+	path = vendor/zcore
+	url = https://github.com/lexasoft123/zCore.git
