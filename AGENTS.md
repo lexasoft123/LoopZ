@@ -54,10 +54,13 @@ below in the selected worktree.
 - Review conflict resolutions before merge, rebase or cherry-pick continuation
   creates a commit. Do not force-push shared history unless explicitly authorized.
 
-SingZ enforces its review workflow with a hook and a reviewed-tree marker.
-Those hooks and reviewer definitions have **not** been installed in LoopZ.
-This file establishes the workflow; do not claim an automated gate exists or
-create a fake approval marker. A hook is a separate implementation task.
+SingZ's automated review hook and reviewed-tree marker have **not** been installed
+in LoopZ. Independent staged-tree review remains required; do not create fake
+approval markers. LoopZ has a separate offline DSP performance gate in Mac and
+Windows pull-request CI; it does not run on local commits. Follow
+[docs/performance-gate.md](docs/performance-gate.md) for full-PR comparisons,
+same-machine baselines, regression thresholds, manual runs and retained evidence.
+A passing performance gate does not replace review or correctness/audio acceptance tests.
 
 ## Build and checks
 

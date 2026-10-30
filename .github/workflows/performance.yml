@@ -1,0 +1,42 @@
+name: DSP performance gate
+on:
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: performance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  performance:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: Test performance evidence and isolated snapshots
+        run: python -m unittest discover -s tests -p performance_gate_tests.py
+      - name: Compare Release workloads on the same runner
+        env:
+          PERF_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -z "$PERF_BASE" ] || [ "$PERF_BASE" = 0000000000000000000000000000000000000000 ]; then
+            PERF_BASE=$(git rev-parse HEAD^)
+          fi
+          python scripts/performance_gate.py --baseline "$PERF_BASE" --candidate HEAD
+      - name: Preserve source, executable hashes and timing evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: performance-${{ matrix.os }}
+          path: artifacts/performance-gate/
+          retention-days: 7

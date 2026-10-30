@@ -150,6 +150,11 @@ lives in `interface`. Build and release scripts use Python **on the development
 machine and CI runner only**. Native formatting uses clang-format and Black;
 frontend formatting uses the locked Prettier version.
 
+The DSP performance gate runs in Mac and Windows pull-request CI, comparing the
+whole PR against its base in isolated Release builds. Local commits have no
+performance hook or extra build overhead.
+See [the performance gate guide](docs/performance-gate.md) for thresholds and scope.
+
 Development workflow, worktree isolation, review requirements and audio-testing
 rules are documented in [AGENTS.md](AGENTS.md).
 
