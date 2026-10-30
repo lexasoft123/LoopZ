@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import select
 import signal
 import subprocess
 import sys
@@ -10,6 +11,36 @@ import time
 
 
 engine = Path(sys.argv[1])
+
+
+def read_until_event(process, event_name, timeout, count=1):
+    """Collect stdout through a JSON event without blocking on a slow start."""
+    descriptor = process.stdout.fileno()
+    output = bytearray()
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        ready, _, _ = select.select([descriptor], [], [], remaining)
+        if not ready:
+            break
+        chunk = os.read(descriptor, 4096)
+        if not chunk:
+            break
+        output.extend(chunk)
+        matching = 0
+        for line in output.splitlines():
+            if line.startswith(b"{"):
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if payload.get("event") == event_name:
+                    matching += 1
+                    if matching >= count:
+                        return output.decode()
+    raise AssertionError(
+        f"timed out waiting for {event_name!r}; stdout={output.decode(errors='replace')}"
+    )
 
 
 def run(extra, pause=False):
@@ -20,16 +51,20 @@ def run(extra, pause=False):
         text=True,
     )
     try:
+        stdout_prefix = ""
         if pause:
             # An OS scheduling/suspend gap must rebuild the render clock while
             # retaining the bridge and desired endpoints.
-            time.sleep(3)
+            # Wait for both bridge faults to recover into a running session,
+            # rather than assuming startup finishes within a fixed delay.
+            stdout_prefix = read_until_event(process, "started", timeout=15, count=3)
             os.kill(process.pid, signal.SIGSTOP)
             try:
                 time.sleep(0.08)
             finally:
                 os.kill(process.pid, signal.SIGCONT)
         stdout, stderr = process.communicate(timeout=20)
+        stdout = stdout_prefix + stdout
     except BaseException:
         process.kill()
         process.communicate()
