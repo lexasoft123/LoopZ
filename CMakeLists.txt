@@ -49,7 +49,7 @@ add_custom_target(format-check
   COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/format_code.py" --check
   WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
   COMMENT "Checking LoopZ source formatting")
-add_subdirectory(cmake/singz)
+add_subdirectory(cmake/zcore)
 add_subdirectory(native/core)
 if(LOOPZ_BUILD_MACOS_BACKEND)
   add_subdirectory(native/platform/macos)

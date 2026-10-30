@@ -22,7 +22,7 @@ headphones or speakers.
 
 ![LoopZ audio routing workspace](docs/screenshot.png)
 
-Built with SingZ's **zcore**, **zdsp** and **singz-ui**. Audio runs locally in a
+Built with **zCore**, **zdsp** and **singz-ui**. Audio runs locally in a
 native background Engine; closing the window leaves your routing running.
 
 ## Low latency
@@ -126,8 +126,12 @@ prove a clean-Mac installation or every third-party recording app.
 ## Develop
 
 Requires CMake 3.24+, a C++20 compiler, Python 3, Node.js, and Xcode 26 or newer on macOS.
-The pinned SingZ core snapshot and UI archive are included; a sibling SingZ
-checkout is not required.
+zCore is a pinned Git submodule and SingZ UI is a pinned package; sibling
+checkouts are not required. Initialize the submodule before configuring:
+
+```sh
+git submodule update --init --recursive
+```
 
 ```sh
 npm ci --ignore-scripts --prefix interface
@@ -144,6 +148,16 @@ cmake -S . -B build/core -DLOOPZ_BUILD_MACOS_BACKEND=OFF -DCMAKE_BUILD_TYPE=Rele
 cmake --build build/core --config Release --parallel 4
 ctest --test-dir build/core -C Release --output-on-failure
 ```
+
+On Ubuntu, install the Linux audio development packages before configuring:
+
+```sh
+sudo apt-get update
+sudo apt-get install --yes libasound2-dev libudev-dev pkg-config
+```
+
+These packages support the portable-core build. LoopZ's product audio backend
+is still macOS-only; this does not add a Linux desktop audio backend.
 
 Native code lives in `native/core` and `native/platform/macos`; the React interface
 lives in `interface`. Build and release scripts use Python **on the development
@@ -167,8 +181,9 @@ Hosted signing is optional and disabled by default; see
 
 ## Credits and licensing
 
-LoopZ uses pinned SingZ zcore/zdsp sources and the MIT-licensed singz-ui package.
-Their provenance is recorded in `vendor/singz.lock.json` and
+LoopZ uses pinned zCore audio/DSP sources and the MIT-licensed singz-ui package.
+The zCore repository URL is recorded in `.gitmodules`, and its pin is the
+`vendor/zcore` gitlink. UI package provenance remains in
 `interface/packages/provenance.json`. Apple's driver sample notice remains in
 [native/platform/macos/driver/APPLE-LICENSE.txt](native/platform/macos/driver/APPLE-LICENSE.txt).
 BlackHole was studied as a timing and installation reference; its GPL implementation
