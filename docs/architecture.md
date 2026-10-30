@@ -17,6 +17,13 @@ checkout:
 git submodule update --init --recursive
 ```
 
+LoopZ and SingZ pin the same zCore main revision,
+`b8905f6ca6da354997db3e6f9c5aa730bd3c64f1`. The gitlink records the exact
+source in each checkout. Ubuntu portable-core builds require `libasound2-dev`,
+`libudev-dev` and `pkg-config`; these are build dependencies for the shared
+portable layer and do not provide a LoopZ Linux desktop audio backend. LoopZ's
+product capture, device management and lifecycle remain in its macOS backend.
+
 ## Candidate: separate callback dimensions, 21 October
 
 `CallbackTimingObservation` is a platform-independent, header-only metadata
@@ -573,7 +580,7 @@ macOS product backend. The baseline before this refactor is commit `92ce955`.
 | --- | --- | --- |
 | Portable core | `native/core`, `native/include/loopz` | Routing graph and device document, source history, timestamp interpolation, atomic timeline, marker analysis |
 | macOS backend | `native/platform/macos` | Core Audio capture/driver, Mach clock and scheduling, XPC transport, consent, inventory and process lifecycle |
-| Dependency composition | `cmake/zcore` | Portable zdsp runtime and platform audio-host targets from the pinned submodule |
+| Dependency composition | `cmake/zcore` | Portable zdsp runtime and shared device interfaces from the pinned submodule |
 | Validation | `tests` | Standard C++ core tests; separate POSIX process test and macOS driver/installer tests |
 
 `CaptureBuffer::append` accepts samples, frame positions and nanosecond host

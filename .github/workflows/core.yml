@@ -14,6 +14,11 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Install Linux audio development dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libasound2-dev libudev-dev pkg-config
       - name: Configure without platform backend
         run: cmake -S . -B build/core -DLOOPZ_BUILD_MACOS_BACKEND=OFF -DCMAKE_BUILD_TYPE=Release
       - name: Build

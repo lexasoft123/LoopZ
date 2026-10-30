@@ -149,6 +149,16 @@ cmake --build build/core --config Release --parallel 4
 ctest --test-dir build/core -C Release --output-on-failure
 ```
 
+On Ubuntu, install the Linux audio development packages before configuring:
+
+```sh
+sudo apt-get update
+sudo apt-get install --yes libasound2-dev libudev-dev pkg-config
+```
+
+These packages support the portable-core build. LoopZ's product audio backend
+is still macOS-only; this does not add a Linux desktop audio backend.
+
 Native code lives in `native/core` and `native/platform/macos`; the React interface
 lives in `interface`. Build and release scripts use Python **on the development
 machine and CI runner only**. Native formatting uses clang-format and Black;
