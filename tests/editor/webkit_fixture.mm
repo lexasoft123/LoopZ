@@ -1,5 +1,6 @@
 #include "../../native/platform/macos/desktop/desktop.hpp"
 #include "../../native/platform/macos/desktop/window_visibility.hpp"
+#include "webkit_page_visibility.hpp"
 
 #include <cstdio>
 
@@ -289,17 +290,8 @@ int main(int argc, const char* argv[]) {
         loopzConfigureWebView(configuration);
         if (visibilityTest)
             loopzInstallVisibilityScript(configuration);
-        else {
-            // These profiles intentionally render offscreen. Their synthetic
-            // page is logically visible; only the visibility profile exercises
-            // real WindowServer/document visibility, without this override.
-            [configuration.userContentController
-                addUserScript:[[WKUserScript alloc]
-                                    initWithSource:@"Object.defineProperty(document, 'hidden', "
-                                                   @"{get: () => false});"
-                                     injectionTime:WKUserScriptInjectionTimeAtDocumentStart
-                                  forMainFrameOnly:YES]];
-        }
+        else
+            loopzConfigureOffscreenFixtureVisibility(configuration);
         // Never read or overwrite the user's appearance preferences.
         configuration.websiteDataStore = WKWebsiteDataStore.nonPersistentDataStore;
         [configuration

@@ -1,4 +1,5 @@
 #include "../../native/platform/macos/desktop/desktop.hpp"
+#include "webkit_page_visibility.hpp"
 
 #include <cstdio>
 #include <unistd.h>
@@ -27,6 +28,9 @@
     } else if ([message.body[@"operation"] isEqual:@"state"]) {
         ++_reads;
         reply(_envelope, nil);
+    } else if ([message.body[@"operation"] isEqual:@"updates"]) {
+        // Read-only status polling never contacts an external update service.
+        reply(@{@"ok" : @YES, @"state" : @"current"}, nil);
     } else {
         ++_rejectedCommands;
         reply(nil, @"Preference fixture refuses all edits and system actions");
@@ -86,6 +90,7 @@ int main(int argc, const char* argv[]) {
             setActivationPolicy:NSApplicationActivationPolicyProhibited];
         [NSApp finishLaunching];
         auto* configuration = [WKWebViewConfiguration new];
+        loopzConfigureOffscreenFixtureVisibility(configuration);
         loopzConfigureWebView(configuration);
         // Deliberately leave websiteDataStore at its production default.
         auto* store = configuration.websiteDataStore;
@@ -196,8 +201,11 @@ int main(int argc, const char* argv[]) {
                          failure.description.UTF8String);
             return 1;
         }
-        if (fixture.rejectedCommands || !fixture.reads)
+        if (fixture.rejectedCommands || !fixture.reads) {
+            std::fprintf(stderr, "Preference fixture: %lu rejected commands, %lu state reads\n",
+                         (unsigned long)fixture.rejectedCommands, (unsigned long)fixture.reads);
             return 1;
+        }
         const bool printed = printJSON(@{
             @"status" : @"passed",
             @"pid" : @(getpid()),

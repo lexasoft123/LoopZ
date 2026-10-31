@@ -1,6 +1,7 @@
 #include "../../native/platform/macos/desktop/desktop.hpp"
 #include "../../native/platform/macos/desktop/editing_actions.hpp"
 #include "../platform/macos/test_code_identity.hpp"
+#include "webkit_page_visibility.hpp"
 #include <loopz/macos/capture.hpp>
 #include <loopz/macos/engine_runtime.hpp>
 
@@ -341,6 +342,7 @@ int main(int argc, const char* argv[]) {
                     return result;
                 }];
             auto* configuration = [WKWebViewConfiguration new];
+            loopzConfigureOffscreenFixtureVisibility(configuration);
             loopzConfigureWebView(configuration);
             configuration.websiteDataStore = WKWebsiteDataStore.nonPersistentDataStore;
             [configuration setURLSchemeHandler:[[LZResources alloc]
