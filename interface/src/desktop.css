@@ -119,3 +119,9 @@ html[data-loopz-native="true"] .lz-titlebar {
     position: relative;
     z-index: 30;
 }
+:root[data-loopz-ui-visible="false"] *,
+:root[data-loopz-ui-visible="false"] *::before,
+:root[data-loopz-ui-visible="false"] *::after {
+    animation-play-state: paused !important;
+    transition: none !important;
+}

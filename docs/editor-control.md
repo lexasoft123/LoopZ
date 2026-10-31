@@ -1,5 +1,26 @@
 # Editor commands and configuration ownership
 
+## Desktop visibility and polling
+
+The macOS desktop publishes its actual window visibility to the interface.
+Hidden, minimized and fully occluded windows suspend state polling, release-update
+status polling, meter expiry/publishing and CSS animation. An inactive or partly
+covered window remains live. This is a view-only scheduling signal: it never edits
+the document, pauses audio or stops the Engine/control connection.
+
+Showing the window starts a fresh state read immediately. A response requested
+before hiding is discarded; if that read is still in flight, the fresh read starts
+as soon as it drains. The scheduler keeps at most one store poll in flight and
+does not let a stopped page restart its timers. Navigation resynchronizes the
+native visibility signal after each load.
+
+`npm run test:webkit:visibility --prefix interface` exercises real AppKit hide,
+minimize, full/partial occlusion and reload against a synthetic, nonpersistent
+WebKit fixture. It requires an interactive macOS session and opens only its own
+test windows; no production Engine, audio endpoint or saved mix is accessed.
+
+## Editor transport
+
 The portable editor commands, authenticated local transport and EngineRuntime
 dispatch are implemented. The installed full-routing Engine exposes them through an
 explicit user-domain Mach-service mode. The repository's `interface/` and native

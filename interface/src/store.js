@@ -1,5 +1,6 @@
 import { commandsFor, project } from "./model.js";
 import { isAppearance, normalizeAppearance } from "./appearance.js";
+import { startVisiblePolling } from "./visibility.js";
 
 export class EngineStore {
     constructor(transport, preferences = {}, savePreferences = () => {}) {
@@ -35,6 +36,8 @@ export class EngineStore {
         };
         this.envelope = null;
         this.listeners = new Set();
+        this.visible = true;
+        this.visibilityGeneration = 0;
         this.state = project(null, this.preferences, this.flags);
     }
     getSnapshot = () => this.state;
@@ -43,6 +46,7 @@ export class EngineStore {
         return () => this.listeners.delete(listener);
     };
     publish() {
+        if (!this.visible) return;
         const revision = this.envelope?.snapshot?.revision;
         const key = JSON.stringify([
             revision,
@@ -111,20 +115,32 @@ export class EngineStore {
         if (metadataChanged) this.savePreferences(this.preferences);
         this.flags.meterExpired = false;
         clearTimeout(this.expiry);
-        this.expiry = setTimeout(() => {
-            this.flags.meterExpired = true;
-            this.publish();
-        }, 250);
+        if (this.visible)
+            this.expiry = setTimeout(() => {
+                this.flags.meterExpired = true;
+                this.publish();
+            }, 250);
         this.publish();
     }
-    async refresh() {
+    async refresh(isCurrent = () => this.visible) {
+        if (!this.visible) return false;
         if (this.reading) return this.reading;
+        const generation = this.visibilityGeneration;
+        const current = () =>
+            this.visible &&
+            generation === this.visibilityGeneration &&
+            isCurrent();
         this.reading = (async () => {
             try {
-                this.accept(
-                    await this.transport({ version: 1, operation: "state" }),
-                );
+                const envelope = await this.transport({
+                    version: 1,
+                    operation: "state",
+                });
+                if (!current()) return false;
+                this.accept(envelope);
+                return true;
             } catch (error) {
+                if (!current()) return false;
                 this.envelope = this.envelope
                     ? {
                           ...this.envelope,
@@ -134,26 +150,32 @@ export class EngineStore {
                 this.flags.error = error.message;
                 this.flags.meterExpired = true;
                 this.publish();
+                return true;
             }
         })();
         try {
-            await this.reading;
+            return await this.reading;
         } finally {
             this.reading = null;
         }
     }
-    start() {
-        let active = true;
-        const tick = async () => {
-            await this.refresh();
-            if (active) this.timer = setTimeout(tick, 100);
-        };
-        tick();
-        return () => {
-            active = false;
-            clearTimeout(this.timer);
-            clearTimeout(this.expiry);
-        };
+    start(observe) {
+        this.stopPolling?.();
+        this.stopPolling = startVisiblePolling(
+            (isCurrent) => this.refresh(isCurrent),
+            {
+                interval: 100,
+                observe,
+                changed: (visible) => {
+                    ++this.visibilityGeneration;
+                    this.visible = visible;
+                    clearTimeout(this.expiry);
+                    this.flags.meterExpired = true;
+                    if (visible) this.publish();
+                },
+            },
+        );
+        return this.stopPolling;
     }
     send = async (action) => {
         if (action.type === "theme" && !isAppearance(action.value))

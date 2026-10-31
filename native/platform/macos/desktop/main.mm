@@ -3,6 +3,7 @@
 #include "login.hpp"
 #include "editing_actions.hpp"
 #include "window_chrome.hpp"
+#include "window_visibility.hpp"
 
 #include <cstdio>
 
@@ -14,6 +15,7 @@
     NSWindow* _window;
     WKWebView* _webView;
     LZBridge* _bridge;
+    LZWindowVisibility* _visibility;
     bool _terminating;
 }
 - (void)windowDidUpdate:(NSNotification*)notification {
@@ -62,6 +64,7 @@
     }
     auto* configuration = [WKWebViewConfiguration new];
     loopzConfigureWebView(configuration);
+    loopzInstallVisibilityScript(configuration);
     NSURL* resources = [NSBundle.mainBundle.resourceURL URLByAppendingPathComponent:@"interface"
                                                                         isDirectory:YES];
     [configuration setURLSchemeHandler:[[LZResources alloc] initWithRoot:resources]
@@ -92,6 +95,7 @@
     _window.delegate = self;
     _window.minSize = NSMakeSize(1080, 650);
     _window.contentView = _webView;
+    _visibility = [[LZWindowVisibility alloc] initWithWindow:_window webView:_webView];
     [_window center];
     [_window makeKeyAndOrderFront:nil];
     loopzAlignWindowControls(_window);
@@ -102,6 +106,11 @@
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)application {
     (void)application;
     return YES;
+}
+- (void)webView:(WKWebView*)webView didFinishNavigation:(WKNavigation*)navigation {
+    (void)webView;
+    (void)navigation;
+    [_visibility didFinishNavigation];
 }
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)sender {
     (void)sender;

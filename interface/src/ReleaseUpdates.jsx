@@ -2,22 +2,21 @@ import React, { useEffect, useState } from "react";
 import { Button } from "@singz/ui";
 import { Switch } from "./components/Switch.jsx";
 import { t } from "./i18n.js";
+import { startVisiblePolling } from "./visibility.js";
 
 export function useReleaseUpdates(transport) {
     const [updates, setUpdates] = useState(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(false);
     useEffect(() => {
-        let active = true;
-        let timer;
-        const poll = async () => {
+        const poll = async (isCurrent) => {
             try {
                 const next = await transport({
                     version: 1,
                     operation: "updates",
                 });
                 if (!next?.ok || typeof next.state !== "string") throw Error();
-                if (active) {
+                if (isCurrent()) {
                     setUpdates((previous) =>
                         JSON.stringify(previous) === JSON.stringify(next)
                             ? previous
@@ -26,15 +25,10 @@ export function useReleaseUpdates(transport) {
                     setError(false);
                 }
             } catch {
-                if (active) setError(true);
+                if (isCurrent()) setError(true);
             }
-            if (active) timer = setTimeout(poll, 5000);
         };
-        poll();
-        return () => {
-            active = false;
-            clearTimeout(timer);
-        };
+        return startVisiblePolling(poll, { interval: 5000 });
     }, [transport]);
     const action = async (operation, extra = {}) => {
         if (busy) return;

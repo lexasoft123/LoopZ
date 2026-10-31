@@ -1,4 +1,5 @@
 #include "../../native/platform/macos/desktop/desktop.hpp"
+#include "../../native/platform/macos/desktop/window_visibility.hpp"
 
 #include <cstdio>
 
@@ -13,6 +14,8 @@
 @property WKWebView* webView;
 @property NSUInteger nativeKeys;
 @property NSUInteger appearanceChanges;
+@property LZWindowVisibility* visibility;
+@property NSWindow* cover;
 @end
 
 @implementation LZWebKitFixture
@@ -74,8 +77,55 @@
     // synthetic snapshots; no such operation exists in the product bridge.
     if ([message.name isEqual:@"fixture"]) {
         NSDictionary* body = message.body;
-        if ([message.body[@"operation"] isEqual:@"window-appearance"] && body.count == 2 &&
-            self.webView.window && [@[ @"light", @"dark" ] containsObject:message.body[@"value"]]) {
+        if ([body[@"operation"] isEqual:@"visibility-state"] && self.visibility) {
+            reply(@{
+                @"reads" : @(self.stateReads),
+                @"hidden" : @(NSApp.hidden),
+                @"miniaturized" : @(self.webView.window.miniaturized),
+                @"visible" :
+                    @((self.webView.window.occlusionState & NSWindowOcclusionStateVisible) != 0)
+            },
+                  nil);
+        } else if ([body[@"operation"] isEqual:@"visibility"] && self.visibility &&
+                   body.count == 2) {
+            NSWindow* window = self.webView.window;
+            NSString* action = body[@"value"];
+            if ([action isEqual:@"hide"]) {
+                [NSApp hide:nil];
+            } else if ([action isEqual:@"show"]) {
+                [NSApp unhideWithoutActivation];
+                [window makeKeyAndOrderFront:nil];
+                [NSApp activateIgnoringOtherApps:YES];
+            } else if ([action isEqual:@"minimize"]) {
+                [window miniaturize:nil];
+            } else if ([action isEqual:@"restore"]) {
+                [window deminiaturize:nil];
+                [window makeKeyAndOrderFront:nil];
+            } else if ([action isEqual:@"cover"] || [action isEqual:@"partial-cover"]) {
+                if (!self.cover) {
+                    self.cover = [[NSWindow alloc] initWithContentRect:window.frame
+                                                             styleMask:NSWindowStyleMaskBorderless
+                                                               backing:NSBackingStoreBuffered
+                                                                 defer:NO];
+                    self.cover.backgroundColor = NSColor.windowBackgroundColor;
+                    self.cover.opaque = YES;
+                    self.cover.level = window.level + 1;
+                }
+                NSRect frame = NSInsetRect(window.frame, -12, -12);
+                if ([action isEqual:@"partial-cover"])
+                    frame.size.width /= 2;
+                [self.cover setFrame:frame display:YES];
+                [self.cover orderFront:nil];
+            } else if ([action isEqual:@"uncover"]) {
+                [self.cover orderOut:nil];
+            } else {
+                reply(nil, @"Unknown visibility fixture action");
+                return;
+            }
+            reply(@{@"ok" : @YES}, nil);
+        } else if ([message.body[@"operation"] isEqual:@"window-appearance"] && body.count == 2 &&
+                   self.webView.window &&
+                   [@[ @"light", @"dark" ] containsObject:message.body[@"value"]]) {
             // Change only this private fixture window, never macOS preferences.
             self.webView.window.appearance = [NSAppearance
                 appearanceNamed:[message.body[@"value"] isEqual:@"dark"] ? NSAppearanceNameDarkAqua
@@ -147,6 +197,7 @@
     (void)webView;
     (void)navigation;
     _loaded = YES;
+    [_visibility didFinishNavigation];
 }
 - (void)webView:(WKWebView*)webView
     didFailProvisionalNavigation:(WKNavigation*)navigation
@@ -164,8 +215,20 @@
 
 static bool pumpUntil(BOOL (^complete)(), NSTimeInterval seconds) {
     NSDate* deadline = [NSDate dateWithTimeIntervalSinceNow:seconds];
-    while (!complete() && deadline.timeIntervalSinceNow > 0)
+    while (!complete() && deadline.timeIntervalSinceNow > 0) {
+        if (NSApp.activationPolicy != NSApplicationActivationPolicyProhibited) {
+            // Occlusion/minimize notifications arrive through AppKit events,
+            // not just CFRunLoop timers. Offscreen fixtures need no event drain.
+            NSEvent* event = nil;
+            while ((event = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                               untilDate:NSDate.distantPast
+                                                  inMode:NSDefaultRunLoopMode
+                                                 dequeue:YES]))
+                [NSApp sendEvent:event];
+            [NSApp updateWindows];
+        }
         [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
     return complete();
 }
 
@@ -201,8 +264,11 @@ int main(int argc, const char* argv[]) {
                                  "after.js snapshot.png\n");
             return 2;
         }
+        const bool visibilityTest =
+            [NSProcessInfo.processInfo.environment[@"LOOPZ_WEBKIT_VISIBILITY_TEST"] isEqual:@"1"];
         [NSApplication.sharedApplication
-            setActivationPolicy:NSApplicationActivationPolicyProhibited];
+            setActivationPolicy:visibilityTest ? NSApplicationActivationPolicyAccessory
+                                               : NSApplicationActivationPolicyProhibited];
         [NSApp finishLaunching];
         auto* fixture = [LZWebKitFixture new];
         auto* data = [NSData dataWithContentsOfFile:@(argv[2])];
@@ -221,6 +287,19 @@ int main(int argc, const char* argv[]) {
         }
         auto* configuration = [WKWebViewConfiguration new];
         loopzConfigureWebView(configuration);
+        if (visibilityTest)
+            loopzInstallVisibilityScript(configuration);
+        else {
+            // These profiles intentionally render offscreen. Their synthetic
+            // page is logically visible; only the visibility profile exercises
+            // real WindowServer/document visibility, without this override.
+            [configuration.userContentController
+                addUserScript:[[WKUserScript alloc]
+                                    initWithSource:@"Object.defineProperty(document, 'hidden', "
+                                                   @"{get: () => false});"
+                                     injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+                                  forMainFrameOnly:YES]];
+        }
         // Never read or overwrite the user's appearance preferences.
         configuration.websiteDataStore = WKWebsiteDataStore.nonPersistentDataStore;
         [configuration
@@ -238,15 +317,24 @@ int main(int argc, const char* argv[]) {
         auto* webView = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 1360, 860)
                                            configuration:configuration];
         webView.navigationDelegate = fixture;
-        auto* window = [[NSWindow alloc] initWithContentRect:webView.frame
-                                                   styleMask:NSWindowStyleMaskBorderless
-                                                     backing:NSBackingStoreBuffered
-                                                       defer:NO];
+        auto* window = [[NSWindow alloc]
+            initWithContentRect:webView.frame
+                      styleMask:visibilityTest
+                                    ? (NSWindowStyleMaskTitled | NSWindowStyleMaskMiniaturizable)
+                                    : NSWindowStyleMaskBorderless
+                        backing:NSBackingStoreBuffered
+                          defer:NO];
         window.releasedWhenClosed = NO;
         window.contentView = webView;
         // Deterministic starting appearance; no global or user defaults change.
         window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
         fixture.webView = webView;
+        if (visibilityTest) {
+            fixture.visibility = [[LZWindowVisibility alloc] initWithWindow:window webView:webView];
+            [window center];
+            [window makeKeyAndOrderFront:nil];
+            [NSApp activateIgnoringOtherApps:YES];
+        }
         [webView loadRequest:[NSURLRequest
                                  requestWithURL:[NSURL URLWithString:@"loopz://app/index.html"]]];
         if (!pumpUntil(

@@ -29,6 +29,7 @@ target_link_libraries(loopz-login PRIVATE loopz_desktop_session)
 set_target_properties(loopz-login PROPERTIES OUTPUT_NAME "LoopZLogin")
 add_executable(loopz-desktop MACOSX_BUNDLE
   main.mm
+  window_visibility.mm
   bridge.mm
   resources.mm
   login.mm

@@ -2,6 +2,10 @@ import {
     beforeTourReload,
     afterTourReload,
 } from "../tests/webkit-tour-scenarios.mjs";
+import {
+    beforeVisibilityReload,
+    afterVisibilityReload,
+} from "../tests/webkit-visibility-scenarios.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -65,6 +69,14 @@ const output = resolve(process.argv[2] || `${root}/artifacts/webkit-interface`);
 const keyboard = process.argv[3] === "keyboard";
 const sanitized = process.argv[4] === "sanitized";
 const profiles = new Map([
+    [
+        "visibility",
+        {
+            before: beforeVisibilityReload,
+            after: afterVisibilityReload,
+            label: "window-visibility",
+        },
+    ],
     [
         "status",
         {
@@ -167,6 +179,8 @@ const profiles = new Map([
     ],
 ]);
 const profile = profiles.get(process.argv[3] ?? "appearance");
+process.env.LOOPZ_WEBKIT_VISIBILITY_TEST =
+    profile?.label === "window-visibility" ? "1" : "0";
 assert(profile, "Unknown WebKit validation profile");
 assert([undefined, "sanitized"].includes(process.argv[4]));
 await mkdir(output, { recursive: true });
@@ -220,6 +234,7 @@ await run("/usr/bin/clang++", [
     `${root}/native/platform/macos/include`,
     `${root}/tests/editor/webkit_fixture.mm`,
     `${root}/native/platform/macos/desktop/resources.mm`,
+    `${root}/native/platform/macos/desktop/window_visibility.mm`,
     "-framework",
     "Cocoa",
     "-framework",

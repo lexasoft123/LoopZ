@@ -8,6 +8,7 @@
         "test": "node --test tests/*.test.mjs",
         "test:browser:endpoints": "node tests/endpoint-editor.browser.mjs",
         "test:webkit": "node scripts/test-webkit.mjs",
+        "test:webkit:visibility": "node scripts/test-webkit.mjs ../artifacts/webkit-ui-visibility visibility",
         "test:webkit:engine": "node scripts/test-webkit-engine.mjs",
         "test:webkit:persistence": "node scripts/test-webkit-persistence.mjs",
         "format": "prettier --write src scripts tests",
