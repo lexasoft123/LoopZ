@@ -18,9 +18,11 @@ The real parent-project SDK consumer built and ran on both Linux architectures.
 It reused one pinned zCore target, published a native song source, retained parent
 build/testing policy, and rejected mismatched, dirty and late DSP source overlays.
 The frontend suite passed 81 tests, its locked Prettier check and production build.
-The macOS standalone configuration passed 48 CTest cases. The full macOS app
-previously passed 132 cases, with private IPC cases rerun outside the filesystem
-sandbox after sandbox-only bind/launchd failures.
+The CPU follow-up passed 51 ARM64 native cases, the parent SDK checks,
+48 standalone macOS cases and all 132 full macOS cases. Native IPC/XPC checks
+ran outside the filesystem sandbox after sandbox-only bind/identity failures.
+The CPU implementation also passed native x64 Linux CI; the parent source SDK
+checks now run on both Linux CI architectures.
 
 Changed native/Python files pass clang-format 22.1.8 and Black 25.1.0 checks.
 The repository-wide native formatting check still reports unrelated baseline
@@ -71,11 +73,16 @@ reported queue, callback period, filter support and scheduling reserve. Source
 history budget remained 1024 frames; the renderer leads by one 256-frame block.
 These components do not constitute measured end-to-end latency. Raw provider
 timestamps remain in the evidence; the projected timeline remains estimated.
-The Engine consumed 93.7% of one CPU core over that interval (process tick
-accounting, two-CPU container quota, no attached profiler). This is informational
+Before the CPU follow-up, the Engine consumed 93.7% of one CPU core over that
+interval (process tick accounting, two-CPU container quota, no attached profiler). This is informational
 for this ten-channel capture / selected stereo route, not a CPU improvement claim
-or qualification of the maximum admitted graph. Production load/headroom and
-long-duration continuity need further measurement.
+or qualification of the maximum admitted graph. The
+[CPU follow-up](linux-cpu-performance.md) replaces the local resampler with
+the pinned shared implementation and adds a conservative Engine startup CPU
+policy. Two final ARM64 runs passed all 71 checks at 18.2% and 18.8% of one core,
+with unchanged graph and buffering budgets. The old unrestricted-affinity result
+is not a matched estimate of the resampler improvement. Production load/headroom
+and long-duration continuity still need further measurement.
 
 Box was restored using its original image, its display service configuration
 was byte-identical, both display and VNC supervision were active, and the VNC

@@ -32,6 +32,24 @@ window on each target; browser tests are separate evidence. Follow native build
 locks and compile limits on a shared build stand. Never share mutable build or
 node_modules directories with another checkout.
 
+## Engine CPU policy
+
+The standalone Linux Engine defaults to `LOOPZ_AUDIO_CPU_POLICY=performance`.
+Before creating audio workers, it reads the inherited CPU affinity and kernel
+`cpu_capacity` records. On heterogeneous CPUs it selects the highest-capacity
+CPUs already allowed by that mask; workers inherit this selection. Homogeneous
+or incomplete capacity data preserve the inherited mask. Affinity failures
+retain the existing policy and are reported on stderr. Set
+`LOOPZ_AUDIO_CPU_POLICY=inherit` to preserve the caller's selection explicitly.
+This startup policy belongs to the executable; embedding `LoopZ::Runtime` does
+not change the host application's affinity.
+
+Release builds use the pinned zCore resampler's cached FIR/convolution paths
+and the compiler's platform SIMD support. See [CPU evidence](linux-cpu-performance.md)
+for measured scope and optional compiler settings. No host governor, realtime
+limits or device buffers are changed by the CPU policy. A denied realtime
+priority request continues with inherited scheduling and is logged.
+
 ## Freeze, build and package
 
 The packaging script never builds or starts services. It stages `cmake --install`
