@@ -203,12 +203,17 @@ JSON endpoint(const EndpointStatus& e) {
     return result;
 }
 } // namespace
-Control::Control(std::filesystem::path state) : state_(std::move(state)) {
+Control::Control(std::filesystem::path state)
+    : Control(std::move(state), std::make_unique<AudioRuntime>()) {}
+Control::Control(std::filesystem::path state, std::unique_ptr<AudioRuntime> runtime)
+    : audio_(std::move(runtime)), state_(std::move(state)) {
+    if (!audio_)
+        throw std::invalid_argument("Control requires a non-null runtime");
     std::random_device random;
     for (int i = 0; i < 4; ++i)
         epoch_ += std::to_string(random()) + "-";
     try {
-        inventory_ = audio_.inventory();
+        inventory_ = audio_->inventory();
     } catch (const std::exception& error) {
         inventoryError_ = error.what();
     }
@@ -229,8 +234,8 @@ void Control::activate() {
     if (!desired_)
         return;
     try {
-        auto candidate = audio_.prepare(*desired_);
-        audio_.commit(std::move(candidate));
+        auto candidate = audio_->prepare(*desired_);
+        audio_->commit(std::move(candidate));
         activeGeneration_ = desiredGeneration_;
         activationError_.clear();
     } catch (const std::exception& error) {
@@ -239,18 +244,18 @@ void Control::activate() {
 }
 void Control::poll() {
     try {
-        inventory_ = audio_.inventory();
+        inventory_ = audio_->inventory();
         inventoryError_.clear();
     } catch (const std::exception& error) {
         inventoryError_ = error.what();
     }
-    audio_.poll();
+    audio_->poll();
     if (desired_ && activeGeneration_ != desiredGeneration_)
         activate();
 }
 JSON Control::snapshot() {
-    audio_.requestTelemetryPreview();
-    const auto runtime = audio_.status();
+    audio_->requestTelemetryPreview();
+    const auto runtime = audio_->status();
     const auto& inventory = inventory_;
     JSON devices = JSON::array(), inputs = JSON::array(), outputs = JSON::array();
     JSON buses = JSON::array(), monitors = JSON::array(), sources = JSON::array();
@@ -510,7 +515,7 @@ JSON Control::request(const JSON& message) {
         std::shared_ptr<AudioRuntime::Prepared> prepared;
         std::string pending;
         try {
-            prepared = audio_.prepare(candidate);
+            prepared = audio_->prepare(candidate);
         } catch (const std::invalid_argument& error) {
             return reply(false, "unsupported-configuration", error.what());
         } catch (const std::exception& error) {
@@ -543,7 +548,7 @@ JSON Control::request(const JSON& message) {
         history_.swap(preparedHistory);
         activationError_ = std::move(pending);
         if (prepared) {
-            audio_.commit(std::move(prepared));
+            audio_->commit(std::move(prepared));
             activeGeneration_ = next;
         }
         return result;

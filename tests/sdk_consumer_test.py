@@ -38,6 +38,52 @@ def main():
     subprocess.run(
         ["ctest", "--test-dir", str(build), "--output-on-failure"], check=True, timeout=30
     )
+    control_build = build.with_name(build.name + "-control")
+    subprocess.run(
+        [*common, "-B", str(control_build), "-DSDK_CONTROL_CONSUMER=ON"],
+        check=True,
+        timeout=120,
+    )
+    subprocess.run(
+        [
+            "cmake",
+            "--build",
+            str(control_build),
+            "--target",
+            "loopz-control-sdk-consumer",
+            "--parallel",
+            "2",
+        ],
+        check=True,
+        timeout=300,
+    )
+    subprocess.run(
+        [
+            "ctest",
+            "--test-dir",
+            str(control_build),
+            "-R",
+            "consumer-control-restore",
+            "--output-on-failure",
+        ],
+        check=True,
+        timeout=30,
+    )
+    control_binary = control_build / "loopz-control-sdk-consumer"
+    negative = subprocess.run(
+        [
+            str(control_binary),
+            str(control_build / "negative-state.json"),
+            "--unbound-negative-control",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert (
+        negative.returncode != 0
+        and "Restored graph did not read prebound native source" in negative.stderr
+    ), (negative.stdout + negative.stderr)
     wrong = subprocess.run(
         [
             *common,
