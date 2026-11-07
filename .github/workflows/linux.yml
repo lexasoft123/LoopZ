@@ -1,0 +1,50 @@
+name: Linux Engine and interface
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: interface/package-lock.json
+      - name: Install Linux build and WebKit dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libasound2-dev libudev-dev libwebkit2gtk-4.1-dev pkg-config dpkg-dev xvfb xauth
+      - name: Build existing interface
+        run: |
+          npm ci --ignore-scripts --prefix interface
+          npm test --prefix interface
+          npm run format:check --prefix interface
+          npm run build --prefix interface
+      - name: Freeze source provenance
+        run: |
+          mkdir -p artifacts
+          python3 scripts/package_linux.py --write-source-receipt artifacts/source.json
+      - name: Build native Engine and host
+        run: |
+          cmake -S . -B build/linux -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DLOOPZ_BUILD_MACOS_BACKEND=OFF -DLOOPZ_BUILD_ENGINE=ON -DLOOPZ_BUILD_LINUX_DESKTOP=ON
+          cmake --build build/linux --parallel 4
+      - name: Verify native routing, control and visible interface
+        run: ctest --test-dir build/linux --output-on-failure --parallel 2
+      - name: Package development previews
+        run: python3 scripts/package_linux.py --build build/linux --source-receipt artifacts/source.json --output artifacts/packages --format both
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: loopz-linux-${{ matrix.os }}
+          path: |
+            artifacts/packages
+            artifacts/linux-desktop-smoke

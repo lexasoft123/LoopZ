@@ -56,9 +56,11 @@ measured paths, comparisons and remaining validation limits.
 ## Download and use
 
 Download a DMG from [GitHub Releases](https://github.com/lexasoft123/LoopZ/releases).
-The first release targets **Apple Silicon, macOS 14.2 or newer**. Windows and
-Linux can build the portable core; desktop audio backends for those platforms
-are future work.
+The first release targets **Apple Silicon, macOS 14.2 or newer**.
+Linux also has an x86-64 and ARM64 development preview with a standalone
+Engine and native GTK/WebKit desktop. See [Linux setup](docs/linux.md) and the
+[pinned native source SDK](docs/native-source-api.md). Windows can build the
+portable core; its desktop audio backend remains future work.
 
 1. Drag **LoopZ** from the DMG into **Applications** and open it.
 2. On a fresh installation, open **Settings → Install audio components** and

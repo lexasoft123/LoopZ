@@ -25,6 +25,10 @@ add_library(loopz_core STATIC
   direct_monitor.cpp
   render_schedule.cpp)
 add_library(LoopZ::Core ALIAS loopz_core)
+target_compile_features(loopz_core PUBLIC cxx_std_20)
+target_compile_features(loopz_core PUBLIC cxx_std_20)
+set_target_properties(loopz_core PROPERTIES POSITION_INDEPENDENT_CODE YES)
+add_dependencies(loopz_core loopz_verify_zcore)
 target_include_directories(loopz_core PUBLIC "${PROJECT_SOURCE_DIR}/native/include")
 target_link_libraries(loopz_core PUBLIC SingZ::zdsp_runtime)
 loopz_strict_target(loopz_core)

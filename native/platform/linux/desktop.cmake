@@ -1,0 +1,30 @@
+option(LOOPZ_BUILD_LINUX_DESKTOP "Build the Linux WebKitGTK desktop interface" OFF)
+if(LOOPZ_BUILD_LINUX_DESKTOP)
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "The Linux desktop host requires a Linux target")
+  endif()
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(LOOPZ_WEBKIT REQUIRED IMPORTED_TARGET webkit2gtk-4.1>=2.40)
+  include(GNUInstallDirs)
+  add_executable(loopz-desktop "${CMAKE_CURRENT_LIST_DIR}/desktop.cpp")
+  target_link_libraries(loopz-desktop PRIVATE loopz_control PkgConfig::LOOPZ_WEBKIT)
+  target_compile_definitions(loopz-desktop PRIVATE
+    LOOPZ_INTERFACE_PATH="${CMAKE_INSTALL_FULL_DATADIR}/loopz/interface/index.html")
+  loopz_strict_target(loopz-desktop)
+  install(DIRECTORY "${PROJECT_SOURCE_DIR}/interface/dist/" DESTINATION "${CMAKE_INSTALL_DATADIR}/loopz/interface")
+  install(FILES "${PROJECT_SOURCE_DIR}/packaging/linux/loopz.desktop" DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
+  install(TARGETS loopz-desktop RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+  if(LOOPZ_BUILD_TESTS)
+    find_program(LOOPZ_XVFB_RUN xvfb-run)
+    if(LOOPZ_XVFB_RUN)
+      add_test(NAME loopz-linux-desktop
+        COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/linux_desktop_smoke.py"
+          $<TARGET_FILE:loopz-engine> $<TARGET_FILE:loopzctl> $<TARGET_FILE:loopz-desktop>
+          "${PROJECT_SOURCE_DIR}/interface/dist/index.html"
+          "${PROJECT_SOURCE_DIR}/artifacts/linux-desktop-smoke")
+      set_tests_properties(loopz-linux-desktop PROPERTIES TIMEOUT 45 RUN_SERIAL TRUE)
+    else()
+      message(STATUS "xvfb-run unavailable: real Linux desktop acceptance is not registered")
+    endif()
+  endif()
+endif()

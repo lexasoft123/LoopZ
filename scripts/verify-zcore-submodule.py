@@ -47,7 +47,7 @@ def normalized(path: Path) -> Path:
     return Path(os.path.realpath(path))
 
 
-def verify(root_arg: Path, relative_path: str) -> str:
+def verify(root_arg: Path, relative_path: str, external_source: Path | None = None) -> str:
     path_value = PurePosixPath(relative_path)
     if (
         path_value.is_absolute()
@@ -88,7 +88,12 @@ def verify(root_arg: Path, relative_path: str) -> str:
     if not OID_RE.fullmatch(expected_oid):
         raise VerificationError("the parent gitlink does not contain a valid object ID")
 
-    child = normalized(root.joinpath(*path_value.parts))
+    # A parent application may already own this exact dependency checkout.
+    # The consumer gitlink remains authoritative even when that directory is
+    # external; never accept a floating branch, copied folder or dirty source.
+    child = normalized(
+        external_source if external_source is not None else root.joinpath(*path_value.parts)
+    )
     if not child.is_dir():
         raise require_init_action(relative_path, "the submodule working directory is missing")
     child_root_result = git(child, "rev-parse", "--show-toplevel", check=False)
@@ -130,10 +135,56 @@ def verify(root_arg: Path, relative_path: str) -> str:
     return expected_oid
 
 
+def verify_dsp_sources(source_root: Path, manifest: Path) -> None:
+    """Verify actual target sources, independently of mutable overlay options."""
+    source_root = normalized(source_root)
+    if manifest.stat().st_size > 1024 * 1024:
+        raise VerificationError("DSP source manifest exceeds its size limit")
+    lines = manifest.read_text().splitlines()
+    if not lines or normalized(Path(lines[0])) != source_root:
+        raise VerificationError("DSP target SOURCE_DIR does not match pinned zCore source")
+    tracked = set(git(source_root, "ls-files", "-z").stdout.split("\0"))
+    actual = []
+    for entry in lines[1:]:
+        if not entry:
+            continue
+        if "$<" in entry:
+            raise VerificationError(
+                "DSP source manifest contains an unresolved generator expression"
+            )
+        path = Path(entry)
+        resolved = normalized(path if path.is_absolute() else source_root / path)
+        try:
+            relative = resolved.relative_to(source_root).as_posix()
+        except ValueError as error:
+            raise VerificationError(
+                f"DSP source is outside pinned zCore source: {entry}"
+            ) from error
+        if relative not in tracked:
+            raise VerificationError(f"DSP source is not tracked in pinned zCore source: {entry}")
+        actual.append(resolved)
+    for relative in ("zdsp/src/runtime/graph_runner.cpp", "zdsp/src/runtime/builtin_nodes.cpp"):
+        expected = normalized(source_root / relative)
+        if actual.count(expected) != 1:
+            raise VerificationError(
+                f"DSP target must contain exactly one canonical source: {relative}"
+            )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True, type=Path, help="consumer repository root")
     parser.add_argument("--path", required=True, help="gitlink path relative to --root")
+    parser.add_argument(
+        "--external-source",
+        type=Path,
+        help="verify this existing source checkout against the consumer gitlink",
+    )
+    parser.add_argument(
+        "--dsp-source-manifest",
+        type=Path,
+        help="verify an actual DSP target source manifest (SOURCE_DIR then one source per line)",
+    )
     parser.add_argument(
         "--print-revision",
         action="store_true",
@@ -141,7 +192,10 @@ def main() -> int:
     )
     args = parser.parse_args()
     try:
-        revision = verify(args.root, args.path)
+        revision = verify(args.root, args.path, args.external_source)
+        if args.dsp_source_manifest:
+            source = args.external_source or args.root / args.path
+            verify_dsp_sources(source, args.dsp_source_manifest)
     except (VerificationError, OSError) as error:
         print(f"zCore submodule verification failed: {error}", file=sys.stderr)
         return 1

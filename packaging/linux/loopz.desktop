@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=LoopZ
+Comment=Route and monitor audio
+Exec=loopz-desktop
+Icon=audio-card
+Terminal=false
+Categories=AudioVideo;Audio;Mixer;

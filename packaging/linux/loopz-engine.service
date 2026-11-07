@@ -1,0 +1,14 @@
+[Unit]
+Description=LoopZ routing Engine
+After=sound.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/loopz-engine
+Restart=on-failure
+RestartSec=2
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 3.24)
 # Initialize before project(): Darwin platform detection otherwise caches an
 # empty deployment target and silently builds for the SDK's host OS version.
-if((CMAKE_HOST_APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Darwin") AND
+# An embedding application owns its deployment policy; never change its cache.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND
+   (CMAKE_HOST_APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Darwin") AND
    (NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL ""))
   set(CMAKE_OSX_DEPLOYMENT_TARGET "14.2" CACHE STRING "Minimum macOS" FORCE)
 endif()
@@ -20,6 +22,9 @@ if(LOOPZ_BUILD_MACOS_BACKEND)
   enable_language(OBJCXX)
 endif()
 include(CTest)
+option(LOOPZ_BUILD_TESTS "Build LoopZ tests without changing the parent testing policy" ${BUILD_TESTING})
+option(LOOPZ_BUILD_ENGINE "Build standalone native Engine and control CLI" OFF)
+option(LOOPZ_BUILD_RUNTIME_LIBRARY "Build the reusable native routing runtime" OFF)
 find_package(Threads REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
@@ -41,22 +46,40 @@ function(loopz_test_target target)
   endif()
 endfunction()
 
-add_custom_target(format
-  COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/format_code.py"
-  WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
-  COMMENT "Formatting LoopZ sources")
-add_custom_target(format-check
-  COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/format_code.py" --check
-  WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
-  COMMENT "Checking LoopZ source formatting")
+if(NOT TARGET format)
+  add_custom_target(format
+    COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/format_code.py"
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+    COMMENT "Formatting LoopZ sources")
+endif()
+if(NOT TARGET format-check)
+  add_custom_target(format-check
+    COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/format_code.py" --check
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+    COMMENT "Checking LoopZ source formatting")
+endif()
 add_subdirectory(cmake/zcore)
 add_subdirectory(native/core)
+include(cmake/document-json.cmake)
+option(LOOPZ_BUILD_LINUX_DESKTOP "Build Linux WebKitGTK desktop" OFF)
+if(LOOPZ_BUILD_ENGINE OR LOOPZ_BUILD_RUNTIME_LIBRARY)
+  if(LOOPZ_BUILD_ENGINE AND LOOPZ_BUILD_MACOS_BACKEND)
+    message(FATAL_ERROR "Standalone Engine requires LOOPZ_BUILD_MACOS_BACKEND=OFF; the macOS application retains its existing Engine")
+  endif()
+  add_subdirectory(native/runtime)
+endif()
+if(LOOPZ_BUILD_LINUX_DESKTOP)
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT LOOPZ_BUILD_ENGINE)
+    message(FATAL_ERROR "Linux desktop requires Linux and LOOPZ_BUILD_ENGINE=ON")
+  endif()
+  include(native/platform/linux/desktop.cmake)
+endif()
 if(LOOPZ_BUILD_MACOS_BACKEND)
   add_subdirectory(native/platform/macos)
   add_subdirectory(native/platform/macos/editor)
   add_subdirectory(native/platform/macos/desktop)
 endif()
-if(BUILD_TESTING)
+if(LOOPZ_BUILD_TESTS)
   add_subdirectory(tests)
   add_subdirectory(tests/editor)
 endif()

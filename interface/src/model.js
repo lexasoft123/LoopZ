@@ -138,7 +138,7 @@ export function project(
                 "retry",
             ].includes(phase)
           ? "driver"
-          : phase === "restored"
+          : ["restored", "partial"].includes(phase)
             ? "ready"
             : "applying";
     const monitorFaults = {};

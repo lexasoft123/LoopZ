@@ -49,6 +49,7 @@ export default function App({
         [tourOpen, liveState.theme, locale],
     );
     const state = demoState || liveState;
+    const linux = liveState.snapshot?.runtime?.platform === "linux";
     // Even programmatic controls or native menu events cannot write demo IDs to
     // the real graph. Read-only update status and menu context stay available.
     const send = useCallback(
@@ -386,10 +387,12 @@ export default function App({
                 </header>
                 <aside
                     className={`lz-sidebar ${sidebar ? "open" : ""}`}
-                    aria-label={t("Virtual devices")}
+                    aria-label={t(linux ? "Mixes" : "Virtual devices")}
                 >
                     <div className="lz-sidebar-heading">
-                        <span className="eyebrow">{t("Virtual devices")}</span>
+                        <span className="eyebrow">
+                            {t(linux ? "Mixes" : "Virtual devices")}
+                        </span>
                         <span>{state.devices.length} / 32</span>
                     </div>
                     <nav className="lz-device-list">
@@ -481,7 +484,7 @@ export default function App({
                                 )
                             }
                         >
-                            {t("+ New virtual device")}
+                            {t(linux ? "+ New mix" : "+ New virtual device")}
                         </Button>
                         <p>
                             {t("Close this window to leave")}
@@ -514,7 +517,9 @@ export default function App({
                                 }
                             >
                                 {t(
-                                    "Learn how to combine sound and use your mix in other apps. You can replay this tour from Settings.",
+                                    linux
+                                        ? "Learn how to connect hardware inputs, mixes and monitors. The tour uses a demo project. You can replay it from Settings."
+                                        : "Learn how to combine sound and use your mix in other apps. You can replay this tour from Settings.",
                                 )}
                             </Banner>
                         )}
@@ -751,12 +756,16 @@ export default function App({
                             <p>
                                 {state.canEdit || state.canCreate
                                     ? t(
-                                          "Create a device to combine apps and inputs.",
+                                          linux
+                                              ? "Create a mix to route hardware inputs to your output devices."
+                                              : "Create a device to combine apps and inputs.",
                                       )
                                     : state.connected
                                       ? "Your routing document needs attention before editing."
                                       : t(
-                                            "Once audio is connected, your saved devices will appear here.",
+                                            linux
+                                                ? "Once the Engine is connected, your saved mixes will appear here."
+                                                : "Once audio is connected, your saved devices will appear here.",
                                         )}
                             </p>
                             <Button
@@ -772,7 +781,11 @@ export default function App({
                                     )
                                 }
                             >
-                                {t("Create your first device")}
+                                {t(
+                                    linux
+                                        ? "Create your first mix"
+                                        : "Create your first device",
+                                )}
                             </Button>
                         </div>
                     )}
@@ -799,7 +812,11 @@ export default function App({
                                   ? t("Reconnecting")
                                   : d
                                     ? health(state, d)
-                                    : t("No virtual devices")}
+                                    : t(
+                                          linux
+                                              ? "No mixes"
+                                              : "No virtual devices",
+                                      )}
                         </span>
                     </div>
                     <div className="lz-footer-actions">
