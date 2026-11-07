@@ -93,6 +93,7 @@ export default function Dialogs({
     refresh,
     startTour,
 }) {
+    const linux = state.snapshot?.runtime?.platform === "linux";
     const d = state.devices.find((device) => device.id === modal.device);
     const source = d?.sources.find((s) => s.id === modal.id);
     const sourceState = source ? sourceCondition(state, source) : null;
@@ -198,8 +199,8 @@ export default function Dialogs({
         }
     };
     const titles = {
-        create: t("New virtual device"),
-        rename: t("Rename virtual device"),
+        create: t(linux ? "New mix" : "New virtual device"),
+        rename: t(linux ? "Rename mix" : "Rename virtual device"),
         device: t("Device options"),
         "add-source": t("Add a source"),
         source: source?.name || t("Source options"),
@@ -271,9 +272,13 @@ export default function Dialogs({
                 <p className="modal-body">
                     {modal.kind === "create"
                         ? t(
-                              "Combine apps and inputs into a device you can choose in your recording app.",
+                              linux
+                                  ? "Combine hardware inputs and other mixes, then add a monitor to hear the result."
+                                  : "Combine apps and inputs into a device you can choose in your recording app.",
                           )
-                        : "The new name appears in apps using this device."}
+                        : linux
+                          ? t("The new name identifies this mix in LoopZ.")
+                          : "The new name appears in apps using this device."}
                 </p>
                 <label className="lz-field">
                     {t("Device name")}
@@ -513,7 +518,7 @@ export default function Dialogs({
                 : []),
         ];
         const items = [
-            ...apps.map((app) => ({
+            ...(linux ? [] : apps).map((app) => ({
                 name: app.name,
                 selector: app.bundle,
                 kind: "app",
@@ -536,9 +541,9 @@ export default function Dialogs({
                     selector: device.id,
                     kind: "virtual",
                     channels: device.channels,
-                    group: t("Virtual devices"),
+                    group: t(linux ? "Mixes" : "Virtual devices"),
                 })),
-            ...(!d.sources.some((s) => s.kind === "pass")
+            ...(!linux && !d.sources.some((s) => s.kind === "pass")
                 ? [
                       {
                           name: t("Pass-through"),
@@ -553,8 +558,16 @@ export default function Dialogs({
         content = (
             <>
                 <p className="modal-body">
-                    Select an app, input or virtual device. Unavailable sources
-                    keep their saved wiring.
+                    {linux ? (
+                        t(
+                            "Select a hardware input or another mix. Unavailable sources keep their saved wiring.",
+                        )
+                    ) : (
+                        <>
+                            Select an app, input or virtual device. Unavailable
+                            sources keep their saved wiring.
+                        </>
+                    )}
                 </p>
                 {state.inventory.devicesError && (
                     <Banner tone="warning" heading="Device list unavailable">
@@ -565,36 +578,42 @@ export default function Dialogs({
                     <span className="sr-only">Search sources</span>
                     <input
                         aria-label="Search sources"
-                        placeholder={t("Search apps and devices\u2026")}
+                        placeholder={t(
+                            linux
+                                ? "Search inputs and mixes…"
+                                : "Search apps and devices\u2026",
+                        )}
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
                     />
                 </label>
-                <Button
-                    size="sm"
-                    onClick={async () => {
-                        try {
-                            const app = await transport({
-                                version: 1,
-                                operation: "choose-application",
-                            });
-                            if (app) {
-                                setExtraApp(app);
-                                await refresh();
+                {!linux && (
+                    <Button
+                        size="sm"
+                        onClick={async () => {
+                            try {
+                                const app = await transport({
+                                    version: 1,
+                                    operation: "choose-application",
+                                });
+                                if (app) {
+                                    setExtraApp(app);
+                                    await refresh();
+                                }
+                            } catch {
+                                setLocalError(
+                                    "The application could not be selected.",
+                                );
                             }
-                        } catch {
-                            setLocalError(
-                                "The application could not be selected.",
-                            );
-                        }
-                    }}
-                >
-                    {t("Choose another application\u2026")}
-                </Button>
+                        }}
+                    >
+                        {t("Choose another application\u2026")}
+                    </Button>
+                )}
                 {[
                     t("Applications"),
                     t("Input devices"),
-                    t("Virtual devices"),
+                    t(linux ? "Mixes" : "Virtual devices"),
                     t("Pass-through"),
                 ].map((group) => {
                     const groupItems = items.filter(
@@ -869,8 +888,16 @@ export default function Dialogs({
         content = (
             <>
                 <p className="modal-body">
-                    Monitoring keeps a mix active without a recording app.
-                    Choose an output device to listen.
+                    {linux ? (
+                        t(
+                            "Choose a hardware output to hear this mix. Routing continues when you close this window.",
+                        )
+                    ) : (
+                        <>
+                            Monitoring keeps a mix active without a recording
+                            app. Choose an output device to listen.
+                        </>
+                    )}
                 </p>
                 {state.inventory.devicesError && (
                     <Banner tone="warning" heading="Device list unavailable">
@@ -929,8 +956,16 @@ export default function Dialogs({
                     <div>
                         <strong>{t("Enable monitor")}</strong>
                         <p>
-                            Keeps the mix active independently of recording
-                            apps.
+                            {linux ? (
+                                t(
+                                    "Routes this mix to the selected hardware output.",
+                                )
+                            ) : (
+                                <>
+                                    Keeps the mix active independently of
+                                    recording apps.
+                                </>
+                            )}
                         </p>
                     </div>
                     <Switch
@@ -1074,11 +1109,13 @@ export default function Dialogs({
                         <Badge caps={false}>{component.label}</Badge>
                     </div>
                 ))}
-                <HardwareBufferSettings
-                    inventory={state.inventory}
-                    transport={transport}
-                    refresh={refresh}
-                />
+                {!linux && (
+                    <HardwareBufferSettings
+                        inventory={state.inventory}
+                        transport={transport}
+                        refresh={refresh}
+                    />
+                )}
                 <div className="lz-setting-row">
                     <div>
                         <strong>{t("Audio engine")}</strong>
@@ -1105,28 +1142,38 @@ export default function Dialogs({
                     <div>
                         <strong>{t("Background routing")}</strong>
                         <p>
-                            {state.background.detail ||
-                                t("Checking background recovery.")}
+                            {linux
+                                ? t(
+                                      "Routing continues while the LoopZ Engine user service is running, even after you close this window.",
+                                  )
+                                : state.background.detail ||
+                                  t("Checking background recovery.")}
                         </p>
                     </div>
-                    <Badge caps={false}>
-                        {state.background.managed
-                            ? t("Automatic recovery")
-                            : t("Setup needed")}
-                    </Badge>
+                    {!linux && (
+                        <Badge caps={false}>
+                            {state.background.managed
+                                ? t("Automatic recovery")
+                                : t("Setup needed")}
+                        </Badge>
+                    )}
                 </div>
                 <div className="lz-setting-row">
                     <div>
                         <strong>{t("Start routing at login")}</strong>
                         <p>
-                            {state.background.login?.requiresApproval
+                            {linux
                                 ? t(
-                                      "Allow LoopZ in System Settings \u2192 General \u2192 Login Items & Extensions.",
+                                      "Manage automatic startup through your Linux session or the LoopZ Engine user service.",
                                   )
-                                : state.background.login?.detail ||
-                                  t("Checking login startup.")}
+                                : state.background.login?.requiresApproval
+                                  ? t(
+                                        "Allow LoopZ in System Settings \u2192 General \u2192 Login Items & Extensions.",
+                                    )
+                                  : state.background.login?.detail ||
+                                    t("Checking login startup.")}
                         </p>
-                        {state.background.login?.requiresApproval && (
+                        {!linux && state.background.login?.requiresApproval && (
                             <Button
                                 size="sm"
                                 disabled={backgroundBusy}
@@ -1138,62 +1185,80 @@ export default function Dialogs({
                             </Button>
                         )}
                     </div>
-                    <Switch
-                        checked={!!state.background.login?.registered}
-                        label={t("Start routing at login")}
-                        disabled={
-                            backgroundBusy || !state.background.login?.available
-                        }
-                        onChange={(enabled) =>
-                            backgroundAction("login", {
-                                enabled,
-                            })
-                        }
-                    />
+                    {!linux && (
+                        <Switch
+                            checked={!!state.background.login?.registered}
+                            label={t("Start routing at login")}
+                            disabled={
+                                backgroundBusy ||
+                                !state.background.login?.available
+                            }
+                            onChange={(enabled) =>
+                                backgroundAction("login", {
+                                    enabled,
+                                })
+                            }
+                        />
+                    )}
                 </div>
                 <div className="lz-setting-row">
                     <div>
                         <strong>{t("Microphone & input devices")}</strong>
-                        <p>{microphoneAccess(state.permissions.microphone)}</p>
+                        <p>
+                            {linux
+                                ? t(
+                                      "Linux device permissions control access to microphones and inputs. If an input cannot open, check that your account can access the audio device.",
+                                  )
+                                : microphoneAccess(
+                                      state.permissions.microphone,
+                                  )}
+                        </p>
                         {microphoneNotice && (
                             <p role="status">{microphoneNotice}</p>
                         )}
                     </div>
-                    {state.permissions.microphone === "not-determined" ? (
-                        <Button
-                            size="sm"
-                            disabled={
-                                microphoneBusy ||
+                    {!linux &&
+                        (state.permissions.microphone === "not-determined" ? (
+                            <Button
+                                size="sm"
+                                disabled={
+                                    microphoneBusy ||
+                                    state.permissionSetup.microphonePending
+                                }
+                                onClick={requestMicrophone}
+                            >
+                                {microphoneBusy ||
                                 state.permissionSetup.microphonePending
-                            }
-                            onClick={requestMicrophone}
-                        >
-                            {microphoneBusy ||
-                            state.permissionSetup.microphonePending
-                                ? t("Waiting for macOS\u2026")
-                                : t("Enable microphone access")}
-                        </Button>
-                    ) : (
-                        <Button
-                            size="sm"
-                            onClick={() => openPrivacy("microphone")}
-                        >
-                            {t("Open settings")}
-                        </Button>
-                    )}
+                                    ? t("Waiting for macOS\u2026")
+                                    : t("Enable microphone access")}
+                            </Button>
+                        ) : (
+                            <Button
+                                size="sm"
+                                onClick={() => openPrivacy("microphone")}
+                            >
+                                {t("Open settings")}
+                            </Button>
+                        ))}
                 </div>
                 <div className="lz-setting-row">
                     <div>
                         <strong>{t("Application audio")}</strong>
                         <p>
-                            {t(
-                                "macOS controls system audio-recording access. Reconnects do not request it again.",
-                            )}
+                            {linux
+                                ? t(
+                                      "Application audio capture is unavailable in this Linux preview. Add a hardware input to route audio.",
+                                  )
+                                : t(
+                                      "macOS controls system audio-recording access. Reconnects do not request it again.",
+                                  )}
                         </p>
                     </div>
-                    <Button size="sm" onClick={() => openPrivacy("audio")}>
-                        {t("Open settings")}
-                    </Button>
+                    {!linux && (
+                        <Button size="sm" onClick={() => openPrivacy("audio")}>
+                            {t("Open settings")}
+                        </Button>
+                    )}
                 </div>
                 <div className="lz-setting-row">
                     <strong>{t("Appearance")}</strong>

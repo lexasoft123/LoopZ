@@ -542,8 +542,16 @@ function MonitorNode({
                     {waiting
                         ? "Reconnecting automatically. Connections retained."
                         : m.enabled
-                          ? "Keeps routing active without a recording app."
-                          : "Enable to listen without a recording app."}
+                          ? state.snapshot?.runtime?.platform === "linux"
+                              ? t(
+                                    "Routes this mix to the selected hardware output.",
+                                )
+                              : "Keeps routing active without a recording app."
+                          : state.snapshot?.runtime?.platform === "linux"
+                            ? t(
+                                  "Enable to hear this mix on the selected output.",
+                              )
+                            : "Enable to listen without a recording app."}
                 </span>
             </div>
         </article>
@@ -723,6 +731,7 @@ export function Routing({
     onSocket,
     onClearSelection,
 }) {
+    const linux = state.snapshot?.runtime?.platform === "linux";
     const graphRef = useRef(null),
         gesture = useRef(null),
         suppressClick = useRef(false);
@@ -1014,8 +1023,16 @@ export function Routing({
                             <Icon name="interval" size={30} />
                             <h2>{t("Your mix starts here.")}</h2>
                             <p>
-                                Add an app, microphone or virtual device. Your
-                                output settings are ready.
+                                {linux ? (
+                                    t(
+                                        "Add a hardware input or another mix. Your output settings are ready.",
+                                    )
+                                ) : (
+                                    <>
+                                        Add an app, microphone or virtual
+                                        device. Your output settings are ready.
+                                    </>
+                                )}
                             </p>
                             <Button
                                 variant="primary"
@@ -1157,11 +1174,19 @@ export function Routing({
                         ))}
                     </div>
                     <p className="lz-canvas-note">
-                        {t("Listen here. Record anywhere.")}
-                        <br />
-                        {t("Choose") + " "}
-                        <strong>{d.name}</strong> as the input in your recording
-                        app.
+                        {linux ? (
+                            t(
+                                "Add a monitor to route this mix to a hardware output.",
+                            )
+                        ) : (
+                            <>
+                                {t("Listen here. Record anywhere.")}
+                                <br />
+                                {t("Choose") + " "}
+                                <strong>{d.name}</strong> as the input in your
+                                recording app.
+                            </>
+                        )}
                     </p>
                 </section>
             </div>

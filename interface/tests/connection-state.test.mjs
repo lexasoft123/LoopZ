@@ -319,3 +319,24 @@ test("dependency health follows partial capture and microphone access but bounds
     state = project(data);
     assert.equal(sourceCondition(state, sourceOf(state)).kind, "partial");
 });
+
+test("a partial restored Linux graph keeps healthy input and monitor status available", () => {
+    const data = hardwareFixture();
+    data.snapshot.runtime.platform = "linux";
+    data.snapshot.restoration.phase = "partial";
+    const state = project(data);
+    assert.equal(state.pending, false);
+    assert.equal(sourceCondition(state, sourceOf(state)).kind, "available");
+    assert.equal(
+        monitorCondition(state, state.devices[0].monitors[0]).kind,
+        "available",
+    );
+    data.snapshot.runtime.sources[0].connected = false;
+    data.snapshot.runtime.sources[0].complete = false;
+    const offline = project(data);
+    assert.equal(sourceCondition(offline, sourceOf(offline)).kind, "waiting");
+    assert.equal(
+        monitorCondition(offline, offline.devices[0].monitors[0]).kind,
+        "available",
+    );
+});

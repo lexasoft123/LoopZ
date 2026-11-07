@@ -1,36 +1,77 @@
-# zCore is an immutable, independently versioned source dependency.
-# Product capture/routing policy stays in LoopZ.
-set(ZCORE_ROOT "${PROJECT_SOURCE_DIR}/vendor/zcore")
+# One immutable zCore source checkout owns every device and DSP target.
 set(ZCORE_SUBMODULE_VERIFIER "${PROJECT_SOURCE_DIR}/scripts/verify-zcore-submodule.py")
-execute_process(COMMAND "${Python3_EXECUTABLE}"
-  "${ZCORE_SUBMODULE_VERIFIER}" --root "${PROJECT_SOURCE_DIR}"
-  --path "vendor/zcore" --print-revision
-  OUTPUT_VARIABLE ZCORE_VERIFIED_REVISION
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-  ERROR_VARIABLE ZCORE_VERIFY_ERROR
-  RESULT_VARIABLE ZCORE_VERIFY_RESULT)
+set(_loopz_zcore_arguments --root "${PROJECT_SOURCE_DIR}" --path "vendor/zcore" --print-revision)
+if(TARGET zCore::device)
+  if(NOT LOOPZ_SHARED_ZCORE_ROOT)
+    message(FATAL_ERROR "Existing zCore targets require explicit LOOPZ_SHARED_ZCORE_ROOT")
+  endif()
+  file(REAL_PATH "${LOOPZ_SHARED_ZCORE_ROOT}" ZCORE_ROOT)
+  foreach(_target IN ITEMS zCore::device SingZ::zdsp_runtime zCore::routing)
+    if(NOT TARGET "${_target}")
+      message(FATAL_ERROR "The shared zCore source must supply ${_target}")
+    endif()
+    get_target_property(_source "${_target}" SOURCE_DIR)
+    if(NOT _source)
+      message(FATAL_ERROR "Shared zCore must use source-built targets")
+    endif()
+    file(REAL_PATH "${_source}" _source)
+    if(NOT _source STREQUAL ZCORE_ROOT)
+      message(FATAL_ERROR "Shared ${_target} SOURCE_DIR does not match LOOPZ_SHARED_ZCORE_ROOT")
+    endif()
+  endforeach()
+  list(APPEND _loopz_zcore_arguments --external-source "${ZCORE_ROOT}")
+  set(_loopz_reuse_zcore TRUE)
+else()
+  if(LOOPZ_SHARED_ZCORE_ROOT)
+    message(FATAL_ERROR "Add the shared zCore source before LoopZ when LOOPZ_SHARED_ZCORE_ROOT is set")
+  endif()
+  set(ZCORE_ROOT "${PROJECT_SOURCE_DIR}/vendor/zcore")
+  set(_loopz_reuse_zcore FALSE)
+endif()
+execute_process(COMMAND "${Python3_EXECUTABLE}" "${ZCORE_SUBMODULE_VERIFIER}" ${_loopz_zcore_arguments}
+  OUTPUT_VARIABLE ZCORE_VERIFIED_REVISION OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_VARIABLE ZCORE_VERIFY_ERROR RESULT_VARIABLE ZCORE_VERIFY_RESULT)
 if(NOT ZCORE_VERIFY_RESULT EQUAL 0)
   message(FATAL_ERROR "zCore submodule verification failed: ${ZCORE_VERIFY_ERROR}")
 endif()
-message(STATUS "Using zCore submodule ${ZCORE_VERIFIED_REVISION}")
-
-# zCore owns these optimized sources. Force canonical paths so any transitional
-# source override in a reused build cache cannot select a local overlay.
-set(ZCORE_GRAPH_RUNNER_SOURCE "${ZCORE_ROOT}/zdsp/src/runtime/graph_runner.cpp"
-  CACHE FILEPATH "zCore graph runner source" FORCE)
-set(ZCORE_BUILTIN_NODES_SOURCE "${ZCORE_ROOT}/zdsp/src/runtime/builtin_nodes.cpp"
-  CACHE FILEPATH "zCore builtin nodes source" FORCE)
-set(ZCORE_BUILD_MEDIA OFF CACHE BOOL "" FORCE)
-set(ZCORE_BUILD_ANALYSIS OFF CACHE BOOL "" FORCE)
-set(ZCORE_BUILD_TESTS "${BUILD_TESTING}" CACHE BOOL "" FORCE)
-set(ZCORE_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
-add_subdirectory("${ZCORE_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/zcore")
+message(STATUS "Using pinned zCore source ${ZCORE_VERIFIED_REVISION} at ${ZCORE_ROOT}")
+if(NOT _loopz_reuse_zcore)
+  set(ZCORE_GRAPH_RUNNER_SOURCE "${ZCORE_ROOT}/zdsp/src/runtime/graph_runner.cpp"
+    CACHE FILEPATH "zCore graph runner source" FORCE)
+  set(ZCORE_BUILTIN_NODES_SOURCE "${ZCORE_ROOT}/zdsp/src/runtime/builtin_nodes.cpp"
+    CACHE FILEPATH "zCore builtin nodes source" FORCE)
+  set(ZCORE_BUILD_MEDIA OFF CACHE BOOL "" FORCE)
+  set(ZCORE_BUILD_ANALYSIS OFF CACHE BOOL "" FORCE)
+  set(ZCORE_BUILD_TESTS "${LOOPZ_BUILD_TESTS}" CACHE BOOL "" FORCE)
+  set(ZCORE_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+  add_subdirectory("${ZCORE_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/zcore")
+endif()
+# Verify constructed graph and resampling targets, including final sources added
+# by an embedding parent after LoopZ configuration. Cache flags are insufficient.
+set(_loopz_zcore_base_arguments "${_loopz_zcore_arguments}")
+function(loopz_pin_target_sources target kind)
+  get_target_property(_source_dir "${target}" SOURCE_DIR)
+  get_target_property(_sources "${target}" SOURCES)
+  string(REPLACE ";" "\n" _source_lines "${_sources}")
+  set(_configure "${CMAKE_CURRENT_BINARY_DIR}/loopz-${kind}-configure-sources.txt")
+  file(WRITE "${_configure}" "${_source_dir}\n${_source_lines}\n")
+  execute_process(COMMAND "${Python3_EXECUTABLE}" "${ZCORE_SUBMODULE_VERIFIER}"
+    ${_loopz_zcore_base_arguments} --${kind}-source-manifest "${_configure}"
+    ERROR_VARIABLE _error RESULT_VARIABLE _result OUTPUT_QUIET)
+  if(NOT _result EQUAL 0)
+    message(FATAL_ERROR "zCore actual ${kind} source verification failed: ${_error}")
+  endif()
+  set(_final "${CMAKE_CURRENT_BINARY_DIR}/loopz-${kind}-final-sources-$<CONFIG>.txt")
+  file(GENERATE OUTPUT "${_final}"
+    CONTENT "$<TARGET_PROPERTY:${target},SOURCE_DIR>\n$<JOIN:$<TARGET_GENEX_EVAL:${target},$<TARGET_PROPERTY:${target},SOURCES>>,\n>\n")
+  set(_loopz_zcore_arguments ${_loopz_zcore_arguments} --${kind}-source-manifest "${_final}" PARENT_SCOPE)
+endfunction()
+loopz_pin_target_sources(SingZ::zdsp_runtime dsp)
+loopz_pin_target_sources(zCore::routing routing)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/.gitmodules")
-
 add_custom_target(loopz_verify_zcore ALL
-  COMMAND "${Python3_EXECUTABLE}" "${ZCORE_SUBMODULE_VERIFIER}"
-    --root "${PROJECT_SOURCE_DIR}" --path "vendor/zcore" --print-revision
-  VERBATIM COMMENT "Verifying pinned zCore submodule")
+  COMMAND "${Python3_EXECUTABLE}" "${ZCORE_SUBMODULE_VERIFIER}" ${_loopz_zcore_arguments}
+  VERBATIM COMMENT "Verifying pinned zCore source")
 get_property(_zcore_targets DIRECTORY "${ZCORE_ROOT}" PROPERTY BUILDSYSTEM_TARGETS)
 foreach(_target IN LISTS _zcore_targets)
   get_target_property(_kind "${_target}" TYPE)

@@ -1,10 +1,9 @@
 #pragma once
 
 #include <loopz/routing.hpp>
+#include <zcore/routing/audio_resampler.h>
 
 namespace loopz {
-class SincKernel;
-class MinimumPhaseKernel;
 enum class ResamplingFilter { LinearPhase, MinimumPhase };
 
 struct ResamplePosition {
@@ -20,11 +19,8 @@ struct ResamplePosition {
     // positions still follow sourceRate; the linear-phase reader ignores it.
     double nominalSourceRate{0};
 };
-struct ResampleFrame {
-    bool valid;
-    // Tail planes beyond this count are always forced to zero by the reader.
-    uint32_t availableChannels;
-};
+// Alias the shared provider result so callbacks cross no per-frame trampoline.
+using ResampleFrame = zcore::routing::ResampleFrame;
 struct ResampleOutput {
     std::span<float* const> channels;
     // Capacity is measured in logical frames. Each plane must span
@@ -38,6 +34,7 @@ struct ResampleOutput {
 // The provider supplies timestamp-addressed frames, including all filter wings.
 // Missing support is silent and counted, without a linear fallback or time shift.
 // The default keeps the existing symmetric kernel and aligned direct reads.
+// Cached FIR/convolution fast paths come from the pinned zCore implementation.
 // Experimental minimum-phase mode uses past support only and always filters,
 // including integer-aligned targets, to keep its nonlinear phase continuous.
 class AudioResampler {
@@ -51,7 +48,6 @@ class AudioResampler {
                   std::span<uint8_t> availableFrames = {}) const noexcept;
 
   private:
-    const SincKernel* const linear_;
-    const MinimumPhaseKernel* const minimum_;
+    zcore::routing::AudioResampler reader_;
 };
 } // namespace loopz

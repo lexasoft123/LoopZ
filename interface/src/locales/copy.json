@@ -478,5 +478,72 @@
     ],
     "Choose what goes in": ["Выберите источники звука", "选择输入声音"],
     "Connect your channels": ["Соедините каналы", "连接通道"],
-    "Hear your mix, if you want": ["Слушайте микс, если нужно", "按需监听混音"]
+    "Hear your mix, if you want": ["Слушайте микс, если нужно", "按需监听混音"],
+    "Routing continues while the LoopZ Engine user service is running, even after you close this window.": [
+        "Маршрутизация продолжается, пока работает пользовательская служба LoopZ Engine, даже после закрытия этого окна.",
+        "只要 LoopZ Engine 用户服务正在运行，关闭此窗口后音频路由仍会继续。"
+    ],
+    "Manage automatic startup through your Linux session or the LoopZ Engine user service.": [
+        "Настройте автоматический запуск в сеансе Linux или через пользовательскую службу LoopZ Engine.",
+        "请通过 Linux 会话或 LoopZ Engine 用户服务管理自动启动。"
+    ],
+    "Linux device permissions control access to microphones and inputs. If an input cannot open, check that your account can access the audio device.": [
+        "Доступ к микрофонам и входам определяется правами устройств Linux. Если вход не открывается, проверьте доступ вашей учётной записи к аудиоустройству.",
+        "Linux 设备权限控制麦克风和输入的访问。如果无法打开输入，请检查您的账户是否有权访问音频设备。"
+    ],
+    "Application audio capture is unavailable in this Linux preview. Add a hardware input to route audio.": [
+        "В этой предварительной версии для Linux захват звука приложений недоступен. Добавьте аппаратный вход для маршрутизации звука.",
+        "此 Linux 预览版暂不支持捕获应用音频。请添加硬件输入来路由音频。"
+    ],
+    "Mixes": ["Миксы", "混音"],
+    "New mix": ["Новый микс", "新建混音"],
+    "+ New mix": ["+ Новый микс", "+ 新建混音"],
+    "No mixes": ["Нет миксов", "暂无混音"],
+    "Create your first mix": ["Создать первый микс", "创建第一个混音"],
+    "Rename mix": ["Переименовать микс", "重命名混音"],
+    "Learn how to connect hardware inputs, mixes and monitors. The tour uses a demo project. You can replay it from Settings.": [
+        "Узнайте, как соединять аппаратные входы, миксы и мониторинг. В обучении используется демонстрационный проект. Его можно повторить в настройках.",
+        "了解如何连接硬件输入、混音和监听。教程使用演示项目，可在设置中重新查看。"
+    ],
+    "Create a mix to route hardware inputs to your output devices.": [
+        "Создайте микс для маршрутизации аппаратных входов на устройства вывода.",
+        "创建混音，将硬件输入路由到输出设备。"
+    ],
+    "Once the Engine is connected, your saved mixes will appear here.": [
+        "После подключения Engine здесь появятся сохранённые миксы.",
+        "连接 Engine 后，您保存的混音将显示在这里。"
+    ],
+    "Combine hardware inputs and other mixes, then add a monitor to hear the result.": [
+        "Объедините аппаратные входы и другие миксы, затем добавьте мониторинг, чтобы услышать результат.",
+        "组合硬件输入和其他混音，然后添加监听以收听结果。"
+    ],
+    "The new name identifies this mix in LoopZ.": [
+        "Новое имя обозначает этот микс в LoopZ.",
+        "新名称用于在 LoopZ 中标识此混音。"
+    ],
+    "Select a hardware input or another mix. Unavailable sources keep their saved wiring.": [
+        "Выберите аппаратный вход или другой микс. Подключения недоступных источников сохраняются.",
+        "选择硬件输入或其他混音。不可用音源的已保存连接会保留。"
+    ],
+    "Search inputs and mixes…": ["Поиск входов и миксов…", "搜索输入和混音…"],
+    "Choose a hardware output to hear this mix. Routing continues when you close this window.": [
+        "Выберите аппаратный выход, чтобы услышать микс. Маршрутизация продолжится после закрытия окна.",
+        "选择硬件输出以收听此混音。关闭窗口后路由仍会继续。"
+    ],
+    "Routes this mix to the selected hardware output.": [
+        "Направляет микс на выбранный аппаратный выход.",
+        "将此混音路由到所选硬件输出。"
+    ],
+    "Add a hardware input or another mix. Your output settings are ready.": [
+        "Добавьте аппаратный вход или другой микс. Настройки выхода готовы.",
+        "添加硬件输入或其他混音。输出设置已就绪。"
+    ],
+    "Add a monitor to route this mix to a hardware output.": [
+        "Добавьте мониторинг для вывода микса на аппаратный выход.",
+        "添加监听，将此混音路由到硬件输出。"
+    ],
+    "Enable to hear this mix on the selected output.": [
+        "Включите, чтобы слышать микс на выбранном выходе.",
+        "启用后可在所选输出上收听此混音。"
+    ]
 }

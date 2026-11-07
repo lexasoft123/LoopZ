@@ -1,5 +1,6 @@
 #include <loopz/audio_history.hpp>
 #include <loopz/audio_resampler.hpp>
+#include <loopz/sinc_kernel.hpp>
 #include <loopz/timeline.hpp>
 #include <algorithm>
 #include <cassert>
@@ -18,30 +19,38 @@ namespace {
 thread_local bool trackHeap = false;
 thread_local uint32_t heapEvents = 0;
 } // namespace
-void* operator new(size_t bytes) {
+// Preserve the allocation-probe boundary under optimized and LTO test builds.
+#if defined(__GNUC__)
+#define LOOPZ_HEAP_HOOK __attribute__((noinline))
+#else
+#define LOOPZ_HEAP_HOOK
+#endif
+LOOPZ_HEAP_HOOK void* operator new(size_t bytes) {
     if (trackHeap)
         ++heapEvents;
     if (auto* result = std::malloc(bytes ? bytes : 1))
         return result;
     throw std::bad_alloc();
 }
-void* operator new[](size_t bytes) {
+LOOPZ_HEAP_HOOK void* operator new[](size_t bytes) {
     return ::operator new(bytes);
 }
-void operator delete(void* memory) noexcept {
+LOOPZ_HEAP_HOOK void operator delete(void* memory) noexcept {
     if (trackHeap && memory)
         ++heapEvents;
     std::free(memory);
 }
-void operator delete[](void* memory) noexcept {
+LOOPZ_HEAP_HOOK void operator delete[](void* memory) noexcept {
     ::operator delete(memory);
 }
-void operator delete(void* memory, size_t) noexcept {
+LOOPZ_HEAP_HOOK void operator delete(void* memory, size_t) noexcept {
     ::operator delete(memory);
 }
-void operator delete[](void* memory, size_t) noexcept {
+LOOPZ_HEAP_HOOK void operator delete[](void* memory, size_t) noexcept {
     ::operator delete(memory);
 }
+
+#undef LOOPZ_HEAP_HOOK
 
 namespace {
 using namespace loopz;
@@ -473,6 +482,12 @@ ResampleFrame partialRawFrame(const void* context, uint64_t position,
     result.availableChannels = 2;
     return result;
 }
+ResampleFrame monoRawFrame(const void* context, uint64_t position,
+                           std::span<float> values) noexcept {
+    auto result = rawFrame(context, position, values);
+    result.availableChannels = 1;
+    return result;
+}
 void stridedOutputAndInvalidRequests() {
     Fixture fixture(8, 48000, 1000);
     AudioResampler reader;
@@ -515,6 +530,20 @@ void stridedOutputAndInvalidRequests() {
     assert(std::all_of(interleaved.begin(), interleaved.end(), [](float value) {
         return value == 99;
     }));
+    // Compact stereo convolution must retain interleaving, present audio and
+    // missing-tail coverage even when the provider leaves stale tail values.
+    std::array<float, frames * 3 + 2> stereo{};
+    stereo.fill(99);
+    const std::array<float*, 2> stereoPlanes{stereo.data() + 1, stereo.data() + 2};
+    assert(realtime([&] {
+               return reader.read({0, 4096.37L, 48000, 48000}, {stereoPlanes, frames, 3}, frames,
+                                  monoRawFrame, &fixture.input);
+           }) == frames);
+    for (uint32_t frame = 0; frame < frames; ++frame) {
+        assert(std::abs(stereo[1 + frame * 3] - tone(4096.37 + frame, 48000, 1000)) < .00001);
+        assert(stereo[2 + frame * 3] == 0 && stereo[3 + frame * 3] == 99);
+    }
+    assert(stereo.front() == 99 && stereo.back() == 99);
     fixture.input.write[0][4096] = NAN;
     assert(reader.read({0, 4096, 48000, 48000}, output, frames, rawFrame, &fixture.input) == 0);
     assert(interleaved[1] == 0 && interleaved.front() == 99 && interleaved.back() == 99);
@@ -526,7 +555,62 @@ void stridedOutputAndInvalidRequests() {
         for (uint32_t channel = 2; channel < 8; ++channel)
             assert(interleaved[1 + frame * 8 + channel] == 0);
 }
-void benchmark(bool callbackAnchors = false, double driftPpm = 0) {
+struct ConvolutionSource {
+    const Planes* input;
+    uint64_t base, missing;
+    static ResampleFrame read(const void* context, uint64_t position,
+                              std::span<float> values) noexcept {
+        const auto& source = *static_cast<const ConvolutionSource*>(context);
+        if (position < source.base || position - source.base == source.missing)
+            return {false, 0};
+        return rawFrame(source.input, position - source.base, values);
+    }
+};
+void constantPhaseConvolution(uint32_t channels, uint32_t frames) {
+    // Compare full multi-tile fractional reads against a scalar convolution,
+    // including unavailable filter support and anchors beyond double precision.
+    Fixture fixture(channels, 48000, 19000);
+    AudioResampler reader;
+    const auto& kernel = SincKernel::prepared();
+    constexpr int radius = 103;
+    Planes output(channels, frames);
+    std::array<uint8_t, 257> available{};
+    for (uint64_t base : {uint64_t{0}, (uint64_t{1} << 53) + 17})
+        for (long double phase : {.01L, .37L, .99L})
+            for (uint64_t hole : {UINT64_MAX, uint64_t{4200}}) {
+                ConvolutionSource source{&fixture.input, base, hole};
+                const ResamplePosition position{base, 4096 + phase, 48000, 48000};
+                const auto missing = realtime([&] {
+                    return reader.read(position, {output.output().channels, frames}, frames,
+                                       ConvolutionSource::read, &source, available);
+                });
+                uint32_t expectedMissing = 0;
+                for (uint32_t frame = 0; frame < frames; ++frame) {
+                    std::array<double, 8> sums{};
+                    double normalization = 0;
+                    bool complete = true;
+                    for (int tap = -radius; tap <= radius; ++tap) {
+                        const auto weight = kernel.coefficient(tap - double(phase), .94);
+                        if (weight == 0)
+                            continue;
+                        const auto index = uint64_t(4096 + int(frame) + tap);
+                        complete &= index != hole;
+                        normalization += weight;
+                        for (uint32_t channel = 0; channel < channels; ++channel)
+                            sums[channel] += weight * fixture.input.read[channel][index];
+                    }
+                    expectedMissing += !complete;
+                    assert(available[frame] == uint8_t(complete));
+                    for (uint32_t channel = 0; channel < channels; ++channel) {
+                        const auto expected = complete ? sums[channel] / normalization : 0;
+                        assert(std::abs(output.read[channel][frame] - expected) < 2e-7);
+                    }
+                }
+                assert(missing == expectedMissing);
+            }
+}
+void benchmark(bool callbackAnchors = false, double driftPpm = 0, bool fractional = false,
+               uint32_t frames = 64) {
     for (uint32_t channels : {2U, 8U, 64U})
         for (const auto& rates : {std::pair{48000U, 48000U}, std::pair{48000U, 44100U},
                                   std::pair{96000U, 48000U}, std::pair{192000U, 8000U}}) {
@@ -547,8 +631,8 @@ void benchmark(bool callbackAnchors = false, double driftPpm = 0) {
             std::array<double, 20> timings{};
             for (uint32_t block = 0; block < 24; ++block) {
                 const auto start = std::chrono::steady_clock::now();
-                const auto result = fixture.history.read(fixture.start(false), rates.second,
-                                                         fixture.output.output(), 64, cursor);
+                const auto result = fixture.history.read(fixture.start(fractional), rates.second,
+                                                         fixture.output.output(), frames, cursor);
                 assert(!result.missingFrames);
                 if (block >= 4)
                     timings[block - 4] = std::chrono::duration<double, std::micro>(
@@ -556,11 +640,11 @@ void benchmark(bool callbackAnchors = false, double driftPpm = 0) {
                                              .count();
             }
             std::sort(timings.begin(), timings.end());
-            std::printf("{\"channels\":%u,\"sourceRate\":%u,\"outputRate\":%u,\"frames\":64,"
+            std::printf("{\"channels\":%u,\"sourceRate\":%u,\"outputRate\":%u,\"frames\":%u,"
                         "\"medianMicroseconds\":%.3f,\"maximumMicroseconds\":%.3f,"
                         "\"periodMicroseconds\":%.3f}\n",
-                        channels, rates.first, rates.second, timings[10], timings.back(),
-                        64e6 / rates.second);
+                        channels, rates.first, rates.second, frames, timings[10], timings.back(),
+                        double(frames) * 1e6 / rates.second);
         }
 }
 } // namespace
@@ -577,7 +661,23 @@ int main(int argc, char** argv) {
         benchmark(true, 200);
         return 0;
     }
+    if (argc == 2 && std::string_view(argv[1]) == "--benchmark-fractional-clock") {
+        benchmark(true, 0, true);
+        return 0;
+    }
+    if (argc == 2 && std::string_view(argv[1]) == "--benchmark-fractional-clock-256") {
+        benchmark(true, 0, true, 256);
+        return 0;
+    }
+    if (argc == 2 && std::string_view(argv[1]) == "--benchmark-drifting-clock-256") {
+        benchmark(true, 200, true, 256);
+        return 0;
+    }
     assert(argc == 1);
+    for (uint32_t frames : {128U, 256U, 257U}) {
+        constantPhaseConvolution(2, frames);
+        constantPhaseConvolution(8, frames);
+    }
     spectralQuality();
     sparseChannelsMatchFullHistory();
     boundariesAndPartitioning();
