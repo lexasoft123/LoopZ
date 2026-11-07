@@ -6,7 +6,7 @@ if(TARGET zCore::device)
     message(FATAL_ERROR "Existing zCore targets require explicit LOOPZ_SHARED_ZCORE_ROOT")
   endif()
   file(REAL_PATH "${LOOPZ_SHARED_ZCORE_ROOT}" ZCORE_ROOT)
-  foreach(_target IN ITEMS zCore::device SingZ::zdsp_runtime)
+  foreach(_target IN ITEMS zCore::device SingZ::zdsp_runtime zCore::routing)
     if(NOT TARGET "${_target}")
       message(FATAL_ERROR "The shared zCore source must supply ${_target}")
     endif()
@@ -46,26 +46,28 @@ if(NOT _loopz_reuse_zcore)
   set(ZCORE_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
   add_subdirectory("${ZCORE_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/zcore")
 endif()
-# Inspect the constructed target, not the overlay cache variables: the parent
-# may reset those variables after target creation without changing its sources.
-get_target_property(_loopz_dsp_source_dir SingZ::zdsp_runtime SOURCE_DIR)
-get_target_property(_loopz_dsp_sources SingZ::zdsp_runtime SOURCES)
-string(REPLACE ";" "\n" _loopz_dsp_source_lines "${_loopz_dsp_sources}")
-set(_loopz_dsp_configure_manifest "${CMAKE_CURRENT_BINARY_DIR}/loopz-dsp-configure-sources.txt")
-file(WRITE "${_loopz_dsp_configure_manifest}" "${_loopz_dsp_source_dir}\n${_loopz_dsp_source_lines}\n")
-execute_process(COMMAND "${Python3_EXECUTABLE}" "${ZCORE_SUBMODULE_VERIFIER}"
-  ${_loopz_zcore_arguments} --dsp-source-manifest "${_loopz_dsp_configure_manifest}"
-  ERROR_VARIABLE _loopz_dsp_error RESULT_VARIABLE _loopz_dsp_result OUTPUT_QUIET)
-if(NOT _loopz_dsp_result EQUAL 0)
-  message(FATAL_ERROR "zCore actual DSP source verification failed: ${_loopz_dsp_error}")
-endif()
-# Generate from final target properties after the parent finishes configuring.
-# The build guard therefore also catches target_sources()/set_property() calls
-# made after add_subdirectory(LoopZ), including configuration-specific sources.
-set(_loopz_dsp_final_manifest "${CMAKE_CURRENT_BINARY_DIR}/loopz-dsp-final-sources-$<CONFIG>.txt")
-file(GENERATE OUTPUT "${_loopz_dsp_final_manifest}"
-  CONTENT "$<TARGET_PROPERTY:SingZ::zdsp_runtime,SOURCE_DIR>\n$<JOIN:$<TARGET_GENEX_EVAL:SingZ::zdsp_runtime,$<TARGET_PROPERTY:SingZ::zdsp_runtime,SOURCES>>,\n>\n")
-list(APPEND _loopz_zcore_arguments --dsp-source-manifest "${_loopz_dsp_final_manifest}")
+# Verify constructed graph and resampling targets, including final sources added
+# by an embedding parent after LoopZ configuration. Cache flags are insufficient.
+set(_loopz_zcore_base_arguments "${_loopz_zcore_arguments}")
+function(loopz_pin_target_sources target kind)
+  get_target_property(_source_dir "${target}" SOURCE_DIR)
+  get_target_property(_sources "${target}" SOURCES)
+  string(REPLACE ";" "\n" _source_lines "${_sources}")
+  set(_configure "${CMAKE_CURRENT_BINARY_DIR}/loopz-${kind}-configure-sources.txt")
+  file(WRITE "${_configure}" "${_source_dir}\n${_source_lines}\n")
+  execute_process(COMMAND "${Python3_EXECUTABLE}" "${ZCORE_SUBMODULE_VERIFIER}"
+    ${_loopz_zcore_base_arguments} --${kind}-source-manifest "${_configure}"
+    ERROR_VARIABLE _error RESULT_VARIABLE _result OUTPUT_QUIET)
+  if(NOT _result EQUAL 0)
+    message(FATAL_ERROR "zCore actual ${kind} source verification failed: ${_error}")
+  endif()
+  set(_final "${CMAKE_CURRENT_BINARY_DIR}/loopz-${kind}-final-sources-$<CONFIG>.txt")
+  file(GENERATE OUTPUT "${_final}"
+    CONTENT "$<TARGET_PROPERTY:${target},SOURCE_DIR>\n$<JOIN:$<TARGET_GENEX_EVAL:${target},$<TARGET_PROPERTY:${target},SOURCES>>,\n>\n")
+  set(_loopz_zcore_arguments ${_loopz_zcore_arguments} --${kind}-source-manifest "${_final}" PARENT_SCOPE)
+endfunction()
+loopz_pin_target_sources(SingZ::zdsp_runtime dsp)
+loopz_pin_target_sources(zCore::routing routing)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/.gitmodules")
 add_custom_target(loopz_verify_zcore ALL
   COMMAND "${Python3_EXECUTABLE}" "${ZCORE_SUBMODULE_VERIFIER}" ${_loopz_zcore_arguments}

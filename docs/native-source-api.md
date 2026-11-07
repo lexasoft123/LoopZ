@@ -4,6 +4,16 @@ The first integration seam is an **in-process C++ source**, not cross-process
 PCM transport. Header: `native/include/loopz/runtime/audio_runtime.hpp`;
 `AudioSource` is defined in `native/include/loopz/audio_scene.hpp`. This is a
 source-level API tied to the pinned LoopZ revision, not a stable binary ABI.
+Rebuild all C++ consumers when updating this revision: the resampler now wraps
+`zCore::routing` directly, its private layout changed, and `ResampleFrame` aliases
+the shared provider result. Do not mix old object files with updated headers.
+The source guard verifies both DSP and routing target sources, including sources
+added by an embedding parent after configuration. The SDK does not select CPU
+affinity; the standalone Linux Engine owns its startup policy. The shared
+resampler uses bounded per-call stack scratch (under 160 KiB for its convolution
+path), with no callback heap allocation or additional PCM queue. Embedding hosts
+must provide sufficient audio-thread stack space.
+
 The standalone service protocol explicitly reports `pcm:"native-only"`.
 
 ```cpp

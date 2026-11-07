@@ -118,6 +118,8 @@ def process_audio_observation(pid):
             "userTicks": int(fields[11]),
             "systemTicks": int(fields[12]),
             "startTimeTicks": int(fields[19]),
+            "minorFaults": int(fields[7]),
+            "majorFaults": int(fields[9]),
             "clockTicksPerSecond": os.sysconf("SC_CLK_TCK"),
             "observedMonotonicNs": time.monotonic_ns(),
         }
@@ -133,6 +135,73 @@ def process_audio_observation(pid):
         parameters.append(entry)
     result["alsaHwParams"] = parameters
     result["alsaHwParamsAvailable"] = bool(parameters)
+    # Observation only: preserve placement/frequency/quota context for matched
+    # CPU comparisons without changing governor, affinity or scheduling policy.
+    context = {}
+    for path in (
+        "/sys/fs/cgroup/cpu.max",
+        "/sys/fs/cgroup/cpu.stat",
+        "/sys/fs/cgroup/cpuset.cpus.effective",
+    ):
+        try:
+            context[path] = Path(path).read_text().strip()
+        except OSError as error:
+            context[path] = {"error": str(error)}
+    context["frequencyPolicies"] = []
+    for policy in sorted(Path("/sys/devices/system/cpu/cpufreq").glob("policy*")):
+        values = {"path": str(policy)}
+        for name in ("related_cpus", "scaling_governor", "scaling_cur_freq", "scaling_max_freq"):
+            try:
+                values[name] = (policy / name).read_text().strip()
+            except OSError as error:
+                values[name] = {"error": str(error)}
+        context["frequencyPolicies"].append(values)
+    context["thermalZones"] = []
+    for zone in sorted(Path("/sys/class/thermal").glob("thermal_zone*")):
+        try:
+            context["thermalZones"].append(
+                {
+                    "path": str(zone),
+                    "type": (zone / "type").read_text().strip(),
+                    "millidegreesC": int((zone / "temp").read_text()),
+                }
+            )
+        except (OSError, ValueError) as error:
+            context["thermalZones"].append({"path": str(zone), "error": str(error)})
+    try:
+        context["schedulerWaitAccountingEnabled"] = (
+            Path("/proc/sys/kernel/sched_schedstats").read_text().strip() == "1"
+        )
+    except OSError:
+        context["schedulerWaitAccountingEnabled"] = None
+    context["threads"] = []
+    for task in sorted(Path(f"/proc/{pid}/task").glob("[0-9]*")):
+        try:
+            fields = (task / "stat").read_text().rsplit(")", 1)[1].split()
+            scheduling = (task / "schedstat").read_text().split()
+            allowed = next(
+                (
+                    line.split(":", 1)[1].strip()
+                    for line in (task / "status").read_text().splitlines()
+                    if line.startswith("Cpus_allowed_list:")
+                ),
+                None,
+            )
+            context["threads"].append(
+                {
+                    "tid": int(task.name),
+                    "userTicks": int(fields[11]),
+                    "systemTicks": int(fields[12]),
+                    "lastCpu": int(fields[36]),
+                    "allowedCpus": allowed,
+                    "schedulerRuntimeNs": int(scheduling[0]),
+                    "schedulerWaitNs": int(scheduling[1]),
+                    "schedulerSlices": int(scheduling[2]),
+                }
+            )
+        except (OSError, ValueError, IndexError) as error:
+            context["threads"].append({"tid": int(task.name), "error": str(error)})
+    result["cpuContext"] = context
     return result
 
 

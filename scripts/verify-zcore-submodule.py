@@ -135,14 +135,14 @@ def verify(root_arg: Path, relative_path: str, external_source: Path | None = No
     return expected_oid
 
 
-def verify_dsp_sources(source_root: Path, manifest: Path) -> None:
+def verify_target_sources(source_root: Path, manifest: Path, required, kind: str) -> None:
     """Verify actual target sources, independently of mutable overlay options."""
     source_root = normalized(source_root)
     if manifest.stat().st_size > 1024 * 1024:
-        raise VerificationError("DSP source manifest exceeds its size limit")
+        raise VerificationError(f"{kind} source manifest exceeds its size limit")
     lines = manifest.read_text().splitlines()
     if not lines or normalized(Path(lines[0])) != source_root:
-        raise VerificationError("DSP target SOURCE_DIR does not match pinned zCore source")
+        raise VerificationError(f"{kind} target SOURCE_DIR does not match pinned zCore source")
     tracked = set(git(source_root, "ls-files", "-z").stdout.split("\0"))
     actual = []
     for entry in lines[1:]:
@@ -150,7 +150,7 @@ def verify_dsp_sources(source_root: Path, manifest: Path) -> None:
             continue
         if "$<" in entry:
             raise VerificationError(
-                "DSP source manifest contains an unresolved generator expression"
+                f"{kind} source manifest contains an unresolved generator expression"
             )
         path = Path(entry)
         resolved = normalized(path if path.is_absolute() else source_root / path)
@@ -158,16 +158,16 @@ def verify_dsp_sources(source_root: Path, manifest: Path) -> None:
             relative = resolved.relative_to(source_root).as_posix()
         except ValueError as error:
             raise VerificationError(
-                f"DSP source is outside pinned zCore source: {entry}"
+                f"{kind} source is outside pinned zCore source: {entry}"
             ) from error
         if relative not in tracked:
-            raise VerificationError(f"DSP source is not tracked in pinned zCore source: {entry}")
+            raise VerificationError(f"{kind} source is not tracked in pinned zCore source: {entry}")
         actual.append(resolved)
-    for relative in ("zdsp/src/runtime/graph_runner.cpp", "zdsp/src/runtime/builtin_nodes.cpp"):
+    for relative in required:
         expected = normalized(source_root / relative)
         if actual.count(expected) != 1:
             raise VerificationError(
-                f"DSP target must contain exactly one canonical source: {relative}"
+                f"{kind} target must contain exactly one canonical source: {relative}"
             )
 
 
@@ -186,6 +186,11 @@ def main() -> int:
         help="verify an actual DSP target source manifest (SOURCE_DIR then one source per line)",
     )
     parser.add_argument(
+        "--routing-source-manifest",
+        type=Path,
+        help="verify the actual shared routing target sources",
+    )
+    parser.add_argument(
         "--print-revision",
         action="store_true",
         help="print only the verified gitlink object ID (for fingerprints)",
@@ -195,7 +200,28 @@ def main() -> int:
         revision = verify(args.root, args.path, args.external_source)
         if args.dsp_source_manifest:
             source = args.external_source or args.root / args.path
-            verify_dsp_sources(source, args.dsp_source_manifest)
+            verify_target_sources(
+                source,
+                args.dsp_source_manifest,
+                ("zdsp/src/runtime/graph_runner.cpp", "zdsp/src/runtime/builtin_nodes.cpp"),
+                "DSP",
+            )
+        if args.routing_source_manifest:
+            source = args.external_source or args.root / args.path
+            verify_target_sources(
+                source,
+                args.routing_source_manifest,
+                (
+                    "zdsp/src/control/routing.cpp",
+                    "zcore/src/routing/audio_history.cpp",
+                    "zcore/src/routing/audio_resampler.cpp",
+                    "zcore/src/routing/sample_clock.cpp",
+                    "zcore/src/routing/sinc_kernel.cpp",
+                    "zcore/src/routing/minimum_phase_kernel.cpp",
+                    "zcore/src/routing/cached_fir_kernels.cpp",
+                ),
+                "Routing",
+            )
     except (VerificationError, OSError) as error:
         print(f"zCore submodule verification failed: {error}", file=sys.stderr)
         return 1

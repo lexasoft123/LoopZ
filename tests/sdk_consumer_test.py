@@ -6,6 +6,11 @@ import subprocess
 import shutil
 
 
+def diagnostic(result):
+    # CMake wraps diagnostics to its output width; assert semantic reasons.
+    return " ".join(result.stderr.split())
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
@@ -44,7 +49,7 @@ def main():
         text=True,
         timeout=120,
     )
-    assert wrong.returncode != 0 and "SOURCE_DIR does not match" in wrong.stderr, (
+    assert wrong.returncode != 0 and "SOURCE_DIR does not match" in diagnostic(wrong), (
         wrong.stdout + wrong.stderr
     )
     overlays = build.parent / "sdk-consumer-overlays"
@@ -71,8 +76,10 @@ def main():
             )
             assert (
                 configured.returncode != 0
-                and "DSP source is outside pinned zCore" in configured.stderr
-            ), (configured.stdout + configured.stderr)
+                and "DSP source is outside pinned zCore" in diagnostic(configured)
+            ), (
+                configured.stdout + configured.stderr
+            )
     for suffix, selected in (
         ("late-overlay", str(overlays / "graph_runner.cpp")),
         ("late-genexpr", f"$<$<CONFIG:Release>:{overlays / 'graph_runner.cpp'}>"),
@@ -89,8 +96,59 @@ def main():
             text=True,
             timeout=30,
         )
-        assert (
-            rejected.returncode != 0 and "DSP source is outside pinned zCore" in rejected.stderr
+        assert rejected.returncode != 0 and "DSP source is outside pinned zCore" in diagnostic(
+            rejected
+        ), (rejected.stdout + rejected.stderr)
+    omitted = subprocess.run(
+        [
+            *common,
+            "-B",
+            str(build.with_name(build.name + "-routing-missing-kernel")),
+            "-DSDK_REMOVE_ROUTING_KERNEL=ON",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert (
+        omitted.returncode != 0
+        and "cached_fir_kernels.cpp" in diagnostic(omitted)
+        and "canonical source" in diagnostic(omitted)
+    ), (omitted.stdout + omitted.stderr)
+    routing_overlay = overlays / "audio_resampler.cpp"
+    shutil.copyfile(zcore / "zcore/src/routing/audio_resampler.cpp", routing_overlay)
+    configured = subprocess.run(
+        [
+            *common,
+            "-B",
+            str(build.with_name(build.name + "-routing-overlay")),
+            f"-DSDK_ROUTING_OVERLAY:FILEPATH={routing_overlay}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert configured.returncode != 0 and "Routing source is outside pinned zCore" in diagnostic(
+        configured
+    ), (configured.stdout + configured.stderr)
+    for suffix, selected in (
+        ("routing-late", str(routing_overlay)),
+        ("routing-genexpr", f"$<$<CONFIG:Release>:{routing_overlay}>"),
+    ):
+        late = build.with_name(build.name + "-" + suffix)
+        subprocess.run(
+            [*common, "-B", str(late), f"-DSDK_POST_INCLUDE_ROUTING_OVERLAY:STRING={selected}"],
+            check=True,
+            timeout=120,
+        )
+        rejected = subprocess.run(
+            ["cmake", "--build", str(late), "--target", "loopz_verify_zcore"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert rejected.returncode != 0 and "Routing source is outside pinned zCore" in diagnostic(
+            rejected
         ), (rejected.stdout + rejected.stderr)
     # The regular build above exercises an unset parent deployment policy.
     # This explicit sentinel must also survive child project configuration.
@@ -105,7 +163,7 @@ def main():
         timeout=120,
     )
     print(
-        "SDK parent retains tests/deployment, runs native sources, and rejects constructed/late DSP overlays"
+        "SDK parent retains tests/deployment, runs native sources, and rejects constructed/late DSP and routing overlays"
     )
 
 

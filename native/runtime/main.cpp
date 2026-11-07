@@ -1,4 +1,7 @@
 #include <loopz/runtime/control_socket.hpp>
+#ifdef LOOPZ_LINUX_CPU_POLICY
+#include "cpu_policy.hpp"
+#endif
 #include <cstdlib>
 #include <iostream>
 int main(int argc, char** argv) {
@@ -25,6 +28,12 @@ int main(int argc, char** argv) {
                                        : std::filesystem::path(home) / ".config") /
                     "loopz/engine.json";
         }
+#ifdef LOOPZ_LINUX_CPU_POLICY
+        const auto* cpuPolicy = std::getenv("LOOPZ_AUDIO_CPU_POLICY");
+        std::clog << loopz::platform::configureEngineCpuPolicy(
+                         cpuPolicy && *cpuPolicy ? cpuPolicy : "performance")
+                  << '\n';
+#endif
         return loopz::runtime::serveSocket(socket, state);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
