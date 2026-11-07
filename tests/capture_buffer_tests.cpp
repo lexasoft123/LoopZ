@@ -16,30 +16,39 @@ namespace {
 thread_local bool trackHeap = false;
 thread_local uint32_t heapEvents = 0;
 } // namespace
-void* operator new(size_t bytes) {
+// Keep replacement allocation hooks out of line, as in the other realtime
+// allocation tests. GCC can otherwise misdiagnose their malloc/free bodies.
+#if defined(__GNUC__)
+#define LOOPZ_HEAP_HOOK __attribute__((noinline))
+#else
+#define LOOPZ_HEAP_HOOK
+#endif
+LOOPZ_HEAP_HOOK void* operator new(size_t bytes) {
     if (trackHeap)
         ++heapEvents;
     if (auto* result = std::malloc(bytes ? bytes : 1))
         return result;
     throw std::bad_alloc();
 }
-void* operator new[](size_t bytes) {
+LOOPZ_HEAP_HOOK void* operator new[](size_t bytes) {
     return ::operator new(bytes);
 }
-void operator delete(void* memory) noexcept {
+LOOPZ_HEAP_HOOK void operator delete(void* memory) noexcept {
     if (trackHeap && memory)
         ++heapEvents;
     std::free(memory);
 }
-void operator delete[](void* memory) noexcept {
+LOOPZ_HEAP_HOOK void operator delete[](void* memory) noexcept {
     ::operator delete(memory);
 }
-void operator delete(void* memory, size_t) noexcept {
+LOOPZ_HEAP_HOOK void operator delete(void* memory, size_t) noexcept {
     ::operator delete(memory);
 }
-void operator delete[](void* memory, size_t) noexcept {
+LOOPZ_HEAP_HOOK void operator delete[](void* memory, size_t) noexcept {
     ::operator delete(memory);
 }
+
+#undef LOOPZ_HEAP_HOOK
 
 namespace {
 using namespace loopz;
