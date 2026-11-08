@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cmath>
 #include <map>
+#include <limits>
 #include <numeric>
 #include <stdexcept>
 #include <thread>
@@ -23,7 +24,8 @@ uint64_t nowNs() noexcept {
                                      .count());
 }
 template <typename RetainedChannels>
-void validateRuntimeBudget(const RouteDocument& document, RetainedChannels retainedChannels) {
+void validateRuntimeBudget(const RouteDocument& document, RetainedChannels retainedChannels,
+                           const std::map<std::string, uint32_t>& liveCaptures = {}) {
     uint64_t busChannels = 0, sourceChannels = 0, connections = 0;
     std::map<std::string_view, uint32_t> captures, outputs;
     const auto reject = [] {
@@ -63,6 +65,12 @@ void validateRuntimeBudget(const RouteDocument& document, RetainedChannels retai
             outputs.size() > RuntimeLimits::maximumPhysicalOutputs)
             reject();
     }
+    // Private leases and retired/prepared scenes share the same physical
+    // budget. Count each live owner once, retaining its negotiated width.
+    for (const auto& [uid, channels] : liveCaptures)
+        captures[uid] = std::max(captures[uid], channels);
+    if (captures.size() > RuntimeLimits::maximumPhysicalCaptures)
+        reject();
     uint64_t captureChannels = 0, outputChannels = 0;
     for (const auto& [uid, channels] : captures) {
         (void)uid;
@@ -343,6 +351,27 @@ struct Capture final : AudioSource {
         return history.readChannels(ns, hz, out, frames, cursor, channels, filter);
     }
 };
+EndpointStatus captureStatus(const std::string& uid, const Capture& capture) {
+    EndpointStatus endpoint;
+    endpoint.id = uid;
+    endpoint.error = capture.error;
+    endpoint.connected = capture.connected;
+    endpoint.captureTelemetry = true;
+    endpoint.captureHistory = capture.history.status();
+    endpoint.captureReads = capture.history.readDiagnostics();
+    endpoint.captureHistoryProjected = capture.historyProjected.load(std::memory_order_relaxed);
+    endpoint.captureMaximumRawPhaseStepNs =
+        capture.maximumRawStepNs.load(std::memory_order_relaxed);
+    endpoint.captureMaximumProjectionErrorNs =
+        capture.maximumProjectionErrorNs.load(std::memory_order_relaxed);
+    endpoint.timestampQuality = capture.quality.load(std::memory_order_relaxed);
+    capture.provenance.read(endpoint);
+    endpoint.audio.format.sampleRate = capture.sampleRate;
+    endpoint.audio.format.inputChannels = capture.count;
+    endpoint.audio.callbacks = endpoint.captureHistory.callbacks;
+    endpoint.audio.discontinuities = endpoint.captureHistory.discontinuities;
+    return endpoint;
+}
 class BusOnly final : public AudioSink {
     const uint32_t count_;
 
@@ -479,6 +508,25 @@ struct AudioRuntime::Impl {
     std::shared_ptr<SceneHistoryStore> histories = std::make_shared<SceneHistoryStore>();
     std::map<std::string, std::shared_ptr<const AudioSource>> native;
     std::shared_ptr<Prepared> active;
+    std::map<std::string, std::weak_ptr<Capture>> captures;
+    std::map<uint64_t, std::shared_ptr<Capture>> subscriptions;
+    uint64_t nextSubscription{1};
+    void collectCaptures() {
+        std::erase_if(captures, [](const auto& entry) {
+            return entry.second.expired();
+        });
+    }
+    std::shared_ptr<Capture> findCapture(const std::string& uid) const {
+        const auto found = captures.find(uid);
+        return found == captures.end() ? nullptr : found->second.lock();
+    }
+    std::map<std::string, uint32_t> liveCaptureChannels() const {
+        std::map<std::string, uint32_t> result;
+        for (const auto& [uid, owner] : captures)
+            if (auto capture = owner.lock())
+                result.emplace(uid, capture->count);
+        return result;
+    }
     std::atomic<bool> stopping{false};
     std::atomic<uint64_t> rendered{0}, failures{0}, deadlines{0}, previewUntilNs{0}, lateFrames{0},
         skippedFrames{0}, reanchors{0};
@@ -530,18 +578,84 @@ AudioRuntime::AudioRuntime(HostFactory host, InputFactory input)
 AudioRuntime::~AudioRuntime() = default;
 singz::AudioHostInventory AudioRuntime::inventory() const {
     singz::AudioHost host(impl_->hostFactory());
-    return host.enumerate();
+    auto result = host.enumerate();
+    // An exclusive owner can make ALSA's transient capability probe report
+    // zero channels (EBUSY). Preserve only an already-present explicit UID's
+    // connected, successfully opened prefix; never resurrect missing devices.
+    for (auto& device : result.devices) {
+        const auto capture = impl_->findCapture(device.uid);
+        if (capture && capture->uid != "default" && capture->connected)
+            device.inputChannels = std::max(device.inputChannels, capture->count);
+    }
+    return result;
+}
+InputSubscription AudioRuntime::acquireInput(std::string deviceUid, uint32_t minimumChannels) {
+    if (deviceUid.empty() || deviceUid == "default" || deviceUid.size() > 1024 ||
+        deviceUid.find('\0') != std::string::npos || minimumChannels == 0 ||
+        minimumChannels > singz::kAudioInputBusMaxChannels)
+        throw std::invalid_argument(
+            "Private input requires an explicit UID and valid channel capacity");
+    impl_->collectCaptures();
+    if (impl_->findCapture("default"))
+        throw std::invalid_argument("Disable the public default input before private subscription");
+    if (impl_->subscriptions.size() >= RuntimeLimits::maximumInputSubscriptions ||
+        impl_->nextSubscription == std::numeric_limits<uint64_t>::max())
+        throw std::invalid_argument("Private input subscription budget exceeded");
+    auto capture = impl_->findCapture(deviceUid);
+    if (capture && capture->count < minimumChannels)
+        throw std::runtime_error(
+            "Input channel expansion requires all public/private input owners off");
+    auto live = impl_->liveCaptureChannels();
+    live[deviceUid] = capture ? capture->count : minimumChannels;
+    validateRuntimeBudget(
+        RouteDocument{},
+        [](std::string_view, uint32_t channels) {
+            return channels;
+        },
+        live);
+    if (!capture) {
+        capture = std::make_shared<Capture>(deviceUid, minimumChannels, impl_->inputFactory,
+                                            impl_->hostFactory);
+        try {
+            capture->open();
+        } catch (const std::exception& failure) {
+            capture->close();
+            capture->error = failure.what();
+        }
+        impl_->captures[deviceUid] = capture;
+    }
+    InputSubscription result{impl_->nextSubscription, std::move(deviceUid), capture->count,
+                             capture.get()};
+    impl_->subscriptions.emplace(result.id, std::move(capture));
+    ++impl_->nextSubscription;
+    return result;
+}
+bool AudioRuntime::releaseInput(uint64_t id) {
+    const auto found = impl_->subscriptions.find(id);
+    if (found == impl_->subscriptions.end())
+        return false;
+    // Caller's readers are already joined. Public/retired scenes may retain
+    // the capture; otherwise destruction closes/drains here on control.
+    impl_->subscriptions.erase(found);
+    impl_->collectCaptures();
+    return true;
+}
+std::optional<EndpointStatus> AudioRuntime::inputStatus(uint64_t id) const {
+    const auto found = impl_->subscriptions.find(id);
+    if (found == impl_->subscriptions.end())
+        return std::nullopt;
+    return captureStatus(found->second->uid, *found->second);
 }
 std::shared_ptr<AudioRuntime::Prepared> AudioRuntime::prepare(const RouteDocument& document) {
     validateRouteDocument(document);
-    validateRuntimeBudget(document, [&](std::string_view uid, uint32_t channels) {
-        if (impl_->active) {
-            const auto retained = impl_->active->inputs.find(std::string(uid));
-            if (retained != impl_->active->inputs.end())
-                return std::max(channels, retained->second->count);
-        }
-        return channels;
-    });
+    impl_->collectCaptures();
+    validateRuntimeBudget(
+        document,
+        [&](std::string_view uid, uint32_t channels) {
+            const auto retained = impl_->findCapture(std::string(uid));
+            return retained ? std::max(channels, retained->count) : channels;
+        },
+        impl_->liveCaptureChannels());
     // A committed predecessor is needed for at most one control turn. Old
     // scenes pin their captures until render borrowers leave; retired output
     // destructors drain callbacks here, never inside the no-fail commit.
@@ -579,26 +693,29 @@ std::shared_ptr<AudioRuntime::Prepared> AudioRuntime::prepare(const RouteDocumen
             }
         }
     }
+    if (!impl_->subscriptions.empty() && required.contains("default"))
+        throw std::invalid_argument(
+            "Private input subscriptions require explicit public input UIDs");
     for (const auto& [uid, channels] : required) {
-        auto old = impl_->active ? impl_->active->inputs.find(uid) : next->inputs.end();
-        if (impl_->active && old != impl_->active->inputs.end()) {
-            if (old->second->count < channels)
+        auto capture = impl_->findCapture(uid);
+        if (capture) {
+            if (capture->count < channels)
                 throw std::runtime_error(
-                    "Input channel expansion requires explicit input-off before reconfiguration");
-            next->inputs.emplace(uid, old->second);
+                    "Input channel expansion requires all public/private input owners off");
         } else {
-            auto capture =
+            capture =
                 std::make_shared<Capture>(uid, channels, impl_->inputFactory, impl_->hostFactory);
             try {
                 capture->open();
             } catch (const std::exception& failure) {
-                if (impl_->active)
+                if (impl_->active || !impl_->subscriptions.empty())
                     throw;
                 capture->close();
                 capture->error = failure.what();
             }
-            next->inputs.emplace(uid, std::move(capture));
+            impl_->captures[uid] = capture;
         }
+        next->inputs.emplace(uid, std::move(capture));
     }
     auto scene = std::make_unique<AudioScene>(
         document, SceneTiming{rate, blockFrames, 1024, 128},
@@ -680,15 +797,18 @@ void AudioRuntime::commit(std::shared_ptr<Prepared> prepared) noexcept {
 void AudioRuntime::poll() {
     impl_->scenes.collect();
     impl_->buses.collect();
-    if (!impl_->active)
-        return;
-    impl_->active->retired.reset();
+    if (impl_->active)
+        impl_->active->retired.reset();
+    impl_->collectCaptures();
     const auto now = nowNs();
     const bool retry = now - impl_->lastRetry >= 2000000000;
     if (retry)
         impl_->lastRetry = now;
-    for (auto& [uid, input] : impl_->active->inputs) {
+    for (auto& [uid, weak] : impl_->captures) {
         (void)uid;
+        auto input = weak.lock();
+        if (!input)
+            continue;
         std::string error;
         if (input->backend && input->backend->takeFailure(error)) {
             input->close();
@@ -703,6 +823,8 @@ void AudioRuntime::poll() {
             }
         }
     }
+    if (!impl_->active)
+        return;
     for (auto& [uid, output] : impl_->active->outputs) {
         (void)uid;
         output->programs.collect();
@@ -731,25 +853,7 @@ RuntimeStatus AudioRuntime::status() const {
     if (!impl_->active)
         return result;
     for (const auto& [uid, input] : impl_->active->inputs) {
-        EndpointStatus endpoint;
-        endpoint.id = uid;
-        endpoint.error = input->error;
-        endpoint.connected = input->connected;
-        endpoint.captureTelemetry = true;
-        endpoint.captureHistory = input->history.status();
-        endpoint.captureReads = input->history.readDiagnostics();
-        endpoint.captureHistoryProjected = input->historyProjected.load(std::memory_order_relaxed);
-        endpoint.captureMaximumRawPhaseStepNs =
-            input->maximumRawStepNs.load(std::memory_order_relaxed);
-        endpoint.captureMaximumProjectionErrorNs =
-            input->maximumProjectionErrorNs.load(std::memory_order_relaxed);
-        endpoint.timestampQuality = input->quality.load(std::memory_order_relaxed);
-        input->provenance.read(endpoint);
-        endpoint.audio.format.sampleRate = input->sampleRate;
-        endpoint.audio.format.inputChannels = input->count;
-        endpoint.audio.callbacks = endpoint.captureHistory.callbacks;
-        endpoint.audio.discontinuities = endpoint.captureHistory.discontinuities;
-        result.inputs.push_back(std::move(endpoint));
+        result.inputs.push_back(captureStatus(uid, *input));
         result.restored &= input->connected && input->history.status().online &&
                            input->quality.load(std::memory_order_relaxed) !=
                                singz::AudioInputTimestampQuality::Unknown;
