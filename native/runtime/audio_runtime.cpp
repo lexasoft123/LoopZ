@@ -437,11 +437,82 @@ struct OutputProgram {
                                 status.format.sampleRate > 0 ? status.format.sampleRate : rate,
                                 budget.total}) {}
 };
+// Estimated output timestamps are observations of a continuous device frame
+// counter, not commands to jump the source position every callback. Integrate
+// each block with its chosen rate; steer only the next block's spacing toward
+// the observed clock. Hardware-certified timestamps bypass this estimator.
+struct EstimatedOutputTimeline {
+    struct Result {
+        uint64_t ns;
+        double hz;
+    };
+    long double projectedNs{0};
+    double previousHz{0}, nominalHz{0};
+    long double basePeriodNs{0};
+    uint64_t acquisitionFrames{0};
+    uint64_t previousFrame{0}, previousRawNs{0};
+    uint32_t previousFrames{0};
+    void clear() noexcept {
+        *this = {};
+    }
+    Result observe(uint64_t frame, uint64_t rawNs, uint32_t frames, double hz,
+                   bool discontinuity) noexcept {
+        if (!rawNs || rawNs >= UINT64_MAX - 10000000000ULL || !frames ||
+            frames > singz::kAudioHostMaxFrames || frame > UINT64_MAX - frames ||
+            !std::isfinite(hz) || hz < 8000 || hz > 192000) {
+            clear();
+            return {rawNs, 0};
+        }
+        const bool continuous = projectedNs && !discontinuity && nominalHz == hz &&
+                                previousFrame <= UINT64_MAX - previousFrames &&
+                                frame == previousFrame + previousFrames && rawNs > previousRawNs;
+        long double start = rawNs;
+        double selectedHz = hz;
+        bool reset = !continuous;
+        if (continuous) {
+            start = projectedNs + static_cast<long double>(previousFrames) * 1e9L / previousHz;
+            const auto error = static_cast<long double>(rawNs) - start;
+            reset = !std::isfinite(start) || start <= 0 || start >= UINT64_MAX - 10000000000ULL ||
+                    std::abs(error) > 2000000.0L;
+            if (!reset) {
+                // Acquire device drift quickly after an explicit boundary,
+                // then reject timestamp-observer jitter with a slow alpha-beta
+                // clock servo. Only sample spacing changes, never block phase.
+                const auto coefficient =
+                    acquisitionFrames < static_cast<uint64_t>(hz) ? 1.0L / 16 : 1.0L / 8192;
+                const auto alpha = std::min(.25L, coefficient * frames / 256);
+                const auto beta = alpha * alpha / 4;
+                const auto minimum = 1e9L / (hz * 1.005);
+                const auto maximum = 1e9L / (hz * .995);
+                basePeriodNs = std::clamp(basePeriodNs + beta * error / frames, minimum, maximum);
+                const auto period =
+                    std::clamp(basePeriodNs + alpha * error / frames, minimum, maximum);
+                selectedHz = std::clamp(static_cast<double>(1e9L / period), hz * .995, hz * 1.005);
+            }
+        }
+        if (reset) {
+            start = rawNs;
+            basePeriodNs = 1e9L / hz;
+            acquisitionFrames = 0;
+        }
+        if (acquisitionFrames < static_cast<uint64_t>(hz))
+            acquisitionFrames += frames;
+        projectedNs = start;
+        previousHz = selectedHz;
+        nominalHz = hz;
+        previousFrame = frame;
+        previousRawNs = rawNs;
+        previousFrames = frames;
+        return {static_cast<uint64_t>(start), selectedHz};
+    }
+};
 struct Output {
     std::string uid, error;
     singz::AudioHost host;
     singz::AudioHostConfig config;
     RealtimePublication<OutputProgram> programs;
+    EstimatedOutputTimeline estimatedTimeline;
+    uint64_t previousClock{0}, previousStream{0}, previousRoute{0};
     explicit Output(std::string id, std::unique_ptr<singz::AudioHostBackend> backend)
         : uid(std::move(id)), host(std::move(backend)) {}
     ~Output() {
@@ -455,12 +526,31 @@ struct Output {
                 std::fill_n(block.output[c], block.frames, 0.f);
             return true;
         }
-        const uint64_t ns =
+        uint64_t ns =
             block.outputTimestampValid ? block.outputHostTimeNs : block.callbackHostTimeNs;
+        double measuredRate = 0;
+        if (block.outputTimestampValid && !block.outputTimestampHardware && ns && block.frames &&
+            block.frames <= block.maximumFrames && block.outputChannels > 0 &&
+            block.outputChannels <= kMaximumRoutingChannels &&
+            block.sampleRate == program->program.timing().outputRate) {
+            const bool boundary = block.discontinuity != singz::AudioHostDiscontinuityNone ||
+                                  block.clockDomain != self.previousClock ||
+                                  block.streamGeneration != self.previousStream ||
+                                  block.routeGeneration != self.previousRoute;
+            const auto projected = self.estimatedTimeline.observe(
+                block.outputFrame, ns, block.frames, block.sampleRate, boundary);
+            ns = projected.ns;
+            measuredRate = projected.hz;
+        } else {
+            self.estimatedTimeline.clear();
+        }
+        self.previousClock = block.clockDomain;
+        self.previousStream = block.streamGeneration;
+        self.previousRoute = block.routeGeneration;
         return program->program
             .render(ns, block.sampleRate,
                     {{block.output, block.outputChannels}, block.maximumFrames}, block.frames,
-                    block.outputFrame)
+                    block.outputFrame, measuredRate)
             .validBlock;
     }
     void open() {
@@ -472,6 +562,10 @@ struct Output {
             throw std::runtime_error(
                 "Output provider did not preserve the requested 48000 Hz profile");
         }
+        // open() has drained the previous worker; reset callback-owned clock
+        // state only now, before start() admits the new callback owner.
+        estimatedTimeline.clear();
+        previousClock = previousStream = previousRoute = 0;
         // Reopening may negotiate a different queue even when the nominal
         // rate/map is unchanged. Rebuild on control before callbacks resume.
         auto previous = programs.borrow();
