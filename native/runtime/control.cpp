@@ -224,6 +224,7 @@ Control::Control(std::filesystem::path state, std::unique_ptr<AudioRuntime> runt
                 throw io("Unsupported saved Engine state version");
             desiredGeneration_ = generation(saved.at("generation"));
             desired_ = decodeDocument(saved.at("document"));
+            ++documentRevision_;
             activate();
         }
     } catch (const std::exception& error) {
@@ -252,6 +253,10 @@ void Control::poll() {
     audio_->poll();
     if (desired_ && activeGeneration_ != desiredGeneration_)
         activate();
+}
+ControlRouteView Control::routeView() const noexcept {
+    return {desired_ ? &*desired_ : nullptr, desiredGeneration_, activeGeneration_,
+            documentRevision_};
 }
 JSON Control::snapshot() {
     audio_->requestTelemetryPreview();
@@ -467,6 +472,7 @@ JSON Control::request(const JSON& message) {
                 if (directory.value < 0 || ::fsync(directory.value))
                     return reply(false, "storage-unavailable", storageError_);
                 desired_ = std::move(document);
+                ++documentRevision_;
                 desiredGeneration_ = revision;
                 history_ = EditHistory{};
                 storageError_.clear();
@@ -536,6 +542,7 @@ JSON Control::request(const JSON& message) {
             saveState(state_, bytes);
         } catch (const DurabilityUncertain& error) {
             desired_ = std::move(candidate);
+            ++documentRevision_;
             desiredGeneration_ = next;
             history_.swap(preparedHistory);
             storageError_ = error.what();
@@ -544,6 +551,7 @@ JSON Control::request(const JSON& message) {
             return reply(false, "storage-error", error.what());
         }
         desired_ = std::move(candidate);
+        ++documentRevision_;
         desiredGeneration_ = next;
         history_.swap(preparedHistory);
         activationError_ = std::move(pending);

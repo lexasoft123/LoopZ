@@ -6,6 +6,12 @@
 #include <optional>
 #include <memory>
 namespace loopz::runtime {
+// Borrowed control-owner view. Never read from an audio callback or retain the
+// document across a request/poll that can mutate Control, or its destruction.
+struct ControlRouteView {
+    const RouteDocument* desired{nullptr};
+    uint64_t desiredGeneration{0}, activeGeneration{0}, documentRevision{0};
+};
 class Control {
   public:
     explicit Control(std::filesystem::path state);
@@ -13,6 +19,7 @@ class Control {
     Control(std::filesystem::path state, std::unique_ptr<AudioRuntime> runtime);
     JSON request(const JSON& request);
     void poll();
+    ControlRouteView routeView() const noexcept;
 
   private:
     JSON snapshot();
@@ -23,6 +30,7 @@ class Control {
     singz::AudioHostInventory inventory_;
     std::optional<RouteDocument> desired_;
     uint64_t desiredGeneration_{0}, activeGeneration_{0};
+    uint64_t documentRevision_{0};
     EditHistory history_;
 };
 } // namespace loopz::runtime
