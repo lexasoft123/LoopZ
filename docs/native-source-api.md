@@ -28,10 +28,41 @@ runtime.commit(std::move(prepared));
 ```
 
 `makePreparedSongSource`, `document` and `storeDesiredAtomically` above are host
-application responsibilities, not shipped API functions. The standalone Control
-owner already implements persistence and acknowledgements, but does not expose
+application responsibilities, not shipped API functions. The reusable Control
+owner below already implements persistence and acknowledgements, but does not expose
 a socket operation to register a C++ source. A Box socket client alone cannot
 attach song PCM to the current service.
+
+## Embedded persistent Control owner
+
+`LoopZ::Control` reuses the standalone owner's routing persistence, revisions,
+acknowledgements and retry behavior without a daemon or socket. Enable
+`LOOPZ_BUILD_CONTROL_LIBRARY=ON` with `LOOPZ_BUILD_ENGINE=OFF` and link
+`LoopZ::Control`; the runtime is included automatically. This option creates no
+Engine/CLI, socket target, service install rules or desktop dependency. Control
+currently requires POSIX file operations. Engine builds retain the
+`LoopZ::ControlSocket` target with the socket transport.
+
+```cpp
+auto runtime = std::make_unique<loopz::runtime::AudioRuntime>();
+runtime->bindNativeSource("native:singz", preparedSongHistory);
+loopz::runtime::Control control(statePath, std::move(runtime));
+// Serialized control thread: control.request(versionedRequest); control.poll();
+```
+
+The injected runtime must be non-null; null throws `std::invalid_argument`.
+Control takes exclusive ownership and immediately loads and activates saved
+routing, so bind all native sources before construction. The existing
+`Control(statePath)` constructor still creates its platform runtime. Keep the
+same source/history object alive across song changes and publish its samples
+from the producer according to its own synchronization contract. After transfer,
+do not independently call runtime control methods through a retained pointer.
+One serialized owner calls Control requests, polling and destruction; Control
+owns the runtime until destruction, which drains its audio callbacks. Producer
+lifetime and realtime source constraints below still apply. Closing a TV window
+must not destroy this persistent owner. Request/poll protocol behavior is shared
+with the standalone Engine; hosts must reconcile uncertain acknowledgements
+through canonical state rather than implement a second persistence authority.
 
 ## Ownership and rendering
 
@@ -167,8 +198,9 @@ those executables or service install rules. `LOOPZ_BUILD_TESTS` disables only
 LoopZ's tests; it leaves the parent's `BUILD_TESTING` policy intact. Existing
 parent `format` and `format-check` targets are preserved. The public target
 propagates C++20 and includes the existing native source API above. The host
-remains responsible for one serialized control owner and durable desired-state
-acknowledgement before runtime commit.
+remains responsible for one serialized control owner. Direct Runtime consumers
+implement durable desired-state acknowledgement before commit; embedded Control
+consumers reuse its existing implementation.
 
 Run the reusable silent consumer acceptance from a LoopZ checkout:
 
@@ -190,3 +222,67 @@ They are checked before allocation/opening; failed demanded endpoints and wider
 retained capture profiles count. Keep replacements within those budgets. Tests
 exercise all aggregate limits together and rapid edits without unbounded retained
 physical owners. See the protocol for the current values and hardware evidence.
+
+The optional persistent Control consumer is included by the same runner. To run
+only that configuration with a shared zCore checkout:
+
+```sh
+cmake -S tests/sdk_consumer -B artifacts/sdk-control \
+  -DLOOPZ_SOURCE="$PWD" -DSHARED_ZCORE_SOURCE=/path/to/pinned/zcore \
+  -DSDK_CONTROL_CONSUMER=ON
+cmake --build artifacts/sdk-control --target loopz-control-sdk-consumer --parallel 2
+ctest --test-dir artifacts/sdk-control -R consumer-control-restore --output-on-failure
+```
+
+## Private input subscriptions
+
+`LoopZ::Runtime` also exposes a native read-only input lease for analysis that
+must share a physical capture with public routing. It never creates, edits or
+persists a `RouteDocument`, scene, monitor or output:
+
+```cpp
+auto input = runtime.acquireInput(explicitDeviceUid, highestChannelIndex + 1);
+// input.source is borrowed, and its immutable layout is input.channels wide.
+// On the analysis worker: use a private AudioReadCursor and prepared buffers;
+// call input.source->readChannels(...) to read timestamped PCM natively.
+// Missing/offline history is zero-filled and must not count as valid analysis.
+stopAndJoinAnalysisWorker();
+runtime.releaseInput(input.id);
+```
+
+Acquire, release, `inputStatus(id)` and `poll()` run on the same serialized
+control owner as route preparation. The borrowed pointer is valid only until
+release or runtime destruction; stop and join its readers first. The handle has
+no implicit destructor action, so releasing a handle cannot accidentally close
+hardware on an audio thread. `inputStatus` returns `nullopt` for stale handles;
+double release returns false.
+
+The requested channel count is physical prefix capacity, not a remapping. An
+already-open capture of sufficient width is reused by all public and private
+readers, each with its own non-destructive cursor. Expansion of a live profile
+fails explicitly: disable public routes, release private readers and allow
+retired scene owners to drain before opening a wider profile. A weak registry
+keeps retired captures discoverable, preventing a second ALSA open while a
+previous scene still retains its owner.
+
+Only explicit nonempty device UIDs are accepted. Version one rejects private
+acquisition while any public or retired `default` input capture is alive, and
+rejects a public `default` input configuration while private leases exist.
+Choose the explicit inventory UID to share that input. Public-only default
+following retains its existing behavior.
+
+The physical capture/channel budgets count the union of live public, private,
+prepared and retired owners, including offline endpoints and retained wider
+profiles. Shared owners count once. There are at most 64 private leases; each
+capture still respects the native 64-channel limit. Admission/profile failures
+throw before disturbing an existing owner. An initial provider-open failure
+returns an offline lease with `inputStatus(id).error`; `poll()` retries private
+captures even when there is no public scene. Disconnect clears history, and a
+reconnected owner reuses its stable source pointer with a new history boundary.
+
+A fresh inventory probe may report zero input channels while ALSA is exclusively
+owned. For a UID that is still present in that fresh inventory, the runtime
+preserves at least its connected owner's successfully opened prefix count. It
+does not resurrect removed/offline devices, replace wider fresh capabilities,
+or alter output capabilities. Private owners remain outside public routing
+status/documents; inspect them through `inputStatus`.

@@ -157,9 +157,12 @@ int serveSocket(const std::filesystem::path& path, const std::filesystem::path& 
         ::open((path.string() + ".lock").c_str(), O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600)};
     if (lock.value < 0 || ::flock(lock.value, LOCK_EX | LOCK_NB))
         throw error("Another LoopZ Engine owns this socket");
-    FD stateLock{::open((state.string() + ".lock").c_str(),
-                        O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600)};
-    if (stateLock.value < 0 || ::flock(stateLock.value, LOCK_EX | LOCK_NB))
+    ::signal(SIGTERM, stop);
+    ::signal(SIGINT, stop);
+    // Control owns the "<state>.lock" advisory lock for its lifetime; a second
+    // flock from this process on another descriptor would conflict with it.
+    Control control(state);
+    if (!control.ownsState())
         throw error("Cannot exclusively own saved routing");
     FD listener{::socket(AF_UNIX, SOCK_STREAM, 0)};
     if (listener.value < 0)
@@ -177,9 +180,6 @@ int serveSocket(const std::filesystem::path& path, const std::filesystem::path& 
             ::unlink(path.c_str());
         }
     } cleanup{path};
-    ::signal(SIGTERM, stop);
-    ::signal(SIGINT, stop);
-    Control control(state);
     auto nextPoll = std::chrono::steady_clock::now();
     while (!stopping) {
         pollfd pending{listener.value, POLLIN, 0};
@@ -192,18 +192,20 @@ int serveSocket(const std::filesystem::path& path, const std::filesystem::path& 
                 try {
                     timeout(client.value);
                     auto request = parseControlJSON(receive(client.value));
-                    auto response = control.request(request).dump();
+                    auto response = control.request(request).dump(-1, ' ', false,
+                                                                  JSON::error_handler_t::replace);
                     if (response.size() >= kMaximumControlResponseBytes)
                         throw error("Control response exceeds size limit");
                     send(client.value, response + "\n");
                 } catch (const std::exception& failure) {
                     try {
-                        send(client.value, JSON{{"version", 1},
-                                                {"ok", false},
-                                                {"code", "invalid-request"},
-                                                {"detail", failure.what()}}
-                                                   .dump() +
-                                               "\n");
+                        send(client.value,
+                             JSON{{"version", 1},
+                                  {"ok", false},
+                                  {"code", "invalid-request"},
+                                  {"detail", failure.what()}}
+                                     .dump(-1, ' ', false, JSON::error_handler_t::replace) +
+                                 "\n");
                     } catch (...) {
                     }
                 }

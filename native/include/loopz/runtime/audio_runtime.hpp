@@ -5,6 +5,7 @@
 #include <zcore/device/audio_host.h>
 #include <zcore/device/audio_input_backend.h>
 #include <functional>
+#include <optional>
 #include <string_view>
 
 namespace loopz::runtime {
@@ -25,6 +26,15 @@ struct EndpointStatus {
     // only the history's explicitly estimated received-PCM timeline.
     bool captureHistoryProjected{false};
     uint64_t captureMaximumRawPhaseStepNs{0}, captureMaximumProjectionErrorNs{0};
+};
+// Borrowed native input reader. The runtime owns its capture; this value owns
+// no hardware and has no implicit release/destructor. Stop and join every
+// reader before releaseInput(id) or runtime destruction invalidates source.
+struct InputSubscription {
+    uint64_t id{0};
+    std::string deviceUid;
+    uint32_t channels{0};
+    const AudioSource* source{nullptr};
 };
 struct SourceTelemetry {
     std::string id;
@@ -49,6 +59,10 @@ struct RuntimeStatus {
     bool active{false}, restored{false};
     uint64_t renderedFrames{0}, graphFailures{0}, missedDeadlines{0};
     uint64_t renderLateFrames{0}, renderSkippedFrames{0}, renderReanchors{0};
+    // Linux only: the mix renderer obtained SCHED_FIFO just below zCore's ALSA
+    // I/O workers. False means inherited scheduling (for example, no
+    // RLIMIT_RTPRIO), a non-Linux host, or a renderer that has not started.
+    bool rendererRealtime{false};
     std::vector<EndpointStatus> inputs, outputs;
     std::vector<AudioMeterSnapshot> buses;
     std::vector<BusTelemetry> devices;
@@ -61,6 +75,7 @@ struct RuntimeStatus {
 struct RuntimeLimits {
     static constexpr uint32_t maximumPhysicalCaptures = 8;
     static constexpr uint32_t maximumCaptureChannels = 128;
+    static constexpr uint32_t maximumInputSubscriptions = 64;
     static constexpr uint32_t maximumPhysicalOutputs = 8;
     static constexpr uint32_t maximumOutputChannels = 128;
     static constexpr uint32_t maximumBusChannels = 128;
@@ -89,6 +104,17 @@ class AudioRuntime {
     void commit(std::shared_ptr<Prepared> prepared) noexcept;
     void poll();
     RuntimeStatus status() const;
+    // Serialized control-owner APIs; never call from a callback. Explicit,
+    // nonempty device UIDs only ("default" is intentionally rejected). A live
+    // public/retired default capture conflicts with private subscriptions.
+    // minimumChannels is physical prefix capacity, not a channel remapping.
+    // Reuse a sufficiently wide owner; never expand/reopen one that is live.
+    // Provider-offline acquisition retains an offline lease for poll() retry;
+    // validation, resource admission and in-use profile conflicts throw.
+    InputSubscription acquireInput(std::string deviceUid, uint32_t minimumChannels);
+    // Caller must first stop/join its reader. False means a stale/unknown id.
+    bool releaseInput(uint64_t id);
+    std::optional<EndpointStatus> inputStatus(uint64_t id) const;
     // A state reader may request meters for otherwise undemanded buses for
     // 500ms. Repeated reads renew this bounded preview; expiry never removes
     // persistent monitor/dependency demand or changes saved hardware settings.

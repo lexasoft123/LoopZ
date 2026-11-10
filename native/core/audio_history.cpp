@@ -10,10 +10,12 @@
 namespace loopz {
 namespace {
 bool validRate(double value) noexcept {
-    return std::isfinite(value) && value >= 8000 && value <= 192000;
+    return std::isfinite(value) && value >= AudioHistory::kMinimumSampleRate &&
+           value <= AudioHistory::kMaximumSampleRate;
 }
 bool validMeasuredRate(double value) noexcept {
-    return std::isfinite(value) && value >= 8000 * 0.995 && value <= 192000 * 1.005;
+    return std::isfinite(value) && value >= AudioHistory::kMinimumSampleRate * 0.995 &&
+           value <= AudioHistory::kMaximumSampleRate * 1.005;
 }
 void silence(RoutingOutput output, uint32_t frames) noexcept {
     for (auto* plane : output.channels)

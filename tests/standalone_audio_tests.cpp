@@ -5,6 +5,9 @@
 #include <chrono>
 #include <cmath>
 #include <thread>
+#include <numbers>
+#include <cstdio>
+#include <limits>
 
 namespace {
 using namespace loopz;
@@ -265,6 +268,233 @@ struct CaptureFeed {
         }
     }
 };
+class SineClockSource final : public AudioSource {
+    const uint64_t origin_;
+
+  public:
+    explicit SineClockSource(uint64_t origin) : origin_(origin) {}
+    uint32_t channels() const noexcept override {
+        return 2;
+    }
+    AudioReadResult read(uint64_t host, double hz, RoutingOutput out, uint32_t frames,
+                         AudioReadCursor&) const noexcept override {
+        const auto start = (static_cast<long double>(host) - origin_) / 1e9L;
+        for (uint32_t c = 0; c < out.channels.size(); ++c)
+            for (uint32_t frame = 0; frame < frames; ++frame)
+                out.channels[c][frame] =
+                    static_cast<float>(.1L * std::sin(2 * std::numbers::pi_v<long double> *
+                                                      (c ? 1499 : 997) * (start + frame / hz)));
+        return {0, true};
+    }
+};
+std::array<double, 3> fitSine(std::span<const float> samples, double frequency, double clockRate) {
+    // Independent least-squares DC/sine/cosine fit; a constant routing delay is
+    // free phase, but callback-boundary phase modulation remains in residual.
+    std::array<std::array<double, 4>, 3> rows{};
+    for (size_t index = 0; index < samples.size(); ++index) {
+        const double angle = 2 * std::numbers::pi_v<double> * frequency * index / clockRate;
+        const std::array<double, 3> basis{1, std::sin(angle), std::cos(angle)};
+        for (size_t a = 0; a < 3; ++a) {
+            rows[a][3] += samples[index] * basis[a];
+            for (size_t b = 0; b < 3; ++b)
+                rows[a][b] += basis[a] * basis[b];
+        }
+    }
+    for (size_t column = 0; column < 3; ++column) {
+        size_t pivot = column;
+        for (size_t row = column + 1; row < 3; ++row)
+            if (std::abs(rows[row][column]) > std::abs(rows[pivot][column]))
+                pivot = row;
+        std::swap(rows[pivot], rows[column]);
+        const auto divisor = rows[column][column];
+        assert(std::abs(divisor) > 1e-9);
+        for (auto& value : rows[column])
+            value /= divisor;
+        for (size_t row = 0; row < 3; ++row)
+            if (row != column) {
+                const auto factor = rows[row][column];
+                for (size_t entry = 0; entry < 4; ++entry)
+                    rows[row][entry] -= factor * rows[column][entry];
+            }
+    }
+    return {rows[0][3], rows[1][3], rows[2][3]};
+}
+double sineResidual(const std::vector<float>& samples, double frequency, double clockRate) {
+    // Fit a small constant frequency offset independently; clock-estimation
+    // error is not distortion. Time-varying phase noise remains in residual.
+    const auto half = samples.size() / 2;
+    const std::span<const float> view(samples);
+    const auto first = fitSine(view.first(half), frequency, clockRate);
+    const auto second = fitSine(view.subspan(half), frequency, clockRate);
+    const auto phase = std::atan2(second[2], second[1]) - std::atan2(first[2], first[1]) -
+                       2 * std::numbers::pi_v<double> * frequency * half / clockRate;
+    const auto adjustment = std::atan2(std::sin(phase), std::cos(phase)) * clockRate /
+                            (2 * std::numbers::pi_v<double> * half);
+    assert(std::abs(adjustment / frequency) < .0001); // Drift must be tracked, not ignored.
+    frequency += adjustment;
+    const auto fit = fitSine(samples, frequency, clockRate);
+    double error = 0;
+    for (size_t index = 0; index < samples.size(); ++index) {
+        const double angle = 2 * std::numbers::pi_v<double> * frequency * index / clockRate;
+        const auto delta =
+            samples[index] - fit[0] - fit[1] * std::sin(angle) - fit[2] * std::cos(angle);
+        error += delta * delta;
+    }
+    const auto amplitude = std::hypot(fit[1], fit[2]);
+    assert(amplitude > .09 && amplitude < .11); // Silence cannot pass the oracle.
+    return 10 * std::log10(error / samples.size() / (amplitude * amplitude / 2));
+}
+void estimatedOutputBoundaryControls(const std::shared_ptr<Counts>& hosts) {
+    std::array<std::array<float, 256>, 2> pcm{};
+    float* planes[]{pcm[0].data(), pcm[1].data()};
+    singz::AudioHostRenderBlock block{};
+    block.output = planes;
+    block.outputChannels = 2;
+    block.frames = block.maximumFrames = 256;
+    block.sampleRate = 48000;
+    block.clockDomain = block.routeGeneration = block.streamGeneration = 1;
+    block.outputTimestampValid = true;
+    const auto origin = steadyNs() - 300000000;
+    const auto render = [&] {
+        return hosts->render(hosts->renderContext, block);
+    };
+    const auto equalsRawHardware = [&] {
+        block.outputTimestampHardware = false;
+        assert(render());
+        const auto projected = pcm;
+        block.outputTimestampHardware = true;
+        assert(render());
+        for (size_t c = 0; c < 2; ++c)
+            for (size_t frame = 0; frame < 256; ++frame)
+                assert(std::abs(projected[c][frame] - pcm[c][frame]) < 1e-6f);
+    };
+    for (unsigned boundary = 0; boundary < 7; ++boundary) {
+        block.clockDomain = block.routeGeneration = block.streamGeneration = 1;
+        block.outputTimestampHardware = false;
+        block.discontinuity = singz::AudioHostDiscontinuityStart;
+        block.outputFrame = 1000000 + boundary * 1024;
+        block.outputHostTimeNs = origin + sampleNs(boundary * 1024);
+        assert(render());
+        block.discontinuity = singz::AudioHostDiscontinuityNone;
+        block.outputFrame += 256;
+        block.outputHostTimeNs += sampleNs(256) + 90000;
+        assert(render());
+        const auto previousNs = block.outputHostTimeNs;
+        block.outputFrame += 256;
+        block.outputHostTimeNs += sampleNs(256) + 400000;
+        if (boundary == 0)
+            ++block.clockDomain;
+        if (boundary == 1)
+            ++block.streamGeneration;
+        if (boundary == 2)
+            ++block.routeGeneration;
+        if (boundary == 3)
+            block.discontinuity = singz::AudioHostDiscontinuityClockReanchored;
+        if (boundary == 4)
+            block.outputFrame += 32;
+        if (boundary == 5)
+            block.outputHostTimeNs = previousNs - 40000;
+        if (boundary == 6)
+            block.outputHostTimeNs = previousNs + sampleNs(256) + 3000000;
+        equalsRawHardware(); // An explicit boundary must reset, not slew across it.
+        // Returning from hardware to estimated quality starts a fresh model.
+        block.discontinuity = singz::AudioHostDiscontinuityNone;
+        block.outputFrame += 256;
+        block.outputHostTimeNs += sampleNs(256) + 400000;
+        equalsRawHardware();
+    }
+    for (unsigned malformed = 0; malformed < 5; ++malformed) {
+        block.sampleRate = 48000;
+        block.frames = block.maximumFrames = 256;
+        block.outputFrame = 2000000;
+        const auto validNs = steadyNs() - 100000000;
+        block.outputHostTimeNs = validNs;
+        block.outputTimestampHardware = false;
+        if (malformed == 0)
+            block.outputHostTimeNs = UINT64_MAX - 1;
+        if (malformed == 1)
+            block.outputFrame = UINT64_MAX - 127;
+        if (malformed == 2)
+            block.sampleRate = std::numeric_limits<double>::quiet_NaN();
+        if (malformed == 3)
+            block.frames = 257;
+        if (malformed == 4)
+            block.frames = 0;
+        assert(!render());
+        block.sampleRate = 48000;
+        block.frames = 256;
+        // For the oversized 257-frame request, match its forged continuation
+        // so a counter-gap reset cannot conceal accidental estimator mutation.
+        block.outputFrame = malformed == 3 ? 2000257 : 2000256;
+        block.outputHostTimeNs = validNs + sampleNs(malformed == 3 ? 257 : 256) + 400000;
+        equalsRawHardware(); // Rejected input cannot poison the next valid model.
+    }
+}
+void estimatedOutputDoesNotModulateSines() {
+    for (const auto& [ppm, hardware] :
+         {std::pair{200, false}, std::pair{-200, false}, std::pair{0, true}}) {
+        auto hosts = std::make_shared<Counts>();
+        runtime::AudioRuntime engine([hosts] {
+            return std::make_unique<Host>(hosts);
+        });
+        auto document = route();
+        document.devices[0].bindings[0] = {"input", SourceKind::Application, "native:sine", false};
+        const uint64_t origin = steadyNs();
+        engine.bindNativeSource("native:sine", std::make_shared<SineClockSource>(origin));
+        engine.commit(engine.prepare(document));
+        const double clockRate = 48000 * (1 + ppm / 1e6);
+        const auto started = std::chrono::steady_clock::now();
+        constexpr unsigned warmup = 192, measured = 192;
+        std::array<std::vector<float>, 2> samples;
+        for (auto& lane : samples)
+            lane.reserve(measured * 256);
+        for (unsigned index = 0; index < warmup + measured; ++index) {
+            const auto elapsed = static_cast<uint64_t>(index * 256 * 1e9L / clockRate);
+            std::this_thread::sleep_until(started + std::chrono::nanoseconds(elapsed));
+            // ALSA status+delay observations can move by USB packet phase even
+            // when the device frame counter is perfectly continuous.
+            constexpr std::array<int64_t, 6> packetPhase{90000, -70000, 40000, -90000, 30000, 0};
+            const int64_t jitter = ppm < 0       ? packetPhase[index % packetPhase.size()]
+                                   : (index & 1) ? 31250
+                                                 : -31250;
+            const uint64_t presentation = origin + elapsed + sampleNs(1024) + jitter;
+            std::array<std::array<float, 256>, 2> pcm{};
+            float* planes[]{pcm[0].data(), pcm[1].data()};
+            singz::AudioHostRenderBlock block{};
+            block.output = planes;
+            block.outputChannels = 2;
+            block.frames = block.maximumFrames = 256;
+            block.sampleRate = 48000;
+            block.clockDomain = 1;
+            block.routeGeneration = 1;
+            block.streamGeneration = 1;
+            block.outputFrame = uint64_t(index) * 256;
+            block.callbackSequence = index + 1;
+            block.callbackHostTimeNs = origin + elapsed;
+            block.outputHostTimeNs = presentation;
+            block.outputTimestampValid = true;
+            block.outputTimestampHardware = hardware;
+            block.discontinuity =
+                index ? singz::AudioHostDiscontinuityNone : singz::AudioHostDiscontinuityStart;
+            assert(hosts->render && hosts->render(hosts->renderContext, block));
+            if (index >= warmup)
+                for (size_t c = 0; c < 2; ++c)
+                    samples[c].insert(samples[c].end(), pcm[c].begin(), pcm[c].end());
+        }
+        for (size_t c = 0; c < 2; ++c) {
+            const auto residual = sineResidual(samples[c], c ? 1499 : 997, clockRate);
+            std::printf("Output clock: ppm %d hardware %d channel %zu residual %.2f dBc\n", ppm,
+                        hardware, c, residual);
+            if (hardware)
+                assert(residual > -25); // Raw certified anchors remain authoritative.
+            else
+                assert(residual < -55); // Old raw estimated anchors produce roughly -14/-10dBc.
+        }
+        if (ppm == 200 && !hardware)
+            estimatedOutputBoundaryControls(hosts);
+        assert(engine.status().outputs.size() == 1);
+    }
+}
 void captureSamplesAndBoundaries() {
     auto hosts = std::make_shared<Counts>(), inputs = std::make_shared<Counts>();
     runtime::AudioRuntime engine(
@@ -771,6 +1001,7 @@ int main() {
 
     captureSamplesAndBoundaries();
     estimatedClockAndOutputBudget();
+    estimatedOutputDoesNotModulateSines();
     bootstrapPeers();
     aggregateBudgets();
     retainedProfilesAndOwners();
