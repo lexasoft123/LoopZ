@@ -1,12 +1,15 @@
 #include <loopz/runtime/control.hpp>
 #include <array>
 #include <algorithm>
+#include <cerrno>
 #include <charconv>
 #include <cmath>
 #include <fcntl.h>
 #include <fstream>
 #include <random>
 #include <map>
+#include <string_view>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -21,6 +24,86 @@ struct FD {
 };
 std::runtime_error io(const char* message) {
     return std::runtime_error(message);
+}
+// Host strings (device names, errors) are not guaranteed UTF-8; nlohmann's
+// strict dump would throw. Replace each invalid byte with U+FFFD.
+std::string text(std::string_view value) {
+    std::string result;
+    result.reserve(value.size());
+    size_t index = 0;
+    while (index < value.size()) {
+        const auto lead = static_cast<unsigned char>(value[index]);
+        const size_t length = lead < 0x80                    ? 1
+                              : lead >= 0xC2 && lead <= 0xDF ? 2
+                              : lead >= 0xE0 && lead <= 0xEF ? 3
+                              : lead >= 0xF0 && lead <= 0xF4 ? 4
+                                                             : 0;
+        bool valid = length && index + length <= value.size();
+        for (size_t k = 1; valid && k < length; ++k)
+            valid = (static_cast<unsigned char>(value[index + k]) & 0xC0) == 0x80;
+        if (valid && length > 2) {
+            const auto next = static_cast<unsigned char>(value[index + 1]);
+            valid = !(lead == 0xE0 && next < 0xA0) && !(lead == 0xED && next >= 0xA0) &&
+                    !(lead == 0xF0 && next < 0x90) && !(lead == 0xF4 && next >= 0x90);
+        }
+        if (valid) {
+            result.append(value.substr(index, length));
+            index += length;
+        } else {
+            result += "\xEF\xBF\xBD";
+            ++index;
+        }
+    }
+    return result;
+}
+std::vector<std::string> text(const std::vector<std::string>& values) {
+    std::vector<std::string> result;
+    result.reserve(values.size());
+    for (const auto& value : values)
+        result.push_back(text(value));
+    return result;
+}
+constexpr std::string_view temporaryPrefix = ".loopz-state-";
+constexpr size_t temporarySuffix = 6; // mkstemp XXXXXX
+std::filesystem::path stateDirectory(const std::filesystem::path& state) {
+    auto parent = state.parent_path();
+    return parent.empty() ? std::filesystem::path(".") : parent;
+}
+// Replacements are named per state file so owners of sibling state files in
+// the same directory never sweep each other's in-flight replacements.
+std::string temporaryPattern(const std::filesystem::path& state) {
+    // Long names are truncated rather than dropped, so the pattern never falls
+    // back to the unqualified legacy form that the sweep removes.
+    const auto name = state.filename().string().substr(0, 128);
+    return std::string(temporaryPrefix) + name + ".XXXXXX";
+}
+// Remove replacements leaked by a crash between mkstemp and rename. Callers
+// hold the state lock. Only regular files with the exact names saveState
+// creates (current or legacy unqualified form) are removed; symlinks are never
+// followed and every error is ignored.
+void sweepTemporaries(const std::filesystem::path& state) noexcept {
+    try {
+        const auto stateName = state.filename().string();
+        const auto pattern = temporaryPattern(state);
+        const auto named = pattern.substr(0, pattern.size() - temporarySuffix);
+        std::error_code error;
+        std::filesystem::directory_iterator entry(stateDirectory(state), error), end;
+        for (; !error && entry != end; entry.increment(error)) {
+            const auto name = entry->path().filename().string();
+            const bool current =
+                name.size() == named.size() + temporarySuffix && name.starts_with(named);
+            const bool legacy = name.size() == temporaryPrefix.size() + temporarySuffix &&
+                                name.starts_with(temporaryPrefix) &&
+                                name.find('.', temporaryPrefix.size()) == std::string::npos;
+            if ((!current && !legacy) || name == stateName)
+                continue;
+            std::error_code ignored;
+            if (entry->symlink_status(ignored).type() == std::filesystem::file_type::regular &&
+                !ignored)
+                std::filesystem::remove(entry->path(), ignored);
+        }
+    } catch (...) {
+    }
 }
 std::string readState(const std::filesystem::path& path) {
     FD fd{::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)};
@@ -49,12 +132,10 @@ class DurabilityUncertain : public std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 void saveState(const std::filesystem::path& path, const std::string& bytes) {
-    auto parent = path.parent_path();
-    if (parent.empty())
-        parent = ".";
+    const auto parent = stateDirectory(path);
     if (std::filesystem::create_directories(parent) && ::chmod(parent.c_str(), 0700))
         throw io("Cannot protect routing directory");
-    auto pattern = (parent / ".loopz-state-XXXXXX").string();
+    auto pattern = (parent / temporaryPattern(path)).string();
     std::vector<char> name(pattern.begin(), pattern.end());
     name.push_back(0);
     FD fd{::mkstemp(name.data())};
@@ -98,7 +179,7 @@ uint64_t generation(const JSON& value) {
     return result;
 }
 JSON reply(bool ok, const char* code, const std::string& detail = {}) {
-    return {{"version", 1}, {"ok", ok}, {"code", code}, {"detail", detail}};
+    return {{"version", 1}, {"ok", ok}, {"code", code}, {"detail", text(detail)}};
 }
 JSON meter(const AudioMeterSnapshot& m) {
     JSON peak = JSON::array(), rms = JSON::array();
@@ -116,9 +197,9 @@ JSON reportedFrames(uint32_t frames) {
     return frames ? JSON(frames) : JSON(nullptr);
 }
 JSON endpoint(const EndpointStatus& e) {
-    JSON result = {{"id", e.id},
+    JSON result = {{"id", text(e.id)},
                    {"connected", e.connected},
-                   {"error", e.error},
+                   {"error", text(e.error)},
                    {"xruns", std::to_string(e.audio.xruns)},
                    {"callbacks", std::to_string(e.audio.callbacks)},
                    {"renderedFrames", std::to_string(e.audio.renderedFrames)},
@@ -203,12 +284,32 @@ JSON endpoint(const EndpointStatus& e) {
     return result;
 }
 } // namespace
+namespace detail {
+OwnedDescriptor& OwnedDescriptor::operator=(OwnedDescriptor&& other) noexcept {
+    if (this != &other) {
+        if (value_ >= 0)
+            ::close(value_);
+        value_ = other.release();
+    }
+    return *this;
+}
+OwnedDescriptor::~OwnedDescriptor() {
+    if (value_ >= 0)
+        ::close(value_);
+}
+} // namespace detail
 Control::Control(std::filesystem::path state)
     : Control(std::move(state), std::make_unique<AudioRuntime>()) {}
 Control::Control(std::filesystem::path state, std::unique_ptr<AudioRuntime> runtime)
-    : audio_(std::move(runtime)), state_(std::move(state)) {
+    : Control(std::move(state), std::move(runtime), {}) {}
+Control::Control(std::filesystem::path state, std::unique_ptr<AudioRuntime> runtime, Clock clock)
+    : audio_(std::move(runtime)), state_(std::move(state)), clock_(std::move(clock)) {
     if (!audio_)
         throw std::invalid_argument("Control requires a non-null runtime");
+    if (!clock_)
+        clock_ = [] {
+            return std::chrono::steady_clock::now();
+        };
     std::random_device random;
     for (int i = 0; i < 4; ++i)
         epoch_ += std::to_string(random()) + "-";
@@ -217,19 +318,57 @@ Control::Control(std::filesystem::path state, std::unique_ptr<AudioRuntime> runt
     } catch (const std::exception& error) {
         inventoryError_ = error.what();
     }
+    if (lockState())
+        load();
+}
+bool Control::lockState() {
+    try {
+        const auto parent = stateDirectory(state_);
+        if (std::filesystem::create_directories(parent) && ::chmod(parent.c_str(), 0700))
+            throw io("Cannot protect routing directory");
+        detail::OwnedDescriptor lock{::open((state_.string() + ".lock").c_str(),
+                                            O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600)};
+        struct stat st{};
+        if (lock.get() < 0 || ::fstat(lock.get(), &st) || !S_ISREG(st.st_mode))
+            throw io("Cannot open saved routing lock");
+        int result;
+        do
+            result = ::flock(lock.get(), LOCK_EX | LOCK_NB);
+        while (result && errno == EINTR);
+        if (result && errno == EWOULDBLOCK)
+            throw io("Saved routing is in use by another LoopZ owner; close it, then retry");
+        if (result)
+            throw io("Cannot lock saved routing");
+        stateLock_ = std::move(lock);
+    } catch (const std::exception& error) {
+        storageError_ = error.what();
+        return false;
+    }
+    sweepTemporaries(state_);
+    return true;
+}
+void Control::load() {
     try {
         if (std::filesystem::exists(std::filesystem::symlink_status(state_))) {
             auto saved = parseControlJSON(readState(state_));
             if (saved.at("version") != 1)
                 throw io("Unsupported saved Engine state version");
-            desiredGeneration_ = generation(saved.at("generation"));
-            desired_ = decodeDocument(saved.at("document"));
+            auto revision = generation(saved.at("generation"));
+            auto document = decodeDocument(saved.at("document"));
+            desiredGeneration_ = revision;
+            desired_ = std::move(document);
             ++documentRevision_;
+            activationPending_ = true;
             activate();
         }
     } catch (const std::exception& error) {
         storageError_ = error.what();
     }
+}
+void Control::deferActivation(std::string error) {
+    activationError_ = std::move(error);
+    activationPending_ = true;
+    nextActivationRetry_ = clock_() + kActivationRetryInterval;
 }
 void Control::activate() {
     if (!desired_)
@@ -239,8 +378,9 @@ void Control::activate() {
         audio_->commit(std::move(candidate));
         activeGeneration_ = desiredGeneration_;
         activationError_.clear();
+        activationPending_ = false;
     } catch (const std::exception& error) {
-        activationError_ = error.what();
+        deferActivation(error.what());
     }
 }
 void Control::poll() {
@@ -251,7 +391,9 @@ void Control::poll() {
         inventoryError_ = error.what();
     }
     audio_->poll();
-    if (desired_ && activeGeneration_ != desiredGeneration_)
+    // Automatic retries are throttled: each attempt rebuilds the scene and
+    // reopens devices, and owners may poll far more often than devices return.
+    if (desired_ && activationPending_ && clock_() >= nextActivationRetry_)
         activate();
 }
 ControlRouteView Control::routeView() const noexcept {
@@ -311,7 +453,7 @@ JSON Control::snapshot() {
                 monitor["complete"] = output != runtime.outputs.end() && output->connected;
                 monitor["connected"] = output != runtime.outputs.end() && output->connected;
                 monitor["error"] =
-                    output != runtime.outputs.end() ? output->error : activationError_;
+                    text(output != runtime.outputs.end() ? output->error : activationError_);
             }
     }
     std::map<std::pair<std::string, std::string>, JSON> sourceConnections;
@@ -368,7 +510,7 @@ JSON Control::snapshot() {
                                                    {"demanded", demanded},
                                                    {"connected", connected},
                                                    {"complete", complete},
-                                                   {"error", error}});
+                                                   {"error", text(error)}});
                 if (!inserted) {
                     entry->second["demanded"] = entry->second["demanded"].get<bool>() || demanded;
                     entry->second["connected"] =
@@ -383,12 +525,12 @@ JSON Control::snapshot() {
         sources.push_back(connection);
     }
     for (const auto& d : inventory.devices)
-        devices.push_back({{"uid", d.uid},
-                           {"name", d.label},
+        devices.push_back({{"uid", text(d.uid)},
+                           {"name", text(d.label)},
                            {"inputChannels", d.inputChannels},
                            {"outputChannels", d.outputChannels},
-                           {"inputChannelNames", d.inputChannelLabels},
-                           {"outputChannelNames", d.outputChannelLabels},
+                           {"inputChannelNames", text(d.inputChannelLabels)},
+                           {"outputChannelNames", text(d.outputChannelLabels)},
                            {"defaultInput", d.defaultInput},
                            {"defaultOutput", d.defaultOutput},
                            {"rate", d.nominalSampleRate}});
@@ -406,7 +548,7 @@ JSON Control::snapshot() {
              {{"applications", JSON::array()},
               {"devices", devices},
               {"devicesFresh", inventoryError_.empty()},
-              {"devicesError", inventoryError_}}},
+              {"devicesError", text(inventoryError_)}}},
             {"snapshot",
              {{"version", 1},
               {"canCreateDocument", !desired_ && storageError_.empty()},
@@ -422,7 +564,7 @@ JSON Control::snapshot() {
                                                                                       : "retry"},
                 {"desiredGeneration", std::to_string(desiredGeneration_)},
                 {"activeGeneration", std::to_string(activeGeneration_)},
-                {"error", storageError_.empty() ? activationError_ : storageError_}}},
+                {"error", text(storageError_.empty() ? activationError_ : storageError_)}}},
               {"runtime",
                {{"platform", "linux"},
                 {"sampleRates", JSON::array({48000})},
@@ -459,6 +601,16 @@ JSON Control::request(const JSON& message) {
             return {{"version", 1}, {"ok", true}, {"protocol", "loopz.engine"},
                     {"major", 1},   {"minor", 0}, {"pcm", "native-only"}};
         if (operation == "retry" || operation == "retry-session") {
+            if (!ownsState()) {
+                // Another owner held the lock at startup: nothing was read yet.
+                if (!lockState())
+                    return reply(false, "storage-unavailable", storageError_);
+                storageError_.clear();
+                load();
+                if (!storageError_.empty())
+                    return reply(false, "storage-unavailable", storageError_);
+                return reply(true, "ok");
+            }
             if (!storageError_.empty()) {
                 auto saved = parseControlJSON(readState(state_));
                 if (saved.at("version") != 1)
@@ -546,6 +698,9 @@ JSON Control::request(const JSON& message) {
             desiredGeneration_ = next;
             history_.swap(preparedHistory);
             storageError_ = error.what();
+            // The prepared scene is discarded; let the next poll activate it.
+            activationPending_ = true;
+            nextActivationRetry_ = {};
             return reply(false, "uncertain", storageError_);
         } catch (const std::exception& error) {
             return reply(false, "storage-error", error.what());
@@ -554,11 +709,13 @@ JSON Control::request(const JSON& message) {
         ++documentRevision_;
         desiredGeneration_ = next;
         history_.swap(preparedHistory);
-        activationError_ = std::move(pending);
         if (prepared) {
             audio_->commit(std::move(prepared));
             activeGeneration_ = next;
-        }
+            activationError_.clear();
+            activationPending_ = false;
+        } else
+            deferActivation(std::move(pending));
         return result;
     } catch (const std::exception& error) {
         return reply(false, "invalid-request", error.what());

@@ -53,6 +53,9 @@ struct AudioHistoryStatus {
 class AudioHistory final : public AudioSource {
   public:
     static constexpr uint32_t kDefaultCapacityFrames = 32768;
+    // Nominal producer rates accepted by append(). Capture owners must reject
+    // other rates at open rather than report a connected, never-online source.
+    static constexpr double kMinimumSampleRate = 8000, kMaximumSampleRate = 192000;
     explicit AudioHistory(uint32_t channels, uint32_t capacityFrames = kDefaultCapacityFrames);
     // Experimental filter choice; prepare on control. Minimum-phase history
     // pins its cutoff to the source format while positions follow its clock.

@@ -7,7 +7,12 @@
 #include <vector>
 #include <map>
 #include <stdexcept>
+#include <string>
 #include <thread>
+#if defined(__linux__)
+#include <pthread.h>
+#include <sched.h>
+#endif
 
 namespace {
 using namespace loopz;
@@ -17,6 +22,7 @@ struct Device {
     bool offline{false}, failure{false};
     uint32_t channels{0};
     uint64_t generation{1};
+    double rate{48000};
     singz::AudioInputBusPush push{nullptr};
     void* context{nullptr};
     std::thread::id stoppedOn;
@@ -89,8 +95,9 @@ class Input final : public singz::AudioInputBackend {
         device_->channels = static_cast<uint32_t>(config.channels.size());
         device_->push = push;
         device_->context = context;
-        return {singz::AudioInputBusOpenStatus::Ready,
-                singz::AudioInputResult::success(singz::AudioInputState::Starting, 48000, 0)};
+        return {
+            singz::AudioInputBusOpenStatus::Ready,
+            singz::AudioInputResult::success(singz::AudioInputState::Starting, device_->rate, 0)};
     }
     singz::AudioInputResult start() override {
         return singz::AudioInputResult::success(singz::AudioInputState::Running, 48000, 0);
@@ -343,10 +350,91 @@ void limitsAndDefaultGuards() {
     assert(engine.releaseInput(duplicate.id));
     assert(state->outputOpens == 0);
 }
+template <typename F>
+void pollFor(AudioRuntime& engine, std::chrono::milliseconds duration, F stop) {
+    const auto deadline = std::chrono::steady_clock::now() + duration;
+    while (!stop() && std::chrono::steady_clock::now() < deadline) {
+        engine.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+}
+void unsupportedCaptureRateRejectedAtOpen() {
+    auto state = std::make_shared<State>();
+    auto engine = runtime(state);
+    // History accepts at most 192 kHz; a wider provider must not report a
+    // connected capture that can never go online.
+    state->devices["fast"].rate = 384000;
+    const auto fast = engine.acquireInput("fast", 2);
+    const auto fastStatus = engine.inputStatus(fast.id);
+    assert(!fastStatus->connected && !state->devices.at("fast").live);
+    assert(fastStatus->error.find("sample rate") != std::string::npos);
+    state->devices["edge"].rate = 192000;
+    const auto edge = engine.acquireInput("edge", 2);
+    assert(engine.inputStatus(edge.id)->connected && state->devices.at("edge").live == 1);
+    assert(engine.releaseInput(fast.id) && engine.releaseInput(edge.id));
+}
+void stalledCaptureReopens() {
+    auto state = std::make_shared<State>();
+    auto engine = runtime(state);
+    const auto lease = engine.acquireInput("mic", 2);
+    auto& device = state->devices.at("mic");
+    const auto never = [] {
+        return false;
+    };
+    // Open time is the baseline: no first callback yet, still within 2 s.
+    pollFor(engine, std::chrono::milliseconds(1200), never);
+    assert(engine.inputStatus(lease.id)->connected && device.opens == 1 && !device.stops);
+    feed(device);
+    assert(engine.inputStatus(lease.id)->captureHistory.online);
+    // 2.4 s after open but only 1.2 s after the latest delivery.
+    pollFor(engine, std::chrono::milliseconds(1200), never);
+    assert(engine.inputStatus(lease.id)->connected && device.opens == 1 && !device.stops);
+    // The provider stops calling back without reporting failure. Detection
+    // (2 s) plus the shared 2 s retry cadence bounds recovery.
+    pollFor(engine, std::chrono::milliseconds(6000), [&] {
+        return device.opens >= 2 && engine.inputStatus(lease.id)->connected;
+    });
+    assert(device.opens == 2 && device.stops == 1 && device.live == 1);
+    const auto reopened = engine.inputStatus(lease.id);
+    assert(reopened->connected && !reopened->captureHistory.online); // stale anchor retired
+    // A second consecutive stall gets 4 s, so 3 s of silence after the reopen
+    // must not close it again (without backoff it would close at 2 s).
+    pollFor(engine, std::chrono::milliseconds(3000), never);
+    assert(device.opens == 2 && device.stops == 1 && engine.inputStatus(lease.id)->connected);
+    ++device.generation;
+    feed(device);
+    assert(engine.inputStatus(lease.id)->captureHistory.online);
+    assert(engine.releaseInput(lease.id) && !device.live);
+}
+void rendererSchedulingIsObservable() {
+    auto state = std::make_shared<State>();
+    auto engine = runtime(state);
+#if defined(__linux__)
+    // The renderer must obtain SCHED_FIFO 19 exactly when this process may.
+    bool permitted = false;
+    std::thread probe([&] {
+        sched_param parameters{};
+        parameters.sched_priority = 19;
+        permitted = pthread_setschedparam(pthread_self(), SCHED_FIFO, &parameters) == 0;
+    });
+    probe.join();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (permitted && !engine.status().rendererRealtime &&
+           std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    assert(engine.status().rendererRealtime == permitted);
+#else
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    assert(!engine.status().rendererRealtime);
+#endif
+}
 } // namespace
 int main() {
     privateAndPublicShare();
     retiredCaptureAndFailureIsolation();
     offlineRetryAndInventory();
     limitsAndDefaultGuards();
+    unsupportedCaptureRateRejectedAtOpen();
+    rendererSchedulingIsObservable();
+    stalledCaptureReopens();
 }

@@ -14,14 +14,38 @@
 #include <numeric>
 #include <stdexcept>
 #include <thread>
+#if defined(__linux__)
+#include <pthread.h>
+#include <sched.h>
+#endif
 
 namespace loopz::runtime {
 namespace {
 constexpr uint32_t rate = 48000, blockFrames = 256;
+#if defined(__linux__)
+// zCore's ALSA I/O workers use SCHED_FIFO 20 and consume renderer-published
+// history about one period later; SingZ's song producer uses 18.
+constexpr int kRendererRealtimePriority = 19;
+#endif
+// A provider that stops calling back without reporting failure is treated as
+// failed after this long without any delivered block (measured from open).
+constexpr uint64_t kCaptureStallNs = 2000000000;
 uint64_t nowNs() noexcept {
     return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                      std::chrono::steady_clock::now().time_since_epoch())
                                      .count());
+}
+// Called once by the renderer before its loop. Failure (typically EPERM
+// without RLIMIT_RTPRIO) keeps inherited scheduling; the caller records it.
+bool requestRendererRealtime() noexcept {
+#if defined(__linux__)
+    (void)pthread_setname_np(pthread_self(), "loopz-render");
+    sched_param parameters{};
+    parameters.sched_priority = kRendererRealtimePriority;
+    return pthread_setschedparam(pthread_self(), SCHED_FIFO, &parameters) == 0;
+#else
+    return false;
+#endif
 }
 template <typename RetainedChannels>
 void validateRuntimeBudget(const RouteDocument& document, RetainedChannels retainedChannels,
@@ -207,6 +231,11 @@ struct Capture final : AudioSource {
     EstimatedCaptureTimeline estimatedTimeline;
     std::atomic<bool> historyProjected{false};
     std::atomic<uint64_t> maximumRawStepNs{0}, maximumProjectionErrorNs{0};
+    // Every provider block, including timestamp-unknown ones, proves liveness.
+    std::atomic<uint64_t> deliveries{0};
+    // Control-only liveness baseline: open time or the latest observed block.
+    uint64_t observedDeliveries{0}, progressNs{0};
+    unsigned consecutiveStalls{0};
     double sampleRate{0};
     bool connected{false};
     Capture(std::string id, uint32_t channels, AudioRuntime::InputFactory make,
@@ -254,18 +283,46 @@ struct Capture final : AudioSource {
             throw std::runtime_error(opened.result.error.empty()
                                          ? "This provider cannot open a native capture bus"
                                          : opened.result.error);
-        if (!std::isfinite(opened.result.sampleRate) || opened.result.sampleRate < 8000 ||
-            opened.result.sampleRate > 384000)
-            throw std::runtime_error("Capture provider returned an invalid sample rate");
+        // Use the history's own bound so an accepted capture can go online.
+        if (!std::isfinite(opened.result.sampleRate) ||
+            opened.result.sampleRate < AudioHistory::kMinimumSampleRate ||
+            opened.result.sampleRate > AudioHistory::kMaximumSampleRate)
+            throw std::runtime_error("Capture provider returned an unsupported sample rate "
+                                     "(8000-192000 Hz)");
         sampleRate = opened.result.sampleRate;
+        // Blocks delivered while start() runs still count as progress, but the
+        // grace period begins only once the provider has actually started.
+        observedDeliveries = deliveries.load(std::memory_order_relaxed);
         auto started = backend->start();
         if (!started.ok)
             throw std::runtime_error(started.error);
+        progressNs = nowNs();
         connected = true;
         error.clear();
     }
+    // Control only. True when an open provider has delivered no block for the
+    // stall interval since start or its previous observed delivery. A provider
+    // that keeps stalling (for example, waiting on an absent external clock)
+    // is given 2, 4, 8, 16, then 32 s per reopen; any delivery resets that.
+    bool stalled(uint64_t now) noexcept {
+        if (!connected || !backend)
+            return false;
+        const auto delivered = deliveries.load(std::memory_order_relaxed);
+        if (delivered != observedDeliveries) {
+            observedDeliveries = delivered;
+            progressNs = now;
+            consecutiveStalls = 0;
+            return false;
+        }
+        const auto limit = kCaptureStallNs << std::min(consecutiveStalls, 4u);
+        if (now <= progressNs || now - progressNs < limit)
+            return false;
+        ++consecutiveStalls;
+        return true;
+    }
     static bool push(void* context, const singz::AudioInputBusBlock& block) noexcept {
         auto& self = *static_cast<Capture*>(context);
+        self.deliveries.fetch_add(1, std::memory_order_relaxed);
         const auto& metadata = block.capture;
         const bool available = metadata.streamGeneration != 0;
         const bool sourceValid = available &&
@@ -459,7 +516,8 @@ struct EstimatedOutputTimeline {
                    bool discontinuity) noexcept {
         if (!rawNs || rawNs >= UINT64_MAX - 10000000000ULL || !frames ||
             frames > singz::kAudioHostMaxFrames || frame > UINT64_MAX - frames ||
-            !std::isfinite(hz) || hz < 8000 || hz > 192000) {
+            !std::isfinite(hz) || hz < AudioHistory::kMinimumSampleRate ||
+            hz > AudioHistory::kMaximumSampleRate) {
             clear();
             return {rawNs, 0};
         }
@@ -472,7 +530,8 @@ struct EstimatedOutputTimeline {
         if (continuous) {
             start = projectedNs + static_cast<long double>(previousFrames) * 1e9L / previousHz;
             const auto error = static_cast<long double>(rawNs) - start;
-            reset = !std::isfinite(start) || start <= 0 || start >= UINT64_MAX - 10000000000ULL ||
+            reset = !std::isfinite(start) || start <= 0 ||
+                    start >= static_cast<long double>(UINT64_MAX - 10000000000ULL) ||
                     std::abs(error) > 2000000.0L;
             if (!reset) {
                 // Acquire device drift quickly after an explicit boundary,
@@ -624,6 +683,7 @@ struct AudioRuntime::Impl {
     std::atomic<bool> stopping{false};
     std::atomic<uint64_t> rendered{0}, failures{0}, deadlines{0}, previewUntilNs{0}, lateFrames{0},
         skippedFrames{0}, reanchors{0};
+    std::atomic<bool> rendererRealtime{false};
     std::thread renderer;
     uint64_t lastRetry{0};
     Impl(HostFactory host, InputFactory input)
@@ -636,29 +696,35 @@ struct AudioRuntime::Impl {
         active.reset();
     }
     void run() noexcept {
+        rendererRealtime.store(requestRendererRealtime(), std::memory_order_relaxed);
         RenderSchedule schedule({rate, blockFrames, blockFrames, 4096});
         while (!stopping.load()) {
             const auto scheduled = schedule.step(nowNs());
-            auto scene = scenes.borrow();
-            if (scene && scheduled.valid) {
-                lateFrames.fetch_add(scheduled.lateFrames, std::memory_order_relaxed);
-                skippedFrames.fetch_add(scheduled.skippedFrames, std::memory_order_relaxed);
-                reanchors.fetch_add(scheduled.reanchored, std::memory_order_relaxed);
-                deadlines.fetch_add((scheduled.skippedFrames + blockFrames - 1) / blockFrames,
-                                    std::memory_order_relaxed);
-                for (uint32_t index = 0; index < scheduled.blocks; ++index) {
-                    const auto frame = scheduled.firstFrame + uint64_t(index) * blockFrames;
-                    const auto preview =
-                        nowNs() < previewUntilNs.load(std::memory_order_relaxed) ? UINT32_MAX : 0u;
-                    const auto result = scene->render(frame, blockFrames, preview);
-                    rendered.fetch_add(blockFrames, std::memory_order_relaxed);
-                    failures.fetch_add(result.failedGraphs + result.failedSinks,
-                                       std::memory_order_relaxed);
-                    // Publication deadline is the tagged interval's end. A
-                    // late wake still catches up contiguously; an actually
-                    // late publication remains counted, never hidden.
-                    if (nowNs() > frameNs(frame + blockFrames, rate))
-                        deadlines.fetch_add(1, std::memory_order_relaxed);
+            {
+                // Release the borrow before sleeping so control can reclaim
+                // a retired scene without waiting for the next wake.
+                auto scene = scenes.borrow();
+                if (scene && scheduled.valid) {
+                    lateFrames.fetch_add(scheduled.lateFrames, std::memory_order_relaxed);
+                    skippedFrames.fetch_add(scheduled.skippedFrames, std::memory_order_relaxed);
+                    reanchors.fetch_add(scheduled.reanchored, std::memory_order_relaxed);
+                    deadlines.fetch_add((scheduled.skippedFrames + blockFrames - 1) / blockFrames,
+                                        std::memory_order_relaxed);
+                    for (uint32_t index = 0; index < scheduled.blocks; ++index) {
+                        const auto frame = scheduled.firstFrame + uint64_t(index) * blockFrames;
+                        const auto preview =
+                            nowNs() < previewUntilNs.load(std::memory_order_relaxed) ? UINT32_MAX
+                                                                                     : 0u;
+                        const auto result = scene->render(frame, blockFrames, preview);
+                        rendered.fetch_add(blockFrames, std::memory_order_relaxed);
+                        failures.fetch_add(result.failedGraphs + result.failedSinks,
+                                           std::memory_order_relaxed);
+                        // Publication deadline is the tagged interval's end. A
+                        // late wake still catches up contiguously; an actually
+                        // late publication remains counted, never hidden.
+                        if (nowNs() > frameNs(frame + blockFrames, rate))
+                            deadlines.fetch_add(1, std::memory_order_relaxed);
+                    }
                 }
             }
             if (scheduled.valid && scheduled.nextWakeNs > nowNs())
@@ -907,6 +973,10 @@ void AudioRuntime::poll() {
         if (input->backend && input->backend->takeFailure(error)) {
             input->close();
             input->error = error;
+        } else if (input->stalled(now)) {
+            // Same recovery as a reported failure: close here, reopen on retry.
+            input->close();
+            input->error = "Capture provider stopped delivering audio";
         }
         if (!input->connected && retry) {
             try {
@@ -944,6 +1014,7 @@ RuntimeStatus AudioRuntime::status() const {
     result.renderLateFrames = impl_->lateFrames.load();
     result.renderSkippedFrames = impl_->skippedFrames.load();
     result.renderReanchors = impl_->reanchors.load();
+    result.rendererRealtime = impl_->rendererRealtime.load(std::memory_order_relaxed);
     if (!impl_->active)
         return result;
     for (const auto& [uid, input] : impl_->active->inputs) {

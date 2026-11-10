@@ -59,6 +59,10 @@ struct RuntimeStatus {
     bool active{false}, restored{false};
     uint64_t renderedFrames{0}, graphFailures{0}, missedDeadlines{0};
     uint64_t renderLateFrames{0}, renderSkippedFrames{0}, renderReanchors{0};
+    // Linux only: the mix renderer obtained SCHED_FIFO just below zCore's ALSA
+    // I/O workers. False means inherited scheduling (for example, no
+    // RLIMIT_RTPRIO), a non-Linux host, or a renderer that has not started.
+    bool rendererRealtime{false};
     std::vector<EndpointStatus> inputs, outputs;
     std::vector<AudioMeterSnapshot> buses;
     std::vector<BusTelemetry> devices;
