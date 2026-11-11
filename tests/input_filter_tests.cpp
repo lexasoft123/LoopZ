@@ -230,7 +230,20 @@ void mixedPhaseAcrossEndpointRates() {
         }
     }
     std::printf("Mixed linear input phase across 8..192 kHz: maximum residual %.9f\n", worst);
-    assert(worst < .00001);
+    // The sum of the two reads cancels exactly only if both resample the same
+    // signal at the same instant, so what remains has two parts:
+    //  * Harness floor, 9.99216e-6: measured with zCore's exact per-frame
+    //    reader, so it is set by how the test places and stores its samples
+    //    (integer-nanosecond timestamps, float storage), not by the resampler.
+    //  * Reader difference: the phase-table reader matches the exact one to
+    //    129 dB or better below the signal (zCore routing phase-table tests),
+    //    and the sum has two readers, so at most 2 * .2 * 10^(-129/20) = 1.4e-7.
+    // Together 1.013e-5; the limit rounds up to 1.02e-5 (observed 1.0005e-5 on
+    // Linux x64, 9.9996e-6 on arm64). That is about 86 dB below the signal, so
+    // precision loss or a mismatch between the two reads still fails here
+    // (weights rounded to 2^-17 give 3.2e-5). A filter error common to both
+    // reads cancels in this sum and is not caught by this test.
+    assert(worst < .0000102);
 }
 } // namespace
 int main() {
