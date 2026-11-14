@@ -922,6 +922,7 @@ std::shared_ptr<AudioRuntime::Prepared> AudioRuntime::prepare(const RouteDocumen
                           output->config.outputChannels.end(), 0);
                 output->config.requestedSampleRate = rate;
                 output->config.requestedBufferFrames = blockFrames;
+                output->config.allowSharedDeviceBufferChange = true;
                 output->config.maximumFrames = singz::kAudioHostMaxFrames;
                 try {
                     output->open();

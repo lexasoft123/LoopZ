@@ -57,6 +57,7 @@ inline singz::AudioHostConfig config(const std::string& uid, uint32_t channels, 
     singz::AudioHostConfig result;
     result.outputDeviceUid = uid;
     result.requestedBufferFrames = bufferFrames;
+    result.allowSharedDeviceBufferChange = bufferFrames != 0;
     if (input)
         result.inputDeviceUid = uid;
     for (uint32_t channel = 0; channel < channels; ++channel) {

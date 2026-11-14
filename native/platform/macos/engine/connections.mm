@@ -141,6 +141,7 @@ void EngineConnections::poll(uint64_t now) {
                 config.outputDeviceUid = config_.monitorUID;
                 config.outputChannels = {0, 1};
                 config.requestedBufferFrames = loopz::kBlock;
+                config.allowSharedDeviceBufferChange = true;
                 const auto opened = monitorHost_->open(config, Monitor::render, &monitor_);
                 ok = opened.ok && monitorHost_->start().ok;
                 error = opened.message;
