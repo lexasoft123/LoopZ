@@ -100,6 +100,15 @@
     padding: 16px 0;
     border-bottom: 1px solid var(--sz-line);
 }
+.lz-setting-row-stacked {
+    flex-direction: column;
+    align-items: stretch;
+}
+.lz-setting-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
 .lz-setting-row > div:first-child {
     flex: 1;
     min-width: 0;

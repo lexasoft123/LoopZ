@@ -346,9 +346,9 @@
         "Обслуживание ненадолго остановит маршрутизацию LoopZ, затем восстановит сохранённые миксы. Закройте приложения, использующие звук LoopZ. macOS запросит права администратора.",
         "维护会短暂停止 LoopZ 路由，然后恢复保存的混音。继续前请关闭使用 LoopZ 音频的应用。macOS 将请求管理员授权。"
     ],
-    "Allow LoopZ in System Settings → General → Login Items & Extensions, then try again.": [
-        "Разрешите LoopZ в «Системные настройки → Основные → Объекты входа и расширения» и повторите попытку.",
-        "在“系统设置 → 通用 → 登录项与扩展”中允许 LoopZ，然后重试。"
+    "Allow LoopZ in System Settings → General → Login Items & Extensions. Setup continues automatically once you do.": [
+        "Разрешите LoopZ в «Системные настройки → Основные → Объекты входа и расширения». Настройка продолжится автоматически.",
+        "在“系统设置 → 通用 → 登录项与扩展”中允许 LoopZ。允许后将自动继续设置。"
     ],
     "Finish audio setup": ["Завершить настройку звука", "完成音频设置"],
     "Audio components installed. Choose Finish audio setup to activate the driver.": [

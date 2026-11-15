@@ -209,8 +209,22 @@ void refreshInstallation(std::shared_ptr<Worker> state, uint64_t now) {
             const auto state = _worker;
             NSString* action = body[@"action"] ?: @"install";
             if ((body.count != 2 && body.count != 3) || (body.count == 3 && !body[@"action"]) ||
-                ![@[ @"install", @"update", @"repair", @"activate" ] containsObject:action]) {
+                ![@[ @"install", @"update", @"repair", @"activate", @"status" ]
+                    containsObject:action]) {
                 reply(nil, @"Invalid audio maintenance request");
+                return;
+            }
+            if ([action isEqual:@"status"]) {
+                // Read-only helper-registration check: never take the install
+                // lock, and never force an installation re-probe.
+                dispatch_async(state->setupQueue, ^{
+                    @autoreleasepool {
+                        NSDictionary* result = requestAudioMaintenance(action);
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            reply(result, nil);
+                        });
+                    }
+                });
                 return;
             }
             if (state->installingAudio.exchange(true)) {
