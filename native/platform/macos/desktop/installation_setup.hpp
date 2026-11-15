@@ -19,6 +19,7 @@ struct InstallationSnapshot {
     bool maintenanceAvailable{false};
     std::string maintenanceUnavailableReason;
     bool activationRequired{false};
+    bool migrationPending{false};
 };
 using InstallationProbe = std::function<InstallationSnapshot()>;
 struct InstallationPaths {
@@ -35,6 +36,7 @@ InstallationProbe makeInstallationProbe(InstallationPaths paths, InstallationCod
 struct ProductionInstallationPaths {
     InstallationPaths components;
     std::filesystem::path app, expectedApp, support, preferredEngine;
+    std::filesystem::path document{};
 };
 using InstallationDigest = std::function<std::string(const std::filesystem::path&)>;
 InstallationProbe makeProductionInstallationProbe(ProductionInstallationPaths paths,

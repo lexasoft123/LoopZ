@@ -84,9 +84,11 @@ export function AudioSetup({ state, transport, refresh }) {
             setPendingActivation(result.activationRequired === true);
             setDetail(
                 t(
-                    result.activationRequired
-                        ? "Audio components installed. Choose Finish audio setup to activate the driver."
-                        : "Audio components verified. Reconnecting your saved mixes…",
+                    result.migrationPending
+                        ? "Engine migration is pending consent verification. Your saved mixes keep using the current Engine."
+                        : result.activationRequired
+                          ? "Audio components installed. Choose Finish audio setup to activate the driver."
+                          : "Audio components verified. Reconnecting your saved mixes…",
                 ),
             );
             await transport({ version: 1, operation: "retry-session" });
@@ -131,6 +133,13 @@ export function AudioSetup({ state, transport, refresh }) {
                                 state.installation?.maintenanceUnavailableReason
                             ] ||
                                 "This copy of LoopZ is incomplete. Download the full LoopZ release and replace this copy.",
+                        )}
+                    </p>
+                )}
+                {state.installation?.migrationPending && !detail && (
+                    <p role="status">
+                        {t(
+                            "Engine migration is pending consent verification. Your saved mixes keep using the current Engine.",
                         )}
                     </p>
                 )}

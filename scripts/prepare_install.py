@@ -10,7 +10,7 @@ import re
 import shutil
 import subprocess
 
-from engine_location import ENGINE_EXECUTABLE
+from engine_location import installed_engine_executable
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(allow_abbrev=False)
@@ -159,7 +159,7 @@ daemon = {
 agent = {
     "Label": "com.lexasoft.loopz.engine",
     "ProgramArguments": [
-        ENGINE_EXECUTABLE,
+        installed_engine_executable(),
         *engine_args,
     ],
     "RunAtLoad": True,

@@ -1,5 +1,6 @@
 #include "../../native/platform/macos/desktop/installation_setup.hpp"
 #include "../../native/platform/macos/desktop/engine_job.hpp"
+#include "../../native/platform/macos/desktop/engine_migration.hpp"
 #include <cassert>
 #include <cstdio>
 #include <fstream>
@@ -208,6 +209,15 @@ void productionRecoveryStates() {
         assert(probe().components[2].detail.find("interrupted") != std::string::npos);
         fs::remove(support / marker);
     }
+    paths.document = f.root / "routes.json";
+    std::ofstream(paths.document) << R"({"devices":[{"bindings":[{"kind":"application"}]}]})";
+    auto pending = probe();
+    assert(pending.migrationPending);
+    assert([installationJSON(pending)[@"migrationPending"] isEqual:@YES]);
+    for (const auto& component : pending.components)
+        assert(component.state == InstallationState::Installed);
+    std::ofstream(paths.document) << R"({"devices":[]})";
+    assert(!probe().migrationPending);
     assert(readEnginePath(paths.preferredEngine, paths.components.engine) == f.paths.engine);
     fs::create_directories(paths.preferredEngine.parent_path());
     for (int kind = 0; kind < 3; ++kind) {
@@ -226,6 +236,70 @@ void productionRecoveryStates() {
     fs::permissions(paths.preferredEngine / "Contents/MacOS/LoopZ Engine", fs::perms::owner_exec,
                     fs::perm_options::add);
     assert(readEnginePath(paths.preferredEngine, paths.components.engine) == paths.preferredEngine);
+    NSDictionary* appGraph = @{@"devices" : @[ @{@"bindings" : @[ @{@"kind" : @"application"} ]} ]};
+    assert(sessionEnginePath(appGraph, paths.preferredEngine, f.paths.engine, false) ==
+           f.paths.engine);
+    assert(sessionEnginePath(appGraph, paths.preferredEngine, f.paths.engine, true) ==
+           paths.preferredEngine);
+    std::ofstream(paths.document) << R"({"devices":[{"bindings":[{"kind":"application"}]}]})";
+    bool inspectedLegacy = false;
+    auto pendingWithBoth = makeProductionInstallationProbe(
+        paths,
+        [](const auto&, const auto&, bool) {
+            return true;
+        },
+        [](const auto&) {
+            return true;
+        },
+        [&](const auto& path) {
+            if (path == f.paths.engine)
+                inspectedLegacy = true;
+            return std::string("same");
+        })();
+    assert(pendingWithBoth.migrationPending && !pendingWithBoth.updateAvailable && inspectedLegacy);
+    fs::create_directories(paths.document.parent_path() / "Session");
+    const auto jobPath = paths.document.parent_path() / "Session/engine.plist";
+    NSDictionary* migratedJob = @{
+        @"ProgramArguments" :
+            @[ @((paths.preferredEngine / "Contents/MacOS/LoopZ Engine").c_str()) ]
+    };
+    NSData* migratedBytes =
+        [NSPropertyListSerialization dataWithPropertyList:migratedJob
+                                                   format:NSPropertyListBinaryFormat_v1_0
+                                                  options:0
+                                                    error:nil];
+    assert([migratedBytes writeToFile:@(jobPath.c_str()) atomically:YES]);
+    auto migratedAccount = probe();
+    assert(!migratedAccount.migrationPending &&
+           migratedAccount.components[0].state == InstallationState::Installed);
+    assert(sessionEnginePath(appGraph, paths.preferredEngine, f.paths.engine, false, migratedJob) ==
+           paths.preferredEngine);
+    fs::remove(jobPath);
+    for (int malformed = 0; malformed < 5; ++malformed) {
+        const auto alias = jobPath.parent_path() / "publish.tmp";
+        if (malformed == 0) {
+            std::ofstream empty(jobPath);
+        } else if (malformed == 1)
+            std::ofstream(jobPath) << std::string(65537, 'x');
+        else if (malformed == 2) {
+            std::ofstream(alias) << "linked";
+            fs::create_symlink(alias, jobPath);
+        } else if (malformed == 3) {
+            assert([migratedBytes writeToFile:@(jobPath.c_str()) atomically:YES]);
+            fs::create_hard_link(jobPath, alias);
+        } else
+            std::ofstream(jobPath) << "not a plist dictionary";
+        auto uncertain = probe();
+        assert(uncertain.components[0].state == InstallationState::Unknown);
+        assert(uncertain.maintenanceAvailable && !uncertain.migrationPending);
+        fs::remove(jobPath);
+        fs::remove(alias);
+    }
+
+    fs::remove(f.paths.engine / "Contents/MacOS/LoopZ Engine");
+    assert(legacyEnginePresent(f.paths.engine));
+    assert(sessionEnginePath(appGraph, paths.preferredEngine, f.paths.engine, false) ==
+           f.paths.engine);
     fs::remove_all(f.paths.engine);
     assert(probe().components[0].state == InstallationState::Installed);
     fs::remove_all(paths.preferredEngine);

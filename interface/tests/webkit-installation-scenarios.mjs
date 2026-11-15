@@ -59,7 +59,15 @@ data.installation.components.service = {state: "unknown", detail: "Retry the set
 await fixture(data);
 await until(() => text().includes("Could not check LoopZ setup"));
 check(!text().includes("Finish LoopZ setup"), "An unknown inspection does not claim a missing component");
+data.installation = ready();
+data.installation.migrationPending = true;
+await fixture(data);
+await until(() => !text().includes("Could not check LoopZ setup"));
+button("Settings").click();
+await until(() => text().includes("Engine migration is pending consent verification"));
+await new Promise(resolve => setTimeout(resolve, 250));
+check(!text().includes("LoopZ setup needs attention"), "Pending Engine consent verification is guidance without a setup error");
 const commands = await window.webkit.messageHandlers.fixture.postMessage({operation: "commands"});
-check(commands.length === 0, "Reviewing setup never edits routing, starts an installer or requests a permission");
-return {checks, snapshotContext: "Unknown installation check in a private fixture"};
+check(commands.every(command => command.operation === "updates"), "Reviewing setup sends only read-only update checks, never routing edits, installation or permission requests");
+return {checks, snapshotContext: "Pending Engine migration consent in a private fixture"};
 `;

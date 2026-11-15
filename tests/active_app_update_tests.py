@@ -12,10 +12,10 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import active_session
 from active_app_update import RoutingFileTransaction, deploy_active
 from active_session import contract, restored, RoutingSession, session_definition
 from desktop_install_tests import Host
-from engine_location import ENGINE_EXECUTABLE
 from install_transaction import files
 from update_active_apps import candidate_compatible, restore_desktop
 
@@ -330,6 +330,11 @@ class SessionIdentityTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
+        targets = patch.dict(
+            active_session.TARGETS, {active_session.ENGINE: self.root / "Engine.app"}
+        )
+        targets.start()
+        self.addCleanup(targets.stop)
         self.host = SimpleNamespace(
             uid=os.getuid(),
             domain=f"gui/{os.getuid()}",
@@ -348,7 +353,7 @@ class SessionIdentityTests(unittest.TestCase):
             "uid": os.getuid(),
             "startSeconds": 100,
             "startMicroseconds": 2,
-            "executable": ENGINE_EXECUTABLE,
+            "executable": self.definition["ProgramArguments"][0],
         }
 
         def run(*args, **kwargs):

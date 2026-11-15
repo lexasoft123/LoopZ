@@ -1,5 +1,25 @@
 # Install and update LoopZ
 
+Explicit Install/Update/Repair audio now stages the root-owned Engine at
+`/Library/Application Support/LoopZ/LoopZ Engine.app`. It verifies the staged
+signature and capabilities before stopping routing, backs up the user launchd
+job, and restores the prior installation on failure. Retry Repair audio resumes
+an interrupted transaction by restoring its saved files before retrying. The
+legacy `/Applications/LoopZ Engine.app` is removed only after verification and
+a check that other standard local accounts do not still reference it.
+Ordinary interface updates remain unprivileged and do not migrate the Engine.
+
+Saved application-capture graphs stay on the legacy path while real-Mac consent
+verification is pending; Settings shows this as pending, without a setup error.
+Install/Update/Repair still repairs or updates that legacy Engine in place and
+maintains the driver and broker. An interrupted update retains its recovery
+context until rollback finishes. If driver activation is needed, Settings offers
+Finish audio setup while retaining the prior Engine installation.
+The default-disabled `kMigrateApplicationCaptureGraphs` gate may be enabled only
+after read-only before/after TCC inspection and no-prompt capture acceptance.
+Microphone checks alone do not certify system-audio consent. These paths are
+fixture-tested; no new-path Engine has been installed by this change.
+
 ## Latest account-owned app update
 
 The installed app pair includes the capacity-transition and silent-meter optimizations, earlier

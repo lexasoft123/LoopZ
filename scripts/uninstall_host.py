@@ -29,6 +29,7 @@ JOBS = {
 IDENTITIES = {
     "desktop": "com.lexasoft.loopz.editor",
     "engine": "com.lexasoft.loopz.engine",
+    "legacyEngine": "com.lexasoft.loopz.engine",
     "driver": "com.lexasoft.loopz.driver",
     "routingDriver": "com.lexasoft.loopz.driver.routing",
     "loopz-routing-broker": "com.lexasoft.loopz.routing.broker",
@@ -148,12 +149,19 @@ class UninstallHost(DesktopHost):
         if sum(inventory[name] is not None for name in ("driver", "routingDriver")) != 1:
             raise RuntimeError("Removal requires exactly one installed driver slot")
         for name, identifier in IDENTITIES.items():
-            if inventory[name] is not None:
-                verify_code(TARGETS[name], identifier, requirement(identifier), name == "engine")
+            if inventory.get(name) is not None:
+                verify_code(
+                    TARGETS[name],
+                    identifier,
+                    requirement(identifier),
+                    name in {"engine", "legacyEngine"},
+                )
         for name, identifier in LEGACY_IDENTITIES.items():
             if inventory[name] is not None:
                 verify_legacy_code(TARGETS[name], identifier)
-        for name in ("desktop", "engine", "loopz-routing-install-check", "loopz-config"):
+        if inventory.get("engine") is None and inventory.get("legacyEngine") is None:
+            raise RuntimeError("A matching installed Engine is needed for guarded removal")
+        for name in ("desktop", "loopz-routing-install-check", "loopz-config"):
             if inventory[name] is None:
                 raise RuntimeError(
                     "A matching installed desktop/Engine and routing tools are needed for guarded removal"

@@ -8,12 +8,15 @@ import re
 import stat
 
 from desktop_files import DesktopFileTransaction
-from engine_location import ENGINE_TARGET
+from engine_location import lazy_installed_engine_path
 from install_transaction import check_ancestors, files
 
 TEAM = "USJ7H3X44X"
 NAMES = ("LoopZ.app", "LoopZ Engine.app")
-TARGETS = {"LoopZ.app": Path("/Applications/LoopZ.app"), "LoopZ Engine.app": ENGINE_TARGET}
+TARGETS = {
+    "LoopZ.app": Path("/Applications/LoopZ.app"),
+    "LoopZ Engine.app": lazy_installed_engine_path(),
+}
 IDENTIFIERS = {
     "LoopZ.app/Contents/MacOS/LoopZLogin": "com.lexasoft.loopz.login",
     "LoopZ.app": "com.lexasoft.loopz.editor",

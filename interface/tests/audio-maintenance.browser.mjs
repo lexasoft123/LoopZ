@@ -229,6 +229,26 @@ try {
             .getByRole("button", { name: "Repair audio", exact: true })
             .isDisabled(),
     );
+    fixture.installation.maintenanceAvailable = true;
+    fixture.installation.migrationPending = true;
+    await settings();
+    await page
+        .getByText(
+            "Engine migration is pending consent verification. Your saved mixes keep using the current Engine.",
+            { exact: true },
+        )
+        .waitFor();
+    assert.equal(
+        await page
+            .getByText("LoopZ setup needs attention", { exact: true })
+            .count(),
+        0,
+    );
+    await mkdir("../artifacts/engine-migration", { recursive: true });
+    await page.getByRole("dialog").screenshot({
+        path: "../artifacts/engine-migration/pending-chrome.png",
+        animations: "disabled",
+    });
     console.log(
         "PASS: native maintenance actions, approval, update, repair and explicit audio activation UI",
     );

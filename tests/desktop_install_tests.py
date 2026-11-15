@@ -18,10 +18,10 @@ from desktop_files import DesktopFileTransaction, identity, remove_at
 
 
 class EngineLocationTests(unittest.TestCase):
-    def test_dual_read_prefers_new_without_changing_install_target(self):
-        from engine_location import ENGINE_TARGET, LEGACY_ENGINE, read_engine_path
+    def test_dual_read_prefers_new_and_maintenance_targets_new(self):
+        from engine_location import ENGINE_TARGET, NEW_ENGINE, read_engine_path
 
-        self.assertEqual(ENGINE_TARGET, LEGACY_ENGINE)
+        self.assertEqual(ENGINE_TARGET, NEW_ENGINE)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             new, old = root / "new.app", root / "old.app"
@@ -46,6 +46,82 @@ class EngineLocationTests(unittest.TestCase):
             executable.write_text("fixture")
             executable.chmod(0o755)
             self.assertEqual(read_engine_path(new, old), new)
+
+    def test_existing_paths_include_legacy_and_damaged_real_bundles(self):
+        from engine_location import installed_engine_path
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            new, old = root / "new.app", root / "old.app"
+            self.assertEqual(installed_engine_path(new, old), new)
+            old.mkdir()
+            self.assertEqual(installed_engine_path(new, old), old)
+            new.symlink_to(old, target_is_directory=True)
+            self.assertEqual(installed_engine_path(new, old), old)
+            new.unlink()
+            new.mkdir()
+            self.assertEqual(installed_engine_path(new, old), new)
+
+    def test_account_job_wins_over_another_accounts_bundle(self):
+        from engine_location import installed_engine_path
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            new, old, job = root / "new.app", root / "old.app", root / "engine.plist"
+            new.mkdir()
+            old.mkdir()
+            for selected in (new, old):
+                job.write_bytes(
+                    plistlib.dumps(
+                        {"ProgramArguments": [str(selected / "Contents/MacOS/LoopZ Engine")]}
+                    )
+                )
+                self.assertEqual(installed_engine_path(new, old, job), selected)
+            old.rmdir()
+            job.write_bytes(
+                plistlib.dumps({"ProgramArguments": [str(old / "Contents/MacOS/LoopZ Engine")]})
+            )
+            self.assertEqual(installed_engine_path(new, old, job), old)
+            old.mkdir()
+            job.write_bytes(
+                plistlib.dumps({"ProgramArguments": [str(new / "Contents/MacOS/LoopZ Engine")]})
+            )
+            self.assertEqual(installed_engine_path(new, old, job), new)
+
+    def test_inventory_imports_do_not_probe_an_unknown_or_other_users_job(self):
+        import subprocess
+
+        program = """
+from unittest.mock import patch
+import engine_location
+with patch.object(engine_location, 'installed_engine_path', side_effect=AssertionError('job read at import')) as resolver:
+    import desktop_install, routing_install, install_local, driver_update, active_app_update
+    assert resolver.call_count == 0
+"""
+        subprocess.run(
+            [sys.executable, "-c", program],
+            cwd=Path(__file__).resolve().parents[1] / "scripts",
+            check=True,
+        )
+
+    def test_lazy_inventory_resolves_once_when_used(self):
+        import engine_location
+
+        with patch.object(
+            engine_location, "installed_engine_path", return_value=Path("/private/tmp/Engine.app")
+        ) as resolver:
+            path = engine_location.lazy_installed_engine_path()
+            self.assertEqual(resolver.call_count, 0)
+            self.assertEqual(path / "Contents", Path("/private/tmp/Engine.app/Contents"))
+            self.assertEqual(os.fspath(path), "/private/tmp/Engine.app")
+            self.assertEqual(resolver.call_count, 1)
+
+    def test_uninstall_inventory_retains_both_engine_paths(self):
+        import uninstall_policy
+        from engine_location import NEW_ENGINE, LEGACY_ENGINE
+
+        self.assertEqual(uninstall_policy.TARGETS["engine"], NEW_ENGINE)
+        self.assertEqual(uninstall_policy.TARGETS["legacyEngine"], LEGACY_ENGINE)
 
 
 class Guard:

@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import time
 
-from engine_location import ENGINE_EXECUTABLE
+from engine_location import installed_engine_executable
 
 
 def withdraw_devices(session):
@@ -29,10 +29,13 @@ def withdraw_devices(session):
         document.write_text('{"version":2,"devices":[]}\n')
         document.chmod(0o600)
         result = session.host.user_command(
-            ENGINE_EXECUTABLE,
-            "--routing-document", document,
-            "--installation-validation", "true",
-            "--seconds", "2",
+            installed_engine_executable(),
+            "--routing-document",
+            document,
+            "--installation-validation",
+            "true",
+            "--seconds",
+            "2",
             timeout=10,
         )
         states = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]

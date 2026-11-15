@@ -46,9 +46,11 @@ MicrophoneSetup productionMicrophoneSetup() {
     return [](const std::atomic<bool>& running) {
         // Reuse the fixed Developer ID identity/capability validation. Neither
         // the page nor the environment chooses a bundle, executable or argument.
-        productionSessionHost()->validateEngine();
+        const auto path = readEnginePath();
+        auto host = productionSessionHost(path);
+        host->validateEngine();
         return decodeMicrophoneSetup(sessionCommand(
-            {(readEnginePath() / "Contents/MacOS/LoopZ Engine").string(), "--request-microphone"},
+            {(path / "Contents/MacOS/LoopZ Engine").string(), "--request-microphone"},
             // Foreground Cocoa diagnostics must not contaminate stdout's JSON.
             std::chrono::seconds(65), &running, SessionCommandOutput::StandardOutput));
     };
