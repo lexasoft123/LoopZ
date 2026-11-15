@@ -298,6 +298,7 @@ AudioReadResult AudioHistory::readWithFilter(uint64_t firstHostNs, double rate,
     if (filter == ResamplingFilter::MinimumPhase && impl_->filter == filter)
         return readUsing(firstHostNs, rate, output, frames, cursor, {}, impl_->resampler);
     silence(output, frames);
+    cursor.observation.unavailable();
     if (impl_->diagnostics) {
         impl_->diagnostics->begin(frames);
         impl_->diagnostics->missing(AudioHistoryMissingReason::InvalidRequest, frames);
@@ -315,6 +316,7 @@ AudioHistory::readChannels(uint64_t firstHostNs, double rate, RoutingOutput outp
         resampler = nullptr;
     if (!resampler || selection.empty()) {
         silence(output, frames);
+        cursor.observation.unavailable();
         if (impl_->diagnostics) {
             impl_->diagnostics->begin(frames);
             impl_->diagnostics->missing(AudioHistoryMissingReason::InvalidRequest, frames);
@@ -332,6 +334,7 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
     if (self.diagnostics)
         self.diagnostics->begin(frames);
     const auto failed = [&](AudioHistoryMissingReason reason, bool online) {
+        cursor.observation.unavailable();
         if (self.diagnostics)
             self.diagnostics->missing(reason, frames);
         return AudioReadResult{frames, online};
@@ -380,6 +383,24 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
         return failed(AudioHistoryMissingReason::AnchorUnavailable, false);
     cursor = anchor;
     const auto clock = self.clock.snapshot();
+    // Sample publication AFTER the clock snapshot. An append between the old
+    // anchor cache and this snapshot must not fabricate a one-chunk low fill.
+    // If publication races both bounded attempts, mark telemetry unavailable;
+    // the existing audio/cache fallback below remains completely unchanged.
+    uint64_t observedEnd = 0;
+    uint32_t observedAppendFrames = 0;
+    bool observedCoherent = false;
+    for (unsigned attempt = 0; attempt < 2; ++attempt) {
+        const auto version = self.version.load();
+        if (!version || (version & 1))
+            continue;
+        observedAppendFrames = self.anchorFrames.load();
+        observedEnd = self.anchorFrame.load() + observedAppendFrames;
+        if (version == self.version.load() && self.generation.load() == generation) {
+            observedCoherent = true;
+            break;
+        }
+    }
     const auto nominal = std::bit_cast<double>(self.nominalBits.load());
     const auto through =
         firstHostNs + static_cast<uint64_t>(static_cast<long double>(frames - 1) * 1e9L / rate);
@@ -394,6 +415,14 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
         const auto ns = firstHostNs + whole;
         const auto fraction = elapsed - whole;
         const auto point = self.clock.locate(clock, ns, fraction, nominal, anchor.rate, through);
+        if (offset == 0) {
+            if (point.valid && observedCoherent)
+                cursor.observation.observe(generation, firstHostNs, observedEnd, point.frame,
+                                           point.offset, frames, point.rate, rate, self.capacity,
+                                           observedAppendFrames);
+            else
+                cursor.observation.unavailable();
+        }
         if (!point.valid) {
             ++missing;
             ++clockMissing;

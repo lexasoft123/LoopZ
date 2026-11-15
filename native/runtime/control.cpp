@@ -181,6 +181,24 @@ uint64_t generation(const JSON& value) {
 JSON reply(bool ok, const char* code, const std::string& detail = {}) {
     return {{"version", 1}, {"ok", ok}, {"code", code}, {"detail", text(detail)}};
 }
+JSON readObservation(const HistoryReadSnapshot& s) {
+    return {{"valid", s.valid},
+            {"outsideBand", s.outsideBand},
+            {"observations", std::to_string(s.observations)},
+            {"bandExits", std::to_string(s.bandExits)},
+            {"reanchors", std::to_string(s.reanchors)},
+            {"generationChanges", std::to_string(s.generationChanges)},
+            {"windowObservations", std::to_string(s.windowObservations)}, {"appendFrames", s.appendFrames},
+            {"headroomFrames", s.headroomFrames},
+            {"minimumFrames", s.minimumFrames},
+            {"maximumFrames", s.maximumFrames},
+            {"meanFrames", s.meanFrames},
+            {"acquisitionFrames", s.acquisitionFrames},
+            {"lowerBoundFrames", s.lowerBoundFrames},
+            {"upperBoundFrames", s.upperBoundFrames},
+            {"ratio", s.ratio},
+            {"acquisitionErrorFrames", s.headroomFrames - s.acquisitionFrames}};
+}
 JSON meter(const AudioMeterSnapshot& m) {
     JSON peak = JSON::array(), rms = JSON::array();
     for (uint32_t c = 0; c < m.channels; ++c) {
@@ -412,6 +430,7 @@ JSON Control::snapshot() {
             entries.push_back({{"id", source.id},
                                {"online", source.status.online},
                                {"missingFrames", std::to_string(source.status.missingFrames)},
+                               {"historyRead", readObservation(source.status.read)},
                                {"meter", meter(source.meter)}});
         buses.push_back({{"id", bus.id},
                          {"active", bus.active},
@@ -430,6 +449,7 @@ JSON Control::snapshot() {
              {"invalidBlocks", std::to_string(monitor.status.invalidBlocks)},
              {"missingFrames", std::to_string(monitor.status.missingFrames)},
              {"measuredOutputRate", monitor.status.measuredOutputRate},
+             {"historyRead", readObservation(monitor.status.read)},
              {"historyBudgetFrames",
               monitor.historyBudgetKnown ? JSON(monitor.historyDelayFrames) : JSON(nullptr)},
              {"historyBudgetKnown", monitor.historyBudgetKnown},

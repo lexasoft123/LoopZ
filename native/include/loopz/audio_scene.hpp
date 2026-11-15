@@ -1,6 +1,7 @@
 #pragma once
 
 #include <loopz/audio_meter.hpp>
+#include <loopz/history_read_observation.hpp>
 #include <loopz/route_document.hpp>
 
 #include <array>
@@ -18,6 +19,22 @@ struct AudioReadCursor {
     uint64_t frame{0}, hostNs{0}, generation{0};
     double rate{0};
     uint32_t frames{0};
+    HistoryReadObservation observation;
+    AudioReadCursor(uint64_t f = 0, uint64_t ns = 0, uint64_t gen = 0, double hz = 0,
+                    uint32_t count = 0)
+        : frame(f), hostNs(ns), generation(gen), rate(hz), frames(count) {}
+    // Copying/updating the anchor cache does not copy or reset the destination
+    // reader's observational state. A copy-constructed cursor is a NEW reader.
+    AudioReadCursor(const AudioReadCursor& other) noexcept
+        : AudioReadCursor(other.frame, other.hostNs, other.generation, other.rate, other.frames) {}
+    AudioReadCursor& operator=(const AudioReadCursor& other) noexcept {
+        frame = other.frame;
+        hostNs = other.hostNs;
+        generation = other.generation;
+        rate = other.rate;
+        frames = other.frames;
+        return *this;
+    }
 };
 struct AudioReadResult {
     uint32_t missingFrames;
@@ -114,6 +131,7 @@ struct SceneSourceStatus {
     uint64_t missingFrames{0};
     std::optional<ResamplingFilter> resamplingFilter{};
     std::optional<uint32_t> historyBudgetFrames{};
+    HistoryReadSnapshot read{};
 };
 struct SceneRenderResult {
     bool validBlock;

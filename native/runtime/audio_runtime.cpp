@@ -569,13 +569,14 @@ struct OutputProgram {
                   std::shared_ptr<const AudioSource> s, const singz::AudioHostStatus& status)
         : device(std::move(d)), monitor(std::move(m)), source(std::move(s)),
           budget(monitorBudget(status)),
-          program(source ? std::make_unique<MonitorProgram>(
-                               device, monitor, source,
-                               MonitorTiming{rate,
-                                             status.format.sampleRate > 0 ? status.format.sampleRate
-                                                                          : rate,
-                                             budget.total})
-                         : nullptr) {}
+          program(
+              source ? std::make_unique<MonitorProgram>(
+                           device, monitor, source,
+                           monitorTimingFromBudget(
+                               rate, status.format.sampleRate > 0 ? status.format.sampleRate : rate,
+                               budget.total, budget.queued, budget.period, budget.reserve,
+                               blockFrames))
+                     : nullptr) {}
 };
 // Estimated output timestamps are observations of a continuous device frame
 // counter, not commands to jump the source position every callback. Integrate

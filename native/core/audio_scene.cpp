@@ -430,6 +430,13 @@ SceneRenderResult AudioScene::render(uint64_t firstFrame, uint32_t frames,
                         std::array<float*, kMaximumRoutingChannels> planes;
                         const auto time =
                             frameNs(firstFrame + prefix - node.latency, impl_->timing.renderRate);
+                        // Fixed diagnostic band from existing lookback plus two
+                        // render quanta of scheduling phase; no latency control.
+                        const auto slack = uint64_t(2) * impl_->timing.blockFrames;
+                        input.binding.cursor->observation.bounds(
+                            node.latency > slack ? node.latency - slack : 0,
+                            std::min<uint64_t>(kCapacity, uint64_t(node.latency) + slack),
+                            static_cast<uint32_t>(slack), impl_->timing.renderRate);
                         auto output = suffix(input.scratch, prefix, planes);
                         std::optional<AudioReadResult> sparseRead;
                         if (nativeLevels) {
@@ -549,7 +556,9 @@ SceneSourceStatus AudioScene::sourceStatus(size_t device, size_t source) const n
     if (device >= impl_->devices.size() || source >= impl_->devices[device]->inputs.size())
         return {};
     const auto& input = *impl_->devices[device]->inputs[source];
-    return {input.online.load(), input.missing.load(), input.filter, input.budget};
+    return {input.online.load(), input.missing.load(), input.filter, input.budget,
+            input.binding.cursor ? input.binding.cursor->observation.snapshot()
+                                 : HistoryReadSnapshot{}};
 }
 bool AudioScene::deviceMeters(size_t device, AudioMeterSnapshot& output) const noexcept {
     return device < impl_->devices.size() && impl_->devices[device]->meter.read(output);

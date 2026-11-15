@@ -130,6 +130,13 @@ struct MonitorProgram::Impl {
         : timing(clock), source(std::move(bus)), inputChannels(device.routing.outputChannels),
           outputChannels(monitor.channels),
           graph(clock.outputRate, monitorRouting(device, monitor)), meter(monitor.channels) {
+        cursor.observation.bounds(
+            clock.maximumHeadroomFrames
+                ? clock.minimumHeadroomFrames
+                : (clock.delayFrames > 2 * kBlock ? clock.delayFrames - 2 * kBlock : 0),
+            clock.maximumHeadroomFrames ? clock.maximumHeadroomFrames
+                                        : std::min(kCapacity, clock.delayFrames + 2 * kBlock),
+            clock.maximumHeadroomFrames ? kBlock : 2 * kBlock, clock.renderRate);
         for (uint32_t channel = 0; channel < inputChannels; ++channel) {
             inputPlanes[channel] = input[channel].data();
             inputRead[channel] = input[channel].data();
@@ -161,9 +168,13 @@ bool MonitorProgram::meters(AudioMeterSnapshot& snapshot) const noexcept {
 }
 MonitorStatus MonitorProgram::status() const noexcept {
     const auto& self = *impl_;
-    return {self.callbacks.load(), self.missing.load(),
-            self.failures.load(),  self.invalid.load(),
-            self.online.load(),    std::bit_cast<double>(self.clockRateBits.load())};
+    return {self.callbacks.load(),
+            self.missing.load(),
+            self.failures.load(),
+            self.invalid.load(),
+            self.online.load(),
+            std::bit_cast<double>(self.clockRateBits.load()),
+            self.cursor.observation.snapshot()};
 }
 MonitorRenderResult MonitorProgram::render(uint64_t firstOutputHostNs, double outputRate,
                                            RoutingOutput output, uint32_t frames, uint64_t position,
