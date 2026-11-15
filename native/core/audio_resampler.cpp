@@ -25,7 +25,8 @@ uint32_t AudioResampler::read(ResamplePosition position, ResampleOutput output, 
     // alias forwards the provider directly, without copies, allocation or an
     // extra indirect call for each sample frame.
     return reader_.read({position.anchor, position.offset, position.sourceRate, position.outputRate,
-                         position.localClockCorrection, position.nominalSourceRate},
+                         position.localClockCorrection, position.nominalSourceRate,
+                         position.diagnostics},
                         {output.channels, output.capacityFrames, output.stride}, frames, provider,
                         context, availableFrames);
 }

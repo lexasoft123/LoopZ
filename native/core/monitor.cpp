@@ -1,3 +1,4 @@
+#include <loopz/audio_resampler.hpp>
 #include <loopz/monitor.hpp>
 #include <loopz/timeline.hpp>
 
@@ -18,7 +19,9 @@ void clear(RoutingOutput output, uint32_t frames) noexcept {
 }
 } // namespace
 MonitorBus::MonitorBus(uint32_t channels, uint32_t renderRate, uint32_t capacityFrames)
-    : history_(std::make_shared<AudioHistory>(channels, capacityFrames)), rate_(renderRate) {
+    : history_(std::make_shared<AudioHistory>(channels, capacityFrames,
+                                              ResamplingFilter::LinearPhase, true)),
+      rate_(renderRate) {
     if (!validRate(renderRate))
         throw std::invalid_argument("Invalid monitor bus rate");
 }
@@ -168,13 +171,14 @@ bool MonitorProgram::meters(AudioMeterSnapshot& snapshot) const noexcept {
 }
 MonitorStatus MonitorProgram::status() const noexcept {
     const auto& self = *impl_;
-    return {self.callbacks.load(),
-            self.missing.load(),
-            self.failures.load(),
-            self.invalid.load(),
-            self.online.load(),
-            std::bit_cast<double>(self.clockRateBits.load()),
-            self.cursor.observation.snapshot()};
+    MonitorStatus result{self.callbacks.load(), self.missing.load(),
+                         self.failures.load(), self.invalid.load(),
+                         self.online.load(), std::bit_cast<double>(self.clockRateBits.load()),
+                         self.cursor.observation.snapshot()};
+    if (const auto history = std::dynamic_pointer_cast<const AudioHistory>(self.source))
+        result.historyReads = history->readDiagnostics();
+    result.minimumLimiterGain = self.graph.minimumLimiterGain();
+    return result;
 }
 MonitorRenderResult MonitorProgram::render(uint64_t firstOutputHostNs, double outputRate,
                                            RoutingOutput output, uint32_t frames, uint64_t position,

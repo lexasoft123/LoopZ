@@ -1,3 +1,4 @@
+#include <loopz/runtime/estimated_output_timeline.hpp>
 #include <loopz/runtime/audio_runtime.hpp>
 #include <loopz/audio_history.hpp>
 #include <zcore/device/audio_input_callback_gate.h>
@@ -489,6 +490,7 @@ struct ClockedProgram {
     const VirtualDeviceDefinition device;
     RoutingGraph deviceGraph, monitorGraph;
     AudioMeter sourceMeter{2}, deviceMeter, monitorMeter;
+    zcore::routing::AudioEnergyMeter songEnergy, routingEnergy;
     std::array<std::array<float, blockFrames>, kMaximumRoutingChannels> raw{}, mixed{}, final{};
     std::array<float*, kMaximumRoutingChannels> rawPlanes{}, mixPlanes{}, finalPlanes{};
     std::array<const float*, kMaximumRoutingChannels> rawRead{}, mixRead{}, finalRead{};
@@ -532,12 +534,15 @@ struct ClockedProgram {
                 for (uint32_t c = 0; c < 2; ++c)
                     std::fill_n(raw[c].data(), count, 0.f);
             sourceMeter.publish({{rawRead.data(), 2}, blockFrames}, count);
+            songEnergy.observe({rawPlanes.data(), 2}, count, physical.sampleRate);
             bool chunk =
                 deviceGraph.render({inputs.data(), device.routing.sources.size()},
                                    {{mixPlanes.data(), device.routing.outputChannels}, blockFrames},
                                    count, block.outputFrame);
             const RoutingInput mix{{mixRead.data(), device.routing.outputChannels}, blockFrames};
             deviceMeter.publish(mix, count);
+            routingEnergy.observe({mixPlanes.data(), device.routing.outputChannels}, count,
+                                  physical.sampleRate);
             chunk &=
                 monitorGraph.render({&mix, 1}, {{finalPlanes.data(), monitorChannels}, blockFrames},
                                     count, block.outputFrame);
@@ -582,79 +587,15 @@ struct OutputProgram {
 // counter, not commands to jump the source position every callback. Integrate
 // each block with its chosen rate; steer only the next block's spacing toward
 // the observed clock. Hardware-certified timestamps bypass this estimator.
-struct EstimatedOutputTimeline {
-    struct Result {
-        uint64_t ns;
-        double hz;
-    };
-    long double projectedNs{0};
-    double previousHz{0}, nominalHz{0};
-    long double basePeriodNs{0};
-    uint64_t acquisitionFrames{0};
-    uint64_t previousFrame{0}, previousRawNs{0};
-    uint32_t previousFrames{0};
-    void clear() noexcept {
-        *this = {};
-    }
-    Result observe(uint64_t frame, uint64_t rawNs, uint32_t frames, double hz,
-                   bool discontinuity) noexcept {
-        if (!rawNs || rawNs >= UINT64_MAX - 10000000000ULL || !frames ||
-            frames > singz::kAudioHostMaxFrames || frame > UINT64_MAX - frames ||
-            !std::isfinite(hz) || hz < AudioHistory::kMinimumSampleRate ||
-            hz > AudioHistory::kMaximumSampleRate) {
-            clear();
-            return {rawNs, 0};
-        }
-        const bool continuous = projectedNs && !discontinuity && nominalHz == hz &&
-                                previousFrame <= UINT64_MAX - previousFrames &&
-                                frame == previousFrame + previousFrames && rawNs > previousRawNs;
-        long double start = rawNs;
-        double selectedHz = hz;
-        bool reset = !continuous;
-        if (continuous) {
-            start = projectedNs + static_cast<long double>(previousFrames) * 1e9L / previousHz;
-            const auto error = static_cast<long double>(rawNs) - start;
-            reset = !std::isfinite(start) || start <= 0 ||
-                    start >= static_cast<long double>(UINT64_MAX - 10000000000ULL) ||
-                    std::abs(error) > 2000000.0L;
-            if (!reset) {
-                // Acquire device drift quickly after an explicit boundary,
-                // then reject timestamp-observer jitter with a slow alpha-beta
-                // clock servo. Only sample spacing changes, never block phase.
-                const auto coefficient =
-                    acquisitionFrames < static_cast<uint64_t>(hz) ? 1.0L / 16 : 1.0L / 8192;
-                const auto alpha = std::min(.25L, coefficient * frames / 256);
-                const auto beta = alpha * alpha / 4;
-                const auto minimum = 1e9L / (hz * 1.005);
-                const auto maximum = 1e9L / (hz * .995);
-                basePeriodNs = std::clamp(basePeriodNs + beta * error / frames, minimum, maximum);
-                const auto period =
-                    std::clamp(basePeriodNs + alpha * error / frames, minimum, maximum);
-                selectedHz = std::clamp(static_cast<double>(1e9L / period), hz * .995, hz * 1.005);
-            }
-        }
-        if (reset) {
-            start = rawNs;
-            basePeriodNs = 1e9L / hz;
-            acquisitionFrames = 0;
-        }
-        if (acquisitionFrames < static_cast<uint64_t>(hz))
-            acquisitionFrames += frames;
-        projectedNs = start;
-        previousHz = selectedHz;
-        nominalHz = hz;
-        previousFrame = frame;
-        previousRawNs = rawNs;
-        previousFrames = frames;
-        return {static_cast<uint64_t>(start), selectedHz};
-    }
-};
+using detail::EstimatedOutputTimeline;
 struct Output {
     std::string uid, error;
     singz::AudioHost host;
     singz::AudioHostConfig config;
     RealtimePublication<OutputProgram> programs;
     EstimatedOutputTimeline estimatedTimeline;
+    std::atomic<uint64_t> selectedHzBits{0}, basePeriodBits{0}, phaseErrorBits{0};
+    zcore::routing::AudioEnergyMeter preAlsaEnergy;
     uint64_t previousClock{0}, previousStream{0}, previousRoute{0};
     const std::shared_ptr<singz::AudioInputCallbackGate> gate;
     explicit Output(std::string id, std::unique_ptr<singz::AudioHostBackend> backend,
@@ -679,8 +620,16 @@ struct Output {
                 std::fill_n(block.output[c], block.frames, 0.f);
             return true;
         }
-        if (program->clocked)
-            return program->clocked->render(block);
+        if (program->clocked) {
+            const auto valid = program->clocked->render(block);
+            self.selectedHzBits.store(std::bit_cast<uint64_t>(block.sampleRate),
+                                      std::memory_order_relaxed);
+            self.basePeriodBits.store(0, std::memory_order_relaxed);
+            self.phaseErrorBits.store(0, std::memory_order_relaxed);
+            self.preAlsaEnergy.observe({block.output, block.outputChannels}, block.frames,
+                                       block.sampleRate);
+            return valid;
+        }
         uint64_t ns =
             block.outputTimestampValid ? block.outputHostTimeNs : block.callbackHostTimeNs;
         double measuredRate = 0;
@@ -702,11 +651,19 @@ struct Output {
         self.previousClock = block.clockDomain;
         self.previousStream = block.streamGeneration;
         self.previousRoute = block.routeGeneration;
-        return program->program
-            ->render(ns, block.sampleRate,
-                     {{block.output, block.outputChannels}, block.maximumFrames}, block.frames,
-                     block.outputFrame, measuredRate)
-            .validBlock;
+        self.selectedHzBits.store(std::bit_cast<uint64_t>(measuredRate), std::memory_order_relaxed);
+        self.basePeriodBits.store(
+            std::bit_cast<uint64_t>(double(self.estimatedTimeline.basePeriodNs)),
+            std::memory_order_relaxed);
+        self.phaseErrorBits.store(
+            std::bit_cast<uint64_t>(double(self.estimatedTimeline.phaseErrorNs)),
+            std::memory_order_relaxed);
+        const auto result = program->program->render(
+            ns, block.sampleRate, {{block.output, block.outputChannels}, block.maximumFrames},
+            block.frames, block.outputFrame, measuredRate);
+        self.preAlsaEnergy.observe({block.output, block.outputChannels}, block.frames,
+                                   block.sampleRate);
+        return result.validBlock;
     }
     void open() {
         auto result = host.open(config, render, this);
@@ -1210,6 +1167,26 @@ RuntimeStatus AudioRuntime::status() const {
         endpoint.error = output->error;
         endpoint.connected = connected;
         endpoint.audio = audio;
+        endpoint.outputSelectedHz =
+            std::bit_cast<double>(output->selectedHzBits.load(std::memory_order_relaxed));
+        endpoint.outputBasePeriodNs =
+            std::bit_cast<double>(output->basePeriodBits.load(std::memory_order_relaxed));
+        endpoint.outputPhaseErrorNs =
+            std::bit_cast<double>(output->phaseErrorBits.load(std::memory_order_relaxed));
+        endpoint.preAlsaEnergy = output->preAlsaEnergy.snapshot();
+        if (auto published = output->programs.borrow()) {
+            if (published->program) {
+                const auto monitor = published->program->status();
+                endpoint.routingHistory = monitor.historyReads;
+                endpoint.minimumLimiterGain = monitor.minimumLimiterGain;
+            } else if (published->clocked) {
+                endpoint.deviceClockedSongEnergy = published->clocked->songEnergy.snapshot();
+                endpoint.deviceClockedRoutingEnergy = published->clocked->routingEnergy.snapshot();
+                endpoint.minimumLimiterGain = std::min(
+                    published->clocked->deviceGraph.minimumLimiterGain(),
+                    published->clocked->monitorGraph.minimumLimiterGain());
+            }
+        }
         result.outputs.push_back(std::move(endpoint));
         auto program = output->programs.borrow();
         if (program) {

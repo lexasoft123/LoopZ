@@ -94,6 +94,8 @@ struct MonitorStatus {
     bool sourceOnline{false};
     double measuredOutputRate{0};
     HistoryReadSnapshot read{};
+    AudioHistoryReadSnapshot historyReads{};
+    float minimumLimiterGain{1};
 };
 
 // Prepared on the control thread, one serial hardware callback owner. The

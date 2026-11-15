@@ -490,6 +490,18 @@ void estimatedOutputDoesNotModulateSines() {
             else
                 assert(residual < -55); // Old raw estimated anchors produce roughly -14/-10dBc.
         }
+        const auto diagnostics = engine.status().outputs[0];
+        assert(diagnostics.preAlsaEnergy.available && diagnostics.preAlsaEnergy.frames == 256);
+        assert(diagnostics.preAlsaEnergy.blocks == warmup + measured);
+        assert(diagnostics.preAlsaEnergy.rms > 0);
+        assert(diagnostics.routingHistory.enabled && diagnostics.routingHistory.reads > 0);
+        assert(diagnostics.minimumLimiterGain > 0 && diagnostics.minimumLimiterGain <= 1);
+        if (!hardware) {
+            assert(diagnostics.outputSelectedHz >= 48000 * .995 &&
+                   diagnostics.outputSelectedHz <= 48000 * 1.005);
+            assert(diagnostics.outputBasePeriodNs > 0 &&
+                   std::isfinite(diagnostics.outputPhaseErrorNs));
+        }
         if (ppm == 200 && !hardware)
             estimatedOutputBoundaryControls(hosts);
         assert(engine.status().outputs.size() == 1);
@@ -1040,6 +1052,16 @@ void deviceClockedNativeRouting() {
     assert(telemetry.devices[0].active && telemetry.devices[0].sources[0].status.online);
     assert(telemetry.devices[0].meter.peak[1] == .25f);
     assert(telemetry.devices[0].sources[0].meter.peak[0] == .125f);
+    const auto& directDiagnostics = telemetry.outputs[0];
+    assert(directDiagnostics.deviceClockedSongEnergy.available);
+    assert(directDiagnostics.deviceClockedSongEnergy.rms > 0);
+    assert(directDiagnostics.deviceClockedRoutingEnergy.available);
+    assert(directDiagnostics.deviceClockedRoutingEnergy.rms > 0);
+    assert(directDiagnostics.preAlsaEnergy.available && directDiagnostics.preAlsaEnergy.rms > 0);
+    assert(!directDiagnostics.routingHistory.enabled); // No history reader on the direct path.
+    assert(directDiagnostics.outputSelectedHz == 48000);
+    assert(directDiagnostics.outputBasePeriodNs == 0 && directDiagnostics.outputPhaseErrorNs == 0);
+    assert(directDiagnostics.minimumLimiterGain == 1);
     auto broken = document;
     broken.devices[0].monitors[0].deviceSelector = "broken";
     hosts->fail = true;

@@ -92,6 +92,7 @@ struct RoutingGraph::Impl {
     zdsp::PublishedGraphSnapshot snapshot{};
     zdsp::GraphRunner runner{};
     zdsp::RuntimeDiagnostics diagnostics{};
+    zdsp::ProcessorHandle limiterProcessor{};
     bool runnerInitialized{false};
     bool silent{false};
     std::vector<size_t> activeInputs;
@@ -139,6 +140,8 @@ struct RoutingGraph::Impl {
             throw std::runtime_error("Routing DSP processor capacity exhausted");
         const auto processor =
             createBuiltinProcessor(config, {state, static_cast<uint32_t>(stateBytes)});
+        if (kind == BuiltinNodeKind::SafetyLimiter)
+            limiterProcessor = processor;
         nodes.push_back({id,
                          {1, static_cast<uint64_t>(kind)},
                          1,
@@ -358,6 +361,14 @@ RoutingGraph::RoutingGraph(double sampleRate, const RoutingConfiguration& config
     : impl_(std::make_unique<Impl>(sampleRate, configuration)) {}
 RoutingGraph::~RoutingGraph() = default;
 
+float RoutingGraph::minimumLimiterGain() const noexcept {
+    if (impl_->sumGraph)
+        return impl_->sumGraph->minimumLimiterGain();
+    if (!impl_->limiterProcessor.state)
+        return 1.f;
+    const auto meter = zdsp::builtinMeter(impl_->limiterProcessor);
+    return meter.peak > .98f ? .98f / meter.peak : 1.f;
+}
 bool RoutingGraph::render(std::span<const RoutingInput> sources, RoutingOutput output,
                           uint32_t frames, uint64_t position) noexcept {
     using namespace zdsp;

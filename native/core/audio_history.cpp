@@ -33,6 +33,10 @@ struct ReadDiagnostics {
     std::atomic<uint64_t> unpublishedSampleReads{0}, expiredSampleReads{0}, racingSampleReads{0},
         absentSampleReads{0};
     std::atomic<uint64_t> maximumVerifiedClockStepNs{0}, verifiedClockSteps{0};
+    std::atomic<uint64_t> minimumRequested{0}, maximumRequested{0};
+    std::atomic<int64_t> readMinusWriteFrames{0};
+    zcore::routing::ResampleDiagnostics resampler;
+    zcore::routing::AudioEnergyMeter inputEnergy, outputEnergy;
 
     void begin(uint32_t frames) noexcept {
         reads.fetch_add(1, std::memory_order_relaxed);
@@ -100,10 +104,15 @@ struct AudioHistory::Impl {
     struct ReadContext {
         const Impl* history;
         std::span<const uint32_t> channels;
+        mutable uint64_t minimum{UINT64_MAX}, maximum{0};
     };
     static ResampleFrame readFrame(const void* context, uint64_t position,
                                    std::span<float> values) noexcept {
         const auto& read = *static_cast<const ReadContext*>(context);
+        if (read.history->diagnostics) {
+            read.minimum = std::min(read.minimum, position);
+            read.maximum = std::max(read.maximum, position);
+        }
         return read.history->frame(position, values, read.channels);
     }
 };
@@ -133,6 +142,13 @@ bool AudioHistory::append(RoutingInput input, uint32_t frames, uint64_t firstHos
         return false;
     if (self.cursor > UINT64_MAX - self.capacity - frames)
         return false;
+    if (self.diagnostics) {
+        std::array<float*, kMaximumRoutingChannels> diagnosticPlanes{};
+        for (size_t channel = 0; channel < input.channels.size(); ++channel)
+            diagnosticPlanes[channel] = const_cast<float*>(input.channels[channel]);
+        self.diagnostics->inputEnergy.observe({diagnosticPlanes.data(), input.channels.size()},
+                                              frames, nominalRate);
+    }
     self.version.fetch_add(1);
     bool discontinuity = false;
     if (self.previousNs) {
@@ -264,6 +280,13 @@ AudioHistoryReadSnapshot AudioHistory::readDiagnostics() const noexcept {
         return {};
     AudioHistoryReadSnapshot result;
     result.enabled = true;
+    result.publishedEnd = counters->publishedEnd.load(std::memory_order_relaxed);
+    result.minimumRequested = counters->minimumRequested.load(std::memory_order_relaxed);
+    result.maximumRequested = counters->maximumRequested.load(std::memory_order_relaxed);
+    result.readMinusWriteFrames = counters->readMinusWriteFrames.load(std::memory_order_relaxed);
+    result.resampler = counters->resampler.snapshot();
+    result.inputEnergy = counters->inputEnergy.snapshot();
+    result.outputEnergy = counters->outputEnergy.snapshot();
     result.reads = counters->reads.load(std::memory_order_relaxed);
     result.requestedFrames = counters->requestedFrames.load(std::memory_order_relaxed);
     result.maximumVerifiedClockStepNs =
@@ -439,7 +462,8 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
         for (size_t channel = 0; channel < output.channels.size(); ++channel)
             planes[channel] = output.channels[channel] + offset;
         missing += resampler.read(
-            {point.frame, point.offset, point.rate, rate, point.localClockCorrection, nominal},
+            {point.frame, point.offset, point.rate, rate, point.localClockCorrection, nominal,
+             self.diagnostics ? &self.diagnostics->resampler : nullptr},
             {{planes.data(), output.channels.size()}, output.capacityFrames - offset}, count,
             Impl::readFrame, &readContext,
             availableFrames.empty() ? std::span<uint8_t>{}
@@ -457,6 +481,18 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
         self.diagnostics->missing(AudioHistoryMissingReason::ResamplingSupport,
                                   missing - clockMissing);
     }
+    if (self.diagnostics && readContext.minimum != UINT64_MAX) {
+        self.diagnostics->minimumRequested.store(readContext.minimum, std::memory_order_relaxed);
+        self.diagnostics->maximumRequested.store(readContext.maximum, std::memory_order_relaxed);
+        const auto end = self.diagnostics->publishedEnd.load(std::memory_order_relaxed);
+        const auto delta =
+            readContext.maximum >= end
+                ? static_cast<int64_t>(std::min<uint64_t>(readContext.maximum - end, INT64_MAX))
+                : -static_cast<int64_t>(std::min<uint64_t>(end - readContext.maximum, INT64_MAX));
+        self.diagnostics->readMinusWriteFrames.store(delta, std::memory_order_relaxed);
+    }
+    if (self.diagnostics)
+        self.diagnostics->outputEnergy.observe(output.channels, frames, rate);
     return {missing, true};
 }
 } // namespace loopz

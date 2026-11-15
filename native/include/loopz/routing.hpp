@@ -63,6 +63,9 @@ class RoutingGraph {
 
     // Single audio-thread caller. Invalid blocks fail to silence within the
     // declared output capacity. Sources are ordered as in the configuration.
+    // Control-thread snapshot: minimum instantaneous sample gain from the
+    // memoryless hard clipper in the latest block (one means no clipping).
+    float minimumLimiterGain() const noexcept;
     bool render(std::span<const RoutingInput> sources, RoutingOutput output, uint32_t frames,
                 uint64_t position) noexcept;
 

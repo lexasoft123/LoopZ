@@ -2,6 +2,8 @@
 
 #include <loopz/audio_scene.hpp>
 #include <array>
+#include <zcore/routing/audio_resampler.h>
+#include <zcore/routing/audio_diagnostics.h>
 
 namespace loopz {
 enum class ResamplingFilter;
@@ -27,6 +29,10 @@ struct AudioHistoryReadSnapshot {
         absentSampleReads{};
     // Host-clock phase steps with an authoritative continuous sample counter.
     uint64_t maximumVerifiedClockStepNs{}, verifiedClockSteps{};
+    uint64_t publishedEnd{}, minimumRequested{}, maximumRequested{};
+    int64_t readMinusWriteFrames{};
+    zcore::routing::ResampleDiagnosticsSnapshot resampler{};
+    zcore::routing::AudioEnergySnapshot inputEnergy{}, outputEnergy{};
 };
 
 struct AudioHistoryStatus {
