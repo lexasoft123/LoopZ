@@ -490,6 +490,18 @@ void estimatedOutputDoesNotModulateSines() {
             else
                 assert(residual < -55); // Old raw estimated anchors produce roughly -14/-10dBc.
         }
+        const auto diagnostics = engine.status().outputs[0];
+        assert(diagnostics.preAlsaEnergy.available && diagnostics.preAlsaEnergy.frames == 256);
+        assert(diagnostics.preAlsaEnergy.blocks == warmup + measured);
+        assert(diagnostics.preAlsaEnergy.rms > 0);
+        assert(diagnostics.routingHistory.enabled && diagnostics.routingHistory.reads > 0);
+        assert(diagnostics.minimumLimiterGain > 0 && diagnostics.minimumLimiterGain <= 1);
+        if (!hardware) {
+            assert(diagnostics.outputSelectedHz >= 48000 * .995 &&
+                   diagnostics.outputSelectedHz <= 48000 * 1.005);
+            assert(diagnostics.outputBasePeriodNs > 0 &&
+                   std::isfinite(diagnostics.outputPhaseErrorNs));
+        }
         if (ppm == 200 && !hardware)
             estimatedOutputBoundaryControls(hosts);
         assert(engine.status().outputs.size() == 1);

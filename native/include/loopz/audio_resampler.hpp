@@ -18,6 +18,7 @@ struct ResamplePosition {
     // Optional fixed source format for minimum-phase filter shape. Sample
     // positions still follow sourceRate; the linear-phase reader ignores it.
     double nominalSourceRate{0};
+    zcore::routing::ResampleDiagnostics* diagnostics{nullptr};
 };
 // Alias the shared provider result so callbacks cross no per-frame trampoline.
 using ResampleFrame = zcore::routing::ResampleFrame;

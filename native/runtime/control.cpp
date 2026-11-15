@@ -1,3 +1,4 @@
+#include <loopz/audio_diagnostics_json.hpp>
 #include <loopz/runtime/control.hpp>
 #include <array>
 #include <algorithm>
@@ -220,6 +221,18 @@ JSON endpoint(const EndpointStatus& e) {
                      {"externalRoute", reportedFrames(e.audio.latency.externalRouteFrames)}}},
                    {"periodFrames", reportedFrames(e.audio.format.nominalBufferFrames)},
                    {"streamGeneration", std::to_string(e.audio.streamGeneration)}};
+    result["audioDiagnostics"] = {
+        {"servo",
+         {{"selectedHz", e.outputSelectedHz},
+          {"basePeriodNs", e.outputBasePeriodNs},
+          {"phaseErrorNs", e.outputPhaseErrorNs}}},
+        {"routingHistory", historyDiagnosticsJSON(e.routingHistory)},
+        {"stages",
+         {{"routingInput", energyJSON(e.routingHistory.inputEnergy)},
+          {"routingResamplerOut", energyJSON(e.routingHistory.outputEnergy)},
+          {"preAlsa", energyJSON(e.preAlsaEnergy)}}},
+        {"limiter",
+         {{"kind", "memoryless-hard-clip"}, {"minimumSampleGain", e.minimumLimiterGain}}}};
     if (e.captureTelemetry) {
         result["xruns"] = nullptr;
         result["renderedFrames"] = nullptr;
@@ -276,6 +289,7 @@ JSON endpoint(const EndpointStatus& e) {
             {"absentSampleReads", std::to_string(reads.absentSampleReads)},
             {"maximumVerifiedClockStepNs", std::to_string(reads.maximumVerifiedClockStepNs)},
             {"verifiedClockSteps", std::to_string(reads.verifiedClockSteps)}};
+        result["audioDiagnostics"]["captureHistory"] = historyDiagnosticsJSON(reads);
         result["historyClock"] = {
             {"projected", e.captureHistoryProjected},
             {"maximumRawPhaseStepNs", std::to_string(e.captureMaximumRawPhaseStepNs)},

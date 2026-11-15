@@ -26,6 +26,10 @@ struct EndpointStatus {
     // only the history's explicitly estimated received-PCM timeline.
     bool captureHistoryProjected{false};
     uint64_t captureMaximumRawPhaseStepNs{0}, captureMaximumProjectionErrorNs{0};
+    double outputSelectedHz{}, outputBasePeriodNs{}, outputPhaseErrorNs{};
+    zcore::routing::AudioEnergySnapshot preAlsaEnergy{};
+    AudioHistoryReadSnapshot routingHistory{};
+    float minimumLimiterGain{1};
 };
 // Borrowed native input reader. The runtime owns its capture; this value owns
 // no hardware and has no implicit release/destructor. Stop and join every

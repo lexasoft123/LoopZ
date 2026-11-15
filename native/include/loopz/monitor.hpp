@@ -80,6 +80,8 @@ struct MonitorStatus {
     uint64_t callbacks{0}, missingFrames{0}, graphFailures{0}, invalidBlocks{0};
     bool sourceOnline{false};
     double measuredOutputRate{0};
+    AudioHistoryReadSnapshot historyReads{};
+    float minimumLimiterGain{1};
 };
 
 // Prepared on the control thread, one serial hardware callback owner. The
