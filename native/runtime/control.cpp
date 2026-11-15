@@ -422,6 +422,7 @@ JSON Control::snapshot() {
         monitors.push_back(
             {{"device", monitor.device},
              {"monitor", monitor.monitor},
+             {"clockDomain", monitor.deviceClocked ? "device" : "history"},
              {"meter", meter(monitor.meter)},
              {"sourceOnline", monitor.status.sourceOnline},
              {"callbacks", std::to_string(monitor.status.callbacks)},

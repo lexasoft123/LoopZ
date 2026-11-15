@@ -9,6 +9,24 @@
 #include <string_view>
 
 namespace loopz::runtime {
+// Optional native producer driven by ONE physical output. Control switches
+// owner only after output callbacks are drained. Implementations must also
+// drain their fallback producer before admitting a different owner; nullptr
+// selects the timestamped-history producer. These methods never allocate or
+// wait in renderClocked(); ownership/lifecycle changes run on control.
+// renderClocked MUST reject a token other than the current owner without
+// advancing the producer: retired Outputs can still call it until reclaimed.
+// All AudioSource history-read methods MUST return silent/offline while a
+// device driver owns the clock. An old CPU scene can call read between owner
+// selection and new scene publication; those calls must not consume the song.
+// Admission to history reads must be drained by selectClockDriver as well.
+// Explicit diagnostic/history taps are separate from these scene-read methods.
+class DeviceClockSource : public AudioSource {
+  public:
+    virtual void selectClockDriver(const void* owner) const noexcept = 0;
+    virtual bool renderClocked(const void* owner,
+                               const singz::AudioHostRenderBlock& block) const noexcept = 0;
+};
 struct EndpointStatus {
     std::string id, error;
     bool connected{false};
@@ -52,6 +70,7 @@ struct MonitorTelemetry {
     AudioMeterSnapshot meter{};
     MonitorStatus status{};
     bool historyBudgetKnown{false};
+    bool deviceClocked{false};
     uint32_t historyDelayFrames{0}, queuedOutputFrames{0}, outputPeriodFrames{0},
         filterFutureFrames{0}, schedulerReserveFrames{0};
 };
