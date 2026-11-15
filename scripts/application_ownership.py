@@ -7,7 +7,8 @@ REMOVAL_APPLICATIONS = frozenset({"desktop", "engine"})
 def application_owners(uid, gid):
     if type(uid) is not int or uid < 501 or type(gid) is not int or gid < 0:
         raise ValueError("Applications require a regular console account")
-    return {name: (uid, gid) for name in APPLICATIONS}
+    # The Engine is a protected installed component. Missing overrides stay root-owned.
+    return {"LoopZ.app": (uid, gid)}
 
 
 def snapshot_owner(component, node, system_owner, user_components):

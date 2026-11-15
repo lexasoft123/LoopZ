@@ -5,6 +5,7 @@ import json
 from pathlib import Path, PurePosixPath
 import plistlib
 
+from engine_location import ENGINE_TARGET
 from install_transaction import FileTransaction, check_ancestors, compatible_driver, files
 from prepare_routing_install import COMPONENTS, SERVICE, stable_requirement, component_identities
 
@@ -16,7 +17,7 @@ NAMES = (*COMPONENTS, "routing-service.json", DAEMON, AGENT)
 TARGETS = {name: SUPPORT / name for name in NAMES}
 TARGETS.update(
     {
-        "LoopZ Engine.app": Path("/Applications/LoopZ Engine.app"),
+        "LoopZ Engine.app": ENGINE_TARGET,
         "LoopZRoutingAudio.driver": Path("/Library/Audio/Plug-Ins/HAL/LoopZRoutingAudio.driver"),
         "loopz-probe": SUPPORT / "routing/loopz-probe",
         DAEMON: Path("/Library/LaunchDaemons") / DAEMON,

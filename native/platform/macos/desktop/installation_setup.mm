@@ -1,3 +1,4 @@
+#include "engine_location.hpp"
 #include "installation_setup.hpp"
 #import <Security/Security.h>
 #include <sys/stat.h>
@@ -167,10 +168,12 @@ InstallationProbe makeInstallationProbe(InstallationPaths paths, InstallationCod
             throw std::invalid_argument("Installation checks require absolute paths");
     return [paths = std::move(paths), code = std::move(code), daemon = std::move(daemon)] {
         InstallationSnapshot result;
-        result.components[0] = checkedCode(
-            paths.engine, true, "com.lexasoft.loopz.engine", false,
-            "Install LoopZ Engine alongside the LoopZ app to start routing.",
-            "LoopZ Engine could not be verified. Reinstall the matching LoopZ apps.", code);
+        result.components[0] = checkedCode(paths.engine, true, "com.lexasoft.loopz.engine", false,
+                                           "LoopZ Engine is missing or damaged. Use Install audio "
+                                           "components or Repair audio in Settings.",
+                                           "LoopZ Engine is missing or damaged. Use Install audio "
+                                           "components or Repair audio in Settings.",
+                                           code);
         auto legacy = entry(paths.legacyDriver, true, "", "");
         const auto routing = entry(paths.routingDriver, true, "", "");
         // Initial routing installation can preserve an independently active
@@ -190,9 +193,10 @@ InstallationProbe makeInstallationProbe(InstallationPaths paths, InstallationCod
                 "LoopZ could not check its audio driver. Retry the setup check."};
         } else if (legacy.state != InstallationState::Missing &&
                    routing.state != InstallationState::Missing) {
-            result.components[1] = {InstallationState::Invalid,
-                                    "More than one LoopZ audio driver is present. Repair the audio "
-                                    "components before installing another copy."};
+            result.components[1] = {
+                InstallationState::Invalid,
+                "More than one LoopZ audio driver is present. Contact support for help "
+                "removing the older installation and preserving your audio setup."};
         } else {
             const bool useLegacy = legacy.state != InstallationState::Missing;
             result.components[1] = checkedCode(
@@ -225,44 +229,76 @@ InstallationProbe makeInstallationProbe(InstallationPaths paths, InstallationCod
         return result;
     };
 }
-InstallationProbe productionInstallationProbe() {
-    auto probe = makeInstallationProbe({"/Applications/LoopZ Engine.app",
-                                        "/Library/Audio/Plug-Ins/HAL/LoopZAudio.driver",
-                                        "/Library/Audio/Plug-Ins/HAL/LoopZRoutingAudio.driver",
-                                        "/Library/Application Support/LoopZ/loopz-routing-broker",
-                                        "/Library/LaunchDaemons/com.lexasoft.loopz.routing.plist"},
-                                       signedCode, daemonDefinition);
-    return [probe = std::move(probe)] {
-        auto result = probe();
-        result.activationRequired =
-            fs::exists("/Library/Application Support/LoopZ/restart-required") ||
-            fs::exists("/Library/Application Support/LoopZ/activation-required.plist");
-        const fs::path app = NSBundle.mainBundle.bundlePath.UTF8String ?: "";
-        const auto payload = app / "Contents/Resources/AudioComponents";
-        result.maintenanceAvailable =
-            app == "/Applications/LoopZ.app" &&
-            fs::is_regular_file(app / "Contents/Library/Helpers/LoopZSetup") &&
-            fs::is_directory(payload);
+InstallationProbe makeProductionInstallationProbe(ProductionInstallationPaths paths,
+                                                  InstallationCodeCheck code,
+                                                  InstallationDaemonCheck daemon,
+                                                  InstallationDigest digest) {
+    return [paths, code, daemon, digest] {
+        auto components = paths.components;
+        components.engine = readEnginePath(paths.preferredEngine, components.engine);
+        auto result = makeInstallationProbe(components, code, daemon)();
+        if (!readableEngineBundle(paths.preferredEngine) &&
+            fs::symlink_status(paths.preferredEngine).type() != fs::file_type::not_found &&
+            result.components[0].state != InstallationState::Installed)
+            result.components[0].state = InstallationState::Invalid;
+        result.activationRequired = fs::exists(paths.support / "restart-required") ||
+                                    fs::exists(paths.support / "activation-required.plist");
+        const auto payload = paths.app / "Contents/Resources/AudioComponents";
+        if (paths.app != paths.expectedApp)
+            result.maintenanceUnavailableReason = "wrong-location";
+        else if (!fs::is_regular_file(paths.app / "Contents/Library/Helpers/LoopZSetup"))
+            result.maintenanceUnavailableReason = "missing-helper";
+        else if (!fs::is_directory(payload))
+            result.maintenanceUnavailableReason = "missing-payload";
+        // Keep reason codes/messages in sync with AudioSetup.jsx unavailableMessages.
+        // A healthy separate routing slot remains operational; only maintenance is unavailable.
+        if (fs::symlink_status(components.routingDriver).type() != fs::file_type::not_found)
+            result.maintenanceUnavailableReason = "separate-driver";
+        result.maintenanceAvailable = result.maintenanceUnavailableReason.empty();
+        if (result.components[0].state == InstallationState::Missing ||
+            result.components[0].state == InstallationState::Invalid)
+            result.components[0].detail =
+                result.maintenanceAvailable ? "LoopZ Engine is missing or damaged. Use Install "
+                                              "audio components or Repair audio in Settings."
+                : result.maintenanceUnavailableReason == "wrong-location"
+                    ? "Move LoopZ to Applications to maintain audio components."
+                : result.maintenanceUnavailableReason == "separate-driver"
+                    ? "This separate routing driver layout cannot be maintained in-app. Contact "
+                      "support before changing audio components."
+                    : "This copy of LoopZ is incomplete. Download the full LoopZ release and "
+                      "replace this copy.";
         if (result.maintenanceAvailable) {
             for (const auto& pair : std::array<std::pair<fs::path, fs::path>, 3>{
-                     {{payload / "LoopZ Engine.app", "/Applications/LoopZ Engine.app"},
-                      {payload / "LoopZAudio.driver",
-                       "/Library/Audio/Plug-Ins/HAL/LoopZAudio.driver"},
-                      {payload / "loopz-routing-broker",
-                       "/Library/Application Support/LoopZ/loopz-routing-broker"}}}) {
-                NSData* bundled = codeDigest(pair.first);
-                NSData* installed = codeDigest(pair.second);
-                if (bundled && installed && ![bundled isEqual:installed])
+                     {{payload / "LoopZ Engine.app", components.engine},
+                      {payload / "LoopZAudio.driver", components.legacyDriver},
+                      {payload / "loopz-routing-broker", components.broker}}}) {
+                const auto bundled = digest(pair.first), installed = digest(pair.second);
+                if (!bundled.empty() && !installed.empty() && bundled != installed)
                     result.updateAvailable = true;
             }
         }
-        if (fs::exists("/Library/Application Support/LoopZ/maintenance.plist") ||
-            fs::exists("/Library/Application Support/LoopZ/maintenance-session.plist"))
+        if (fs::exists(paths.support / "maintenance.plist") ||
+            fs::exists(paths.support / "maintenance-session.plist"))
             result.components[2] = {
                 InstallationState::Invalid,
                 "An interrupted audio update needs recovery. Choose Repair audio in Settings."};
         return result;
     };
+}
+InstallationProbe productionInstallationProbe() {
+    return makeProductionInstallationProbe(
+        {{legacyEnginePath, "/Library/Audio/Plug-Ins/HAL/LoopZAudio.driver",
+          "/Library/Audio/Plug-Ins/HAL/LoopZRoutingAudio.driver",
+          "/Library/Application Support/LoopZ/loopz-routing-broker",
+          "/Library/LaunchDaemons/com.lexasoft.loopz.routing.plist"},
+         NSBundle.mainBundle.bundlePath.UTF8String ?: "",
+         "/Applications/LoopZ.app",
+         "/Library/Application Support/LoopZ",
+         newEnginePath},
+        signedCode, daemonDefinition, [](const fs::path& path) -> std::string {
+            NSData* value = codeDigest(path);
+            return value ? std::string(static_cast<const char*>(value.bytes), value.length) : "";
+        });
 }
 NSDictionary* installationJSON(const InstallationSnapshot& snapshot) {
     NSMutableDictionary* components = [NSMutableDictionary dictionary];
@@ -279,6 +315,7 @@ NSDictionary* installationJSON(const InstallationSnapshot& snapshot) {
         @"components" : components,
         @"updateAvailable" : @(snapshot.updateAvailable),
         @"maintenanceAvailable" : @(snapshot.maintenanceAvailable),
+        @"maintenanceUnavailableReason" : text(snapshot.maintenanceUnavailableReason),
         @"activationRequired" : @(snapshot.activationRequired)
     };
 }

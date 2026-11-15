@@ -55,6 +55,12 @@ if(LOOPZ_BUILD_MACOS_BACKEND)
   add_test(NAME loopz-routing-timing-check COMMAND "${Python3_EXECUTABLE}"
     "${PROJECT_SOURCE_DIR}/tests/platform/macos/routing_timing_check_tests.py"
     "$<TARGET_FILE:loopz-engine>")
+  add_executable(loopz-session-host-inspect-tests session_host_inspect_tests.mm)
+  loopz_macos_objc(loopz-session-host-inspect-tests)
+  loopz_test_target(loopz-session-host-inspect-tests)
+  target_link_libraries(loopz-session-host-inspect-tests PRIVATE loopz_desktop_session)
+  add_test(NAME loopz-session-host-inspect COMMAND loopz-session-host-inspect-tests)
+
   add_executable(loopz-session-tests session_tests.cpp)
   loopz_test_target(loopz-session-tests)
   target_link_libraries(loopz-session-tests PRIVATE loopz_desktop_session)

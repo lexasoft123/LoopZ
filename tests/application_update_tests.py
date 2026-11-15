@@ -56,7 +56,7 @@ def root_view(owned):
 
 class OwnershipTests(unittest.TestCase):
     def test_policy_cannot_change_backend_or_nested_owners(self):
-        self.assertEqual(set(application_owners(501, 20)), APPLICATIONS)
+        self.assertEqual(application_owners(501, 20), {"LoopZ.app": (501, 20)})
         for uid in [0, 202, 500, True, "501"]:
             with self.assertRaises(ValueError):
                 application_owners(uid, 20)
@@ -88,7 +88,7 @@ class OwnershipTests(unittest.TestCase):
                 transaction.apply()
                 for name in names:
                     for path in [targets[name], targets[name] / "payload"]:
-                        self.assertEqual(path.stat().st_uid, 501 if name in APPLICATIONS else 0)
+                        self.assertEqual(path.stat().st_uid, 501 if name == "LoopZ.app" else 0)
                 transaction.rollback()
                 transaction.finish()
                 for name in names:
@@ -98,6 +98,33 @@ class OwnershipTests(unittest.TestCase):
                     DesktopFileTransaction(
                         stage, targets, names, owners={"LoopZAudio.driver": (501, 20)}
                     )
+
+    def test_privileged_engine_promotion_preserves_original_user_owner_on_rollback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            stage = root / "stage"
+            stage.mkdir(mode=0o700)
+            destination = root / "installed"
+            destination.mkdir()
+            engine = "LoopZ Engine.app"
+            source, target = stage / engine, destination / engine
+            source.mkdir()
+            target.mkdir()
+            (source / "payload").write_text("new")
+            (target / "payload").write_text("original")
+            original = {path: path.stat().st_ino for path in (target, target / "payload")}
+            owned = {inode: (501, 20) for inode in original.values()}
+            with root_view(owned):
+                transaction = DesktopFileTransaction(stage, {engine: target}, (engine,))
+                transaction.prepare()
+                transaction.apply()
+                self.assertEqual(target.stat().st_uid, 0)
+                transaction.rollback()
+                transaction.finish()
+                for path, inode in original.items():
+                    self.assertEqual(path.stat().st_ino, inode)
+                    self.assertEqual((path.stat().st_uid, path.stat().st_gid), (501, 20))
+                self.assertEqual((target / "payload").read_text(), "original")
 
     def test_root_uninstall_and_durable_recovery_accept_user_apps_only(self):
         with tempfile.TemporaryDirectory() as tmp:

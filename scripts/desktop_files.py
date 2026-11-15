@@ -165,6 +165,8 @@ class DesktopFileTransaction(FileTransaction):
                             != self.expected[backup]
                         ):
                             raise RuntimeError("Application backup changed before restoration")
+                        # Restore the original inode and its owner/group, never the
+                        # promotion policy (which may now require a root-owned Engine).
                         os.rename(backup.name, target.name, src_dir_fd=parent, dst_dir_fd=parent)
                     os.fsync(parent)
             except Exception as error:

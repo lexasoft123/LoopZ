@@ -13,6 +13,9 @@ void SessionSupervisor::poll(uint64_t now, bool allowLaunch) {
     nextAttempt_ = now + 5000;
     try {
         const auto job = host_->inspect();
+        if (job == SessionJob::KnownOld)
+            throw std::runtime_error(
+                "An older LoopZ Engine job is running. Use Repair audio in Settings.");
         if (job == SessionJob::Foreign)
             throw std::runtime_error("Another engine job occupies LoopZ’s session. Quit that "
                                      "session before starting this one.");

@@ -62,7 +62,7 @@ export function installationCondition(state) {
         return {
             kind: "driver-connection",
             heading: "Audio driver is not connected",
-            detail: "The audio components are installed. Retry the audio connection in Settings. Your saved graph stays intact.",
+            detail: "The audio components are installed. Open Settings and choose Retry audio connection. Your saved graph stays intact.",
         };
     }
     return null;

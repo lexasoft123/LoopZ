@@ -4,12 +4,13 @@ import hashlib
 import json
 from pathlib import Path
 
+from engine_location import ENGINE_TARGET
 from uninstall_sessions import validate_session_preservation
 
 SUPPORT = Path("/Library/Application Support/LoopZ")
 TARGETS = {
     "desktop": Path("/Applications/LoopZ.app"),
-    "engine": Path("/Applications/LoopZ Engine.app"),
+    "engine": ENGINE_TARGET,
     "driver": Path("/Library/Audio/Plug-Ins/HAL/LoopZAudio.driver"),
     "routingDriver": Path("/Library/Audio/Plug-Ins/HAL/LoopZRoutingAudio.driver"),
     "routingDaemon": Path("/Library/LaunchDaemons/com.lexasoft.loopz.routing.plist"),

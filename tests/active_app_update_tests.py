@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from active_app_update import RoutingFileTransaction, deploy_active
 from active_session import contract, restored, RoutingSession, session_definition
 from desktop_install_tests import Host
+from engine_location import ENGINE_EXECUTABLE
 from install_transaction import files
 from update_active_apps import candidate_compatible, restore_desktop
 
@@ -347,7 +348,7 @@ class SessionIdentityTests(unittest.TestCase):
             "uid": os.getuid(),
             "startSeconds": 100,
             "startMicroseconds": 2,
-            "executable": "/Applications/LoopZ Engine.app/Contents/MacOS/LoopZ Engine",
+            "executable": ENGINE_EXECUTABLE,
         }
 
         def run(*args, **kwargs):
