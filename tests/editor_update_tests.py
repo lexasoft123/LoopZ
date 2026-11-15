@@ -17,6 +17,7 @@ import editor_update
 import update_editor
 import manage_editor_update
 from editor_update import EDITOR, ENGINE, EditorUpdateHost, PassiveSessionGuard, deploy_editor
+from engine_location import ENGINE_TARGET, ENGINE_EXECUTABLE
 from install_transaction import files
 from desktop_install_tests import Host
 
@@ -249,7 +250,7 @@ class NativeHostPolicyTests(unittest.TestCase):
             if args[0] == "/bin/ps":
                 return SimpleNamespace(
                     returncode=0,
-                    stdout="501 123 Mon Oct 20 /Applications/LoopZ Engine.app/Contents/MacOS/LoopZ Engine",
+                    stdout=f"501 123 Mon Oct 20 {ENGINE_EXECUTABLE}",
                     stderr="",
                 )
             if args[-1].endswith(".session"):
@@ -260,9 +261,9 @@ class NativeHostPolicyTests(unittest.TestCase):
         with patch.object(
             editor_update,
             "executable",
-            return_value="/Applications/LoopZ Engine.app/Contents/MacOS/LoopZ Engine",
+            return_value=ENGINE_EXECUTABLE,
         ):
-            result = editor_update.session_generations(host, Path("/Applications/LoopZ Engine.app"))
+            result = editor_update.session_generations(host, ENGINE_TARGET)
         self.assertIn("123", result["com.lexasoft.loopz.session"])
         self.assertTrue(all("bootout" not in call and "bootstrap" not in call for call in calls))
 
@@ -280,7 +281,7 @@ class NativeHostPolicyTests(unittest.TestCase):
             returncode=1, stdout="", stderr="Not privileged"
         )
         with self.assertRaisesRegex(RuntimeError, "could not be inspected"):
-            editor_update.session_generations(host, Path("/Applications/LoopZ Engine.app"))
+            editor_update.session_generations(host, ENGINE_TARGET)
 
     def test_unknown_engine_process_cannot_pass_the_guard(self):
         host = SimpleNamespace(uid=501, domain="gui/501")
@@ -289,7 +290,7 @@ class NativeHostPolicyTests(unittest.TestCase):
         )
         with patch.object(editor_update, "executable", return_value="/unrelated/program"):
             with self.assertRaisesRegex(RuntimeError, "unrecognized process"):
-                editor_update.session_generations(host, Path("/Applications/LoopZ Engine.app"))
+                editor_update.session_generations(host, ENGINE_TARGET)
 
 
 class LoginPreservationTests(unittest.TestCase):

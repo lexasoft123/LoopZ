@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import { chromium } from "playwright-core";
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
@@ -153,6 +154,62 @@ try {
         ),
     );
     assert(calls.some((request) => request.operation === "retry-session"));
+    fixture.installation.maintenanceAvailable = false;
+    fixture.installation.maintenanceUnavailableReason = "missing-payload";
+    fixture.installation.components.engine = { state: "missing" };
+    await settings();
+    await page
+        .getByText(
+            "This copy of LoopZ is incomplete. Download the full LoopZ release and replace this copy.",
+            { exact: true },
+        )
+        .waitFor();
+    assert(
+        await page
+            .getByRole("button", { name: "Repair audio", exact: true })
+            .isDisabled(),
+    );
+    await mkdir("../artifacts/audio-maintenance", { recursive: true });
+    await page.waitForTimeout(350);
+    await page.screenshot({
+        path: "../artifacts/audio-maintenance/missing-payload.png",
+        animations: "disabled",
+    });
+    fixture.installation.maintenanceAvailable = true;
+    fixture.installation.components.engine = { state: "installed" };
+    fixture.snapshot.restoration = { phase: "waiting-for-driver" };
+    await settings();
+    const beforeRetry = calls.filter(
+        (request) => request.operation === "retry-session",
+    ).length;
+    await page
+        .getByRole("button", { name: "Retry audio connection", exact: true })
+        .click();
+    assert(
+        calls.filter((request) => request.operation === "retry-session")
+            .length > beforeRetry,
+    );
+    fixture.installation.maintenanceAvailable = false;
+    fixture.installation.maintenanceUnavailableReason = "separate-driver";
+    fixture.snapshot.restoration = { phase: "restored" };
+    await settings();
+    await page
+        .getByText(
+            "This separate routing driver layout cannot be maintained in-app. Contact support before changing audio components.",
+            { exact: true },
+        )
+        .waitFor();
+    assert.equal(
+        await page
+            .getByText("LoopZ setup needs attention", { exact: true })
+            .count(),
+        0,
+    );
+    assert(
+        await page
+            .getByRole("button", { name: "Repair audio", exact: true })
+            .isDisabled(),
+    );
     console.log(
         "PASS: native maintenance actions, approval, update, repair and explicit audio activation UI",
     );

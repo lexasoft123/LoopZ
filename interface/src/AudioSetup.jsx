@@ -61,6 +61,18 @@ export function AudioSetup({ state, transport, refresh }) {
             setBusy(false);
         }
     };
+    // Keep reason codes/messages in sync with installation_setup.mm.
+    const unavailableMessages = {
+        "wrong-location":
+            "Move LoopZ to Applications to maintain audio components.",
+        "missing-helper":
+            "This copy of LoopZ is missing its setup helper. Download the full LoopZ release and replace this copy.",
+        "missing-payload":
+            "This copy of LoopZ is incomplete. Download the full LoopZ release and replace this copy.",
+        "separate-driver":
+            "This separate routing driver layout cannot be maintained in-app. Contact support before changing audio components.",
+    };
+    const waiting = state.snapshot?.restoration?.phase === "waiting-for-driver";
     return (
         <div className="lz-setting-row">
             <div>
@@ -79,12 +91,29 @@ export function AudioSetup({ state, transport, refresh }) {
                 {!available && (
                     <p>
                         {t(
-                            "Move the complete LoopZ download to Applications to maintain audio components.",
+                            unavailableMessages[
+                                state.installation?.maintenanceUnavailableReason
+                            ] ||
+                                "This copy of LoopZ is incomplete. Download the full LoopZ release and replace this copy.",
                         )}
                     </p>
                 )}
                 {detail && <p role="status">{detail}</p>}
             </div>
+            {waiting && (
+                <Button
+                    disabled={busy}
+                    onClick={async () => {
+                        await transport({
+                            version: 1,
+                            operation: "retry-session",
+                        });
+                        await refresh();
+                    }}
+                >
+                    {t("Retry audio connection")}
+                </Button>
+            )}
             {approvalRequired && (
                 <Button
                     onClick={() =>

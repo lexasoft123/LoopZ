@@ -5,7 +5,7 @@
 #include <string>
 
 namespace loopz::macos {
-enum class SessionJob { Missing, Managed, Foreign };
+enum class SessionJob { Missing, Managed, KnownOld, Foreign };
 struct SessionStatus {
     bool managed{false};
     std::string detail;

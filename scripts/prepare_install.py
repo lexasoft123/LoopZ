@@ -10,6 +10,8 @@ import re
 import shutil
 import subprocess
 
+from engine_location import ENGINE_EXECUTABLE
+
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(allow_abbrev=False)
 parser.add_argument("--engine-args-json", default='["--tone", "--seconds", "120"]')
@@ -157,7 +159,7 @@ daemon = {
 agent = {
     "Label": "com.lexasoft.loopz.engine",
     "ProgramArguments": [
-        "/Applications/LoopZ Engine.app/Contents/MacOS/LoopZ Engine",
+        ENGINE_EXECUTABLE,
         *engine_args,
     ],
     "RunAtLoad": True,

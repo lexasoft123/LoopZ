@@ -1,3 +1,4 @@
+#include "engine_location.hpp"
 #include <loopz/macos/audio_host_identity.hpp>
 #include "audio_maintenance.hpp"
 #include "maintenance_files.hpp"
@@ -30,7 +31,7 @@ namespace fs = std::filesystem;
 using namespace std::chrono_literals;
 const fs::path support = "/Library/Application Support/LoopZ";
 const fs::path driver = "/Library/Audio/Plug-Ins/HAL/LoopZAudio.driver";
-const fs::path engine = "/Applications/LoopZ Engine.app";
+const fs::path engine = installedEngineTarget;
 const fs::path daemon = "/Library/LaunchDaemons/com.lexasoft.loopz.routing.plist";
 constexpr auto brokerLabel = "system/com.lexasoft.loopz.routing";
 constexpr auto sessionName = "com.lexasoft.loopz.session";
@@ -342,6 +343,18 @@ struct Session {
             @"StandardOutPath" : @"/dev/null",
             @"StandardErrorPath" : @"/dev/null"
         };
+        // Read either known path, but never rewrite/migrate it implicitly.
+        NSArray* storedArguments = expectedJob[@"ProgramArguments"];
+        fs::path jobEngine = engine;
+        if ([storedArguments isKindOfClass:NSArray.class] && storedArguments.count &&
+            [storedArguments[0] isEqual:text(newEnginePath / "Contents/MacOS/LoopZ Engine")]) {
+            jobEngine = newEnginePath;
+            NSMutableDictionary* alternate = [canonical mutableCopy];
+            NSMutableArray* arguments = [canonical[@"ProgramArguments"] mutableCopy];
+            arguments[0] = text(jobEngine / "Contents/MacOS/LoopZ Engine");
+            alternate[@"ProgramArguments"] = arguments;
+            canonical = alternate;
+        }
         require([expectedJob isEqual:canonical],
                 "A different background session uses LoopZ's name.");
         if (!loaded)
@@ -359,7 +372,7 @@ struct Session {
                 [lines
                     containsObject:[@"program = "
                                        stringByAppendingString:text(
-                                                                   engine /
+                                                                   jobEngine /
                                                                    "Contents/MacOS/LoopZ Engine")]],
             "A different background session uses LoopZ's name.");
         const auto first = [lines indexOfObject:@"arguments = {"];
@@ -856,8 +869,7 @@ NSDictionary* maintainAudioComponents(const fs::path& app, bool allowAudioActiva
         transaction.promote();
         filesPromoted = true;
         for (const auto& entry : plan)
-            protectAudioTree(entry.target, entry.target == engine ? console.st_uid : 0,
-                             entry.target == engine ? console.st_gid : 0);
+            protectAudioTree(entry.target, 0, 0);
         brokerStart();
         if (changedDriver && host)
             reload(host);

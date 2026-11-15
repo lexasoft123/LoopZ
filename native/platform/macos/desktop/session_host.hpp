@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <functional>
 #include <vector>
 
 namespace loopz::macos {
@@ -22,9 +23,13 @@ SessionCommandResult sessionCommand(const std::vector<std::string>& arguments,
 struct SessionPaths {
     std::filesystem::path engine, document, directory;
     std::string label, service;
+    std::filesystem::path legacyEngine{}; // Native fixtures may supply a private legacy path.
 };
 // Explicit paths are dependency injection for isolated fixtures. The desktop
-// and login helper expose no endpoint, path or command overrides.
+// and login helper expose no endpoint, path or command overrides. The optional
+// inspect command and legacy path are native-only seams for isolated inspect fixtures.
+using SessionInspectCommand = std::function<SessionCommandResult(const std::vector<std::string>&)>;
 std::unique_ptr<SessionHost> makeSessionHost(SessionPaths paths,
-                                             const std::string& engineRequirement);
+                                             const std::string& engineRequirement,
+                                             SessionInspectCommand inspectCommand = {});
 } // namespace loopz::macos
