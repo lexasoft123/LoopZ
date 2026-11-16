@@ -492,6 +492,18 @@ void estimatedOutputDoesNotModulateSines() {
             else
                 assert(residual < -55); // Old raw estimated anchors produce roughly -14/-10dBc.
         }
+        const auto diagnostics = engine.status().outputs[0];
+        assert(diagnostics.preAlsaEnergy.available && diagnostics.preAlsaEnergy.frames == 256);
+        assert(diagnostics.preAlsaEnergy.blocks == warmup + measured);
+        assert(diagnostics.preAlsaEnergy.rms > 0);
+        assert(diagnostics.routingHistory.enabled && diagnostics.routingHistory.reads > 0);
+        assert(diagnostics.minimumLimiterGain > 0 && diagnostics.minimumLimiterGain <= 1);
+        if (!hardware) {
+            assert(diagnostics.outputSelectedHz >= 48000 * .995 &&
+                   diagnostics.outputSelectedHz <= 48000 * 1.005);
+            assert(diagnostics.outputBasePeriodNs > 0 &&
+                   std::isfinite(diagnostics.outputPhaseErrorNs));
+        }
         if (ppm == 200 && !hardware)
             estimatedOutputBoundaryControls(hosts);
         assert(engine.status().outputs.size() == 1);
@@ -972,8 +984,11 @@ void routingSamples() {
     auto offline = engine.prepare(document);
     offline.reset();
     engine.commit(engine.prepare({}));
-    std::this_thread::sleep_for(std::chrono::milliseconds(15));
-    engine.poll();
+    const auto retirementDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (!retained.expired() && std::chrono::steady_clock::now() < retirementDeadline) {
+        engine.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     assert(retained.expired());
     for (size_t index = 0; index < runtime::kMaximumNativeSources; ++index)
         engine.bindNativeSource("native:" + std::to_string(index), std::make_shared<Native>());
@@ -984,6 +999,162 @@ void routingSamples() {
     assert(engine.unbindNativeSource("native:0"));
     engine.bindNativeSource("native:overflow", std::make_shared<Native>());
 }
+void deviceClockedNativeRouting() {
+    struct ClockNative final : runtime::DeviceClockSource {
+        mutable std::atomic<const void*> owner{nullptr};
+        mutable std::atomic<unsigned> reads{0}, renders{0};
+        mutable std::atomic<bool> hold{false}, entered{false}, release{false};
+        uint32_t channels() const noexcept override {
+            return 2;
+        }
+        void selectClockDriver(const void* token) const noexcept override {
+            owner.store(token);
+        }
+        bool renderClocked(const void* token,
+                           const singz::AudioHostRenderBlock& block) const noexcept override {
+            if (!token || owner.load() != token)
+                return false;
+            assert(block.outputClockMaster && block.outputTimestampValid && block.frames <= 256);
+            if (hold.exchange(false)) {
+                entered.store(true);
+                while (!release.load())
+                    std::this_thread::yield();
+            }
+            for (uint32_t c = 0; c < 2; ++c)
+                std::fill_n(block.output[c], block.frames, float(c + 1) * .125f);
+            renders.fetch_add(1);
+            return true;
+        }
+        AudioReadResult read(uint64_t, double, RoutingOutput output, uint32_t frames,
+                             AudioReadCursor&) const noexcept override {
+            for (auto* plane : output.channels)
+                std::fill_n(plane, frames, 0.f);
+            if (owner.load())
+                return {frames, false};
+            reads.fetch_add(1);
+            return {0, true};
+        }
+    };
+    auto hosts = std::make_shared<Counts>();
+    runtime::AudioRuntime engine([hosts] {
+        return std::make_unique<Host>(hosts);
+    });
+    auto source = std::make_shared<ClockNative>();
+    engine.bindNativeSource("native:song", source);
+    auto document = route();
+    auto& device = document.devices[0];
+    device.bindings[0] = {"input", SourceKind::Application, "native:song", false};
+    device.routing.safetyLimiter = false;
+    engine.commit(engine.prepare(document));
+    assert(source->owner.load());
+    awaitSignal(hosts, .125f, .25f);
+    assert(source->renders.load() && source->reads.load() == 0);
+    auto telemetry = engine.status();
+    assert(telemetry.monitors[0].deviceClocked && telemetry.monitors[0].historyDelayFrames == 0);
+    assert(telemetry.devices[0].active && telemetry.devices[0].sources[0].status.online);
+    assert(telemetry.devices[0].meter.peak[1] == .25f);
+    assert(telemetry.devices[0].sources[0].meter.peak[0] == .125f);
+    const auto& directDiagnostics = telemetry.outputs[0];
+    assert(directDiagnostics.deviceClockedSongEnergy.available);
+    assert(directDiagnostics.deviceClockedSongEnergy.rms > 0);
+    assert(directDiagnostics.deviceClockedRoutingEnergy.available);
+    assert(directDiagnostics.deviceClockedRoutingEnergy.rms > 0);
+    assert(directDiagnostics.preAlsaEnergy.available && directDiagnostics.preAlsaEnergy.rms > 0);
+    assert(!directDiagnostics.routingHistory.enabled); // No history reader on the direct path.
+    assert(directDiagnostics.outputSelectedHz == 48000);
+    assert(directDiagnostics.outputBasePeriodNs == 0 && directDiagnostics.outputPhaseErrorNs == 0);
+    assert(directDiagnostics.minimumLimiterGain == 1);
+    auto broken = document;
+    broken.devices[0].monitors[0].deviceSelector = "broken";
+    hosts->fail = true;
+    rejects([&] {
+        engine.prepare(broken);
+    });
+    hosts->fail = false;
+    assert(source->owner.load());
+    awaitSignal(hosts, .125f, .25f); // Failed preparation never switched clock owners.
+    device.routing.sources[0].gain = .5f;
+    device.routing.gain = .5f;
+    device.monitors[0].gain = .5f;
+    device.monitors[0].connections = {{0, 1, 1}, {1, 0, 1}};
+    auto gainOnly = engine.prepare(document);
+    std::array<float, 256> oldLeft{}, oldRight{};
+    float* planes[]{oldLeft.data(), oldRight.data()};
+    singz::AudioHostRenderBlock physical;
+    physical.output = planes;
+    physical.outputChannels = 2;
+    physical.frames = physical.maximumFrames = 256;
+    physical.sampleRate = 48000;
+    physical.outputHostTimeNs = physical.callbackHostTimeNs = steadyNs();
+    physical.outputTimestampValid = true;
+    source->hold.store(true);
+    std::thread audio([&] {
+        assert(hosts->render(hosts->renderContext, physical));
+    });
+    const auto enteredDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (!source->entered.load() && std::chrono::steady_clock::now() < enteredDeadline)
+        std::this_thread::yield();
+    assert(source->entered.load());
+    std::atomic<bool> committed{false};
+    std::thread control([&] {
+        engine.commit(gainOnly);
+        committed.store(true);
+    });
+    const auto commitDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (!committed.load() && std::chrono::steady_clock::now() < commitDeadline)
+        std::this_thread::yield();
+    // The same-owner commit MUST finish while the old callback is held. An
+    // unconditional output-gate drain hangs here, suppressing later blocks.
+    assert(committed.load());
+    source->release.store(true);
+    audio.join();
+    control.join();
+    for (size_t f = 0; f < oldLeft.size(); ++f) {
+        assert(oldLeft[f] == .125f && oldRight[f] == .25f);
+    }
+    awaitSignal(hosts, .03125f, .015625f);
+    // Device loss reopens Output::open and rebuilds its clocked program using
+    // the same Output token. It must keep the native source and both graphs.
+    const auto beforeReopen = hosts->opened;
+    const auto ownerBeforeReopen = source->owner.load();
+    hosts->lost = true;
+    engine.poll();
+    assert(hosts->opened > beforeReopen && source->owner.load() == ownerBeforeReopen);
+    awaitSignal(hosts, .03125f, .015625f);
+    // A direct->direct endpoint change publishes a NEW Output. The retired
+    // output can still invoke its old program until control reclaims it.
+    const auto retiredRender = hosts->render;
+    const auto retiredContext = hosts->renderContext;
+    device.monitors[0].deviceSelector = "second-output";
+    engine.commit(engine.prepare(document));
+    assert(source->owner.load() && source->owner.load() != ownerBeforeReopen);
+    const auto rendersBeforeStale = source->renders.load();
+    oldLeft.fill(1);
+    oldRight.fill(1);
+    assert(retiredRender(retiredContext, physical));
+    assert(source->renders.load() == rendersBeforeStale);
+    for (size_t f = 0; f < oldLeft.size(); ++f)
+        assert(oldLeft[f] == 0 && oldRight[f] == 0);
+    awaitSignal(hosts, .03125f, .015625f);
+    assert(source->reads.load() == 0);
+    auto mixed = document;
+    auto other = mixed.devices[0].routing.sources[0];
+    other.id = "other";
+    mixed.devices[0].routing.sources.push_back(other);
+    mixed.devices[0].bindings.push_back({"other", SourceKind::Application, "native:other", false});
+    engine.commit(engine.prepare(mixed));
+    assert(!source->owner.load());
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (!source->reads.load() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    assert(source->reads.load());
+    engine.commit(engine.prepare(document));
+    assert(source->owner.load());
+    awaitSignal(hosts, .03125f, .015625f);
+    engine.commit(engine.prepare({}));
+    assert(!source->owner.load());
+}
+
 } // namespace
 int main() {
     {
@@ -1001,6 +1172,7 @@ int main() {
         assert(inputs->lastInputUid == "physical-input");
     }
 
+    deviceClockedNativeRouting();
     captureSamplesAndBoundaries();
     estimatedClockAndOutputBudget();
     estimatedOutputDoesNotModulateSines();

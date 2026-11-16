@@ -70,7 +70,20 @@ struct MonitorTiming {
     // This additional queue follows graph/source lookback. It is explicit,
     // measured in internal frames, and is not a hardware latency estimate.
     uint32_t delayFrames{1024};
+    // Optional diagnostic band after accounting for the negotiated device queue.
+    // Zero upper bound falls back to delayFrames +/- two render quanta.
+    uint32_t minimumHeadroomFrames{0}, maximumHeadroomFrames{0};
 };
+// Shared negotiated-budget policy for the runtime and deterministic consumers.
+// Observed producer chunks are additionally allowed by the reader observation.
+inline MonitorTiming monitorTimingFromBudget(uint32_t renderRate, double outputRate, uint32_t delay,
+                                             uint32_t queued, uint32_t period, uint32_t reserve,
+                                             uint32_t quantum) noexcept {
+    const uint32_t lower = delay > queued ? delay - queued : 0;
+    const auto upper = std::min<uint64_t>(AudioHistory::kDefaultCapacityFrames,
+                                          uint64_t(lower) + period + reserve + quantum);
+    return {renderRate, outputRate, delay, lower, lower ? static_cast<uint32_t>(upper) : 0};
+}
 struct MonitorRenderResult {
     bool validBlock{false};
     bool sourceOnline{false};
@@ -80,6 +93,9 @@ struct MonitorStatus {
     uint64_t callbacks{0}, missingFrames{0}, graphFailures{0}, invalidBlocks{0};
     bool sourceOnline{false};
     double measuredOutputRate{0};
+    HistoryReadSnapshot read{};
+    AudioHistoryReadSnapshot historyReads{};
+    float minimumLimiterGain{1};
 };
 
 // Prepared on the control thread, one serial hardware callback owner. The

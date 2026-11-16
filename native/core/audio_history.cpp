@@ -33,6 +33,10 @@ struct ReadDiagnostics {
     std::atomic<uint64_t> unpublishedSampleReads{0}, expiredSampleReads{0}, racingSampleReads{0},
         absentSampleReads{0};
     std::atomic<uint64_t> maximumVerifiedClockStepNs{0}, verifiedClockSteps{0};
+    std::atomic<uint64_t> minimumRequested{0}, maximumRequested{0};
+    std::atomic<int64_t> readMinusWriteFrames{0};
+    zcore::routing::ResampleDiagnostics resampler;
+    zcore::routing::AudioEnergyMeter inputEnergy, outputEnergy;
 
     void begin(uint32_t frames) noexcept {
         reads.fetch_add(1, std::memory_order_relaxed);
@@ -100,10 +104,15 @@ struct AudioHistory::Impl {
     struct ReadContext {
         const Impl* history;
         std::span<const uint32_t> channels;
+        mutable uint64_t minimum{UINT64_MAX}, maximum{0};
     };
     static ResampleFrame readFrame(const void* context, uint64_t position,
                                    std::span<float> values) noexcept {
         const auto& read = *static_cast<const ReadContext*>(context);
+        if (read.history->diagnostics) {
+            read.minimum = std::min(read.minimum, position);
+            read.maximum = std::max(read.maximum, position);
+        }
         return read.history->frame(position, values, read.channels);
     }
 };
@@ -133,6 +142,13 @@ bool AudioHistory::append(RoutingInput input, uint32_t frames, uint64_t firstHos
         return false;
     if (self.cursor > UINT64_MAX - self.capacity - frames)
         return false;
+    if (self.diagnostics) {
+        std::array<float*, kMaximumRoutingChannels> diagnosticPlanes{};
+        for (size_t channel = 0; channel < input.channels.size(); ++channel)
+            diagnosticPlanes[channel] = const_cast<float*>(input.channels[channel]);
+        self.diagnostics->inputEnergy.observe({diagnosticPlanes.data(), input.channels.size()},
+                                              frames, nominalRate);
+    }
     self.version.fetch_add(1);
     bool discontinuity = false;
     if (self.previousNs) {
@@ -264,6 +280,13 @@ AudioHistoryReadSnapshot AudioHistory::readDiagnostics() const noexcept {
         return {};
     AudioHistoryReadSnapshot result;
     result.enabled = true;
+    result.publishedEnd = counters->publishedEnd.load(std::memory_order_relaxed);
+    result.minimumRequested = counters->minimumRequested.load(std::memory_order_relaxed);
+    result.maximumRequested = counters->maximumRequested.load(std::memory_order_relaxed);
+    result.readMinusWriteFrames = counters->readMinusWriteFrames.load(std::memory_order_relaxed);
+    result.resampler = counters->resampler.snapshot();
+    result.inputEnergy = counters->inputEnergy.snapshot();
+    result.outputEnergy = counters->outputEnergy.snapshot();
     result.reads = counters->reads.load(std::memory_order_relaxed);
     result.requestedFrames = counters->requestedFrames.load(std::memory_order_relaxed);
     result.maximumVerifiedClockStepNs =
@@ -298,6 +321,7 @@ AudioReadResult AudioHistory::readWithFilter(uint64_t firstHostNs, double rate,
     if (filter == ResamplingFilter::MinimumPhase && impl_->filter == filter)
         return readUsing(firstHostNs, rate, output, frames, cursor, {}, impl_->resampler);
     silence(output, frames);
+    cursor.observation.unavailable();
     if (impl_->diagnostics) {
         impl_->diagnostics->begin(frames);
         impl_->diagnostics->missing(AudioHistoryMissingReason::InvalidRequest, frames);
@@ -315,6 +339,7 @@ AudioHistory::readChannels(uint64_t firstHostNs, double rate, RoutingOutput outp
         resampler = nullptr;
     if (!resampler || selection.empty()) {
         silence(output, frames);
+        cursor.observation.unavailable();
         if (impl_->diagnostics) {
             impl_->diagnostics->begin(frames);
             impl_->diagnostics->missing(AudioHistoryMissingReason::InvalidRequest, frames);
@@ -332,6 +357,7 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
     if (self.diagnostics)
         self.diagnostics->begin(frames);
     const auto failed = [&](AudioHistoryMissingReason reason, bool online) {
+        cursor.observation.unavailable();
         if (self.diagnostics)
             self.diagnostics->missing(reason, frames);
         return AudioReadResult{frames, online};
@@ -380,6 +406,24 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
         return failed(AudioHistoryMissingReason::AnchorUnavailable, false);
     cursor = anchor;
     const auto clock = self.clock.snapshot();
+    // Sample publication AFTER the clock snapshot. An append between the old
+    // anchor cache and this snapshot must not fabricate a one-chunk low fill.
+    // If publication races both bounded attempts, mark telemetry unavailable;
+    // the existing audio/cache fallback below remains completely unchanged.
+    uint64_t observedEnd = 0;
+    uint32_t observedAppendFrames = 0;
+    bool observedCoherent = false;
+    for (unsigned attempt = 0; attempt < 2; ++attempt) {
+        const auto version = self.version.load();
+        if (!version || (version & 1))
+            continue;
+        observedAppendFrames = self.anchorFrames.load();
+        observedEnd = self.anchorFrame.load() + observedAppendFrames;
+        if (version == self.version.load() && self.generation.load() == generation) {
+            observedCoherent = true;
+            break;
+        }
+    }
     const auto nominal = std::bit_cast<double>(self.nominalBits.load());
     const auto through =
         firstHostNs + static_cast<uint64_t>(static_cast<long double>(frames - 1) * 1e9L / rate);
@@ -394,6 +438,14 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
         const auto ns = firstHostNs + whole;
         const auto fraction = elapsed - whole;
         const auto point = self.clock.locate(clock, ns, fraction, nominal, anchor.rate, through);
+        if (offset == 0) {
+            if (point.valid && observedCoherent)
+                cursor.observation.observe(generation, firstHostNs, observedEnd, point.frame,
+                                           point.offset, frames, point.rate, rate, self.capacity,
+                                           observedAppendFrames);
+            else
+                cursor.observation.unavailable();
+        }
         if (!point.valid) {
             ++missing;
             ++clockMissing;
@@ -410,7 +462,8 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
         for (size_t channel = 0; channel < output.channels.size(); ++channel)
             planes[channel] = output.channels[channel] + offset;
         missing += resampler.read(
-            {point.frame, point.offset, point.rate, rate, point.localClockCorrection, nominal},
+            {point.frame, point.offset, point.rate, rate, point.localClockCorrection, nominal,
+             self.diagnostics ? &self.diagnostics->resampler : nullptr},
             {{planes.data(), output.channels.size()}, output.capacityFrames - offset}, count,
             Impl::readFrame, &readContext,
             availableFrames.empty() ? std::span<uint8_t>{}
@@ -428,6 +481,18 @@ AudioReadResult AudioHistory::readUsing(uint64_t firstHostNs, double rate, Routi
         self.diagnostics->missing(AudioHistoryMissingReason::ResamplingSupport,
                                   missing - clockMissing);
     }
+    if (self.diagnostics && readContext.minimum != UINT64_MAX) {
+        self.diagnostics->minimumRequested.store(readContext.minimum, std::memory_order_relaxed);
+        self.diagnostics->maximumRequested.store(readContext.maximum, std::memory_order_relaxed);
+        const auto end = self.diagnostics->publishedEnd.load(std::memory_order_relaxed);
+        const auto delta =
+            readContext.maximum >= end
+                ? static_cast<int64_t>(std::min<uint64_t>(readContext.maximum - end, INT64_MAX))
+                : -static_cast<int64_t>(std::min<uint64_t>(end - readContext.maximum, INT64_MAX));
+        self.diagnostics->readMinusWriteFrames.store(delta, std::memory_order_relaxed);
+    }
+    if (self.diagnostics)
+        self.diagnostics->outputEnergy.observe(output.channels, frames, rate);
     return {missing, true};
 }
 } // namespace loopz

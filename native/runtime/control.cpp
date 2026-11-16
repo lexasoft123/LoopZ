@@ -1,3 +1,4 @@
+#include <loopz/audio_diagnostics_json.hpp>
 #include <loopz/runtime/control.hpp>
 #include <array>
 #include <algorithm>
@@ -181,6 +182,24 @@ uint64_t generation(const JSON& value) {
 JSON reply(bool ok, const char* code, const std::string& detail = {}) {
     return {{"version", 1}, {"ok", ok}, {"code", code}, {"detail", text(detail)}};
 }
+JSON readObservation(const HistoryReadSnapshot& s) {
+    return {{"valid", s.valid},
+            {"outsideBand", s.outsideBand},
+            {"observations", std::to_string(s.observations)},
+            {"bandExits", std::to_string(s.bandExits)},
+            {"reanchors", std::to_string(s.reanchors)},
+            {"generationChanges", std::to_string(s.generationChanges)},
+            {"windowObservations", std::to_string(s.windowObservations)}, {"appendFrames", s.appendFrames},
+            {"headroomFrames", s.headroomFrames},
+            {"minimumFrames", s.minimumFrames},
+            {"maximumFrames", s.maximumFrames},
+            {"meanFrames", s.meanFrames},
+            {"acquisitionFrames", s.acquisitionFrames},
+            {"lowerBoundFrames", s.lowerBoundFrames},
+            {"upperBoundFrames", s.upperBoundFrames},
+            {"ratio", s.ratio},
+            {"acquisitionErrorFrames", s.headroomFrames - s.acquisitionFrames}};
+}
 JSON meter(const AudioMeterSnapshot& m) {
     JSON peak = JSON::array(), rms = JSON::array();
     for (uint32_t c = 0; c < m.channels; ++c) {
@@ -220,6 +239,20 @@ JSON endpoint(const EndpointStatus& e) {
                      {"externalRoute", reportedFrames(e.audio.latency.externalRouteFrames)}}},
                    {"periodFrames", reportedFrames(e.audio.format.nominalBufferFrames)},
                    {"streamGeneration", std::to_string(e.audio.streamGeneration)}};
+    result["audioDiagnostics"] = {
+        {"servo",
+         {{"selectedHz", e.outputSelectedHz},
+          {"basePeriodNs", e.outputBasePeriodNs},
+          {"phaseErrorNs", e.outputPhaseErrorNs}}},
+        {"routingHistory", historyDiagnosticsJSON(e.routingHistory)},
+        {"stages",
+         {{"routingInput", energyJSON(e.routingHistory.inputEnergy)},
+          {"routingResamplerOut", energyJSON(e.routingHistory.outputEnergy)},
+          {"preAlsa", energyJSON(e.preAlsaEnergy)},
+          {"deviceClockedSong", energyJSON(e.deviceClockedSongEnergy)},
+          {"deviceClockedRouting", energyJSON(e.deviceClockedRoutingEnergy)}}},
+        {"limiter",
+         {{"kind", "memoryless-hard-clip"}, {"minimumSampleGain", e.minimumLimiterGain}}}};
     if (e.captureTelemetry) {
         result["xruns"] = nullptr;
         result["renderedFrames"] = nullptr;
@@ -276,6 +309,7 @@ JSON endpoint(const EndpointStatus& e) {
             {"absentSampleReads", std::to_string(reads.absentSampleReads)},
             {"maximumVerifiedClockStepNs", std::to_string(reads.maximumVerifiedClockStepNs)},
             {"verifiedClockSteps", std::to_string(reads.verifiedClockSteps)}};
+        result["audioDiagnostics"]["captureHistory"] = historyDiagnosticsJSON(reads);
         result["historyClock"] = {
             {"projected", e.captureHistoryProjected},
             {"maximumRawPhaseStepNs", std::to_string(e.captureMaximumRawPhaseStepNs)},
@@ -412,6 +446,7 @@ JSON Control::snapshot() {
             entries.push_back({{"id", source.id},
                                {"online", source.status.online},
                                {"missingFrames", std::to_string(source.status.missingFrames)},
+                               {"historyRead", readObservation(source.status.read)},
                                {"meter", meter(source.meter)}});
         buses.push_back({{"id", bus.id},
                          {"active", bus.active},
@@ -422,6 +457,7 @@ JSON Control::snapshot() {
         monitors.push_back(
             {{"device", monitor.device},
              {"monitor", monitor.monitor},
+             {"clockDomain", monitor.deviceClocked ? "device" : "history"},
              {"meter", meter(monitor.meter)},
              {"sourceOnline", monitor.status.sourceOnline},
              {"callbacks", std::to_string(monitor.status.callbacks)},
@@ -429,6 +465,7 @@ JSON Control::snapshot() {
              {"invalidBlocks", std::to_string(monitor.status.invalidBlocks)},
              {"missingFrames", std::to_string(monitor.status.missingFrames)},
              {"measuredOutputRate", monitor.status.measuredOutputRate},
+             {"historyRead", readObservation(monitor.status.read)},
              {"historyBudgetFrames",
               monitor.historyBudgetKnown ? JSON(monitor.historyDelayFrames) : JSON(nullptr)},
              {"historyBudgetKnown", monitor.historyBudgetKnown},

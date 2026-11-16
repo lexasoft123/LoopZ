@@ -204,8 +204,57 @@ void nonmonotonicTimestampAndRestart() {
     assert(cursor.generation != generation);
     assert(history.status().measuredRate == 48000);
 }
+void readerObservationDoesNotSteer() {
+    AudioHistory history(1);
+    std::array<float, 256> signal;
+    signal.fill(.25f);
+    const std::array<const float*, 1> input{signal.data()};
+    std::array<float, 64> samples{};
+    const std::array<float*, 1> output{samples.data()};
+    AudioReadCursor cursor;
+    cursor.observation.bounds(128, 400, 256);
+    constexpr uint64_t origin = 1000000000;
+    assert(history.append({input, 256}, 256, origin, 48000, 0, true));
+    auto read = [&](uint64_t frame) {
+        const auto result =
+            history.read(origin + frameNs(frame, 48000), 48000, {output, 64}, 64, cursor);
+        assert(result.online && result.missingFrames == 0);
+        for (const auto value : samples)
+            assert(value == .25f);
+        return cursor.observation.snapshot();
+    };
+    auto state = read(0);
+    assert(state.valid && state.headroomFrames == 256 && state.acquisitionFrames == 256);
+    assert(state.observations == 1 && state.reanchors == 1 && state.bandExits == 0);
+    assert(history.append({input, 256}, 256, origin + frameNs(256, 48000), 48000, 256, true));
+    state = read(64);
+    assert(state.observations == 2 &&
+           state.reanchors == 1); // Anchor-cache update preserved observation.
+    assert(state.headroomFrames > 447 && state.headroomFrames < 449 && state.bandExits == 1 &&
+           state.outsideBand);
+    assert(state.acquisitionFrames == 256 && state.ratio == 1);
+    state = read(128);
+    assert(!state.outsideBand && state.bandExits == 1);
+    assert(state.minimumFrames <= state.meanFrames && state.meanFrames <= state.maximumFrames);
+    history.stop();
+    assert(history.append({input, 256}, 256, origin + 1000000000, 48000, 0, true));
+    const auto restarted = history.read(origin + 1000000000, 48000, {output, 64}, 64, cursor);
+    assert(restarted.online && restarted.missingFrames == 0);
+    state = cursor.observation.snapshot();
+    assert(state.observations == 4 && state.generationChanges == 1 && state.reanchors == 2);
+    assert(state.acquisitionFrames == 256 && state.bandExits == 1);
+    const auto invalid = history.read(0, 0, {output, 64}, 64, cursor);
+    assert(!invalid.online && !cursor.observation.snapshot().valid);
+    assert(history.read(origin + 1000000000 + frameNs(64, 48000), 48000, {output, 64}, 64, cursor).online);
+    assert(cursor.observation.snapshot().reanchors == 3); // Missing-read recovery reacquires.
+    cursor.observation.bounds(128, 800, 256);
+    assert(history.read(origin + 1000000000 + frameNs(128, 48000), 48000, {output, 64}, 64, cursor).online);
+    assert(cursor.observation.snapshot().reanchors == 4); // A new diagnostic budget reacquires too.
+}
+
 } // namespace
 int main() {
+    readerObservationDoesNotSteer();
     for (uint32_t nominal : {8000U, 48000U, 192000U}) {
         changingClock(nominal, false);
         changingClock(nominal, true);

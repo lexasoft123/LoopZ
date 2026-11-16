@@ -1,5 +1,7 @@
+#include <loopz/runtime/estimated_output_timeline.hpp>
 #include <loopz/runtime/audio_runtime.hpp>
 #include <loopz/audio_history.hpp>
+#include <zcore/device/audio_input_callback_gate.h>
 #include <loopz/audio_resampler.hpp>
 #include <loopz/render_schedule.hpp>
 #include <loopz/sinc_kernel.hpp>
@@ -479,111 +481,154 @@ MonitorBudget monitorBudget(const singz::AudioHostStatus& status) {
     budget.total = static_cast<uint32_t>((required + blockFrames - 1) / blockFrames * blockFrames);
     return budget;
 }
+// A song-only bus runs BOTH routing stages on the physical callback. This
+// program has no AudioSource::read, timestamps-to-PCM mapping or resampler.
+struct ClockedProgram {
+    const std::shared_ptr<const DeviceClockSource> source;
+    const void* owner;
+    const uint32_t monitorChannels;
+    const VirtualDeviceDefinition device;
+    RoutingGraph deviceGraph, monitorGraph;
+    AudioMeter sourceMeter{2}, deviceMeter, monitorMeter;
+    zcore::routing::AudioEnergyMeter songEnergy, routingEnergy;
+    std::array<std::array<float, blockFrames>, kMaximumRoutingChannels> raw{}, mixed{}, final{};
+    std::array<float*, kMaximumRoutingChannels> rawPlanes{}, mixPlanes{}, finalPlanes{};
+    std::array<const float*, kMaximumRoutingChannels> rawRead{}, mixRead{}, finalRead{};
+    std::array<RoutingInput, kMaximumRoutingSources> inputs{};
+    std::atomic<uint64_t> callbacks{0}, failures{0};
+    std::atomic<bool> online{false};
+    ClockedProgram(const VirtualDeviceDefinition& d, const MonitorDefinition& m,
+                   std::shared_ptr<const DeviceClockSource> producer, const void* token)
+        : source(std::move(producer)), owner(token), monitorChannels(m.channels), device(d),
+          deviceGraph(rate, d.routing), monitorGraph(rate, monitorRouting(d, m)),
+          deviceMeter(d.routing.outputChannels), monitorMeter(m.channels) {
+        for (uint32_t c = 0; c < kMaximumRoutingChannels; ++c) {
+            rawRead[c] = rawPlanes[c] = raw[c].data();
+            mixRead[c] = mixPlanes[c] = mixed[c].data();
+            finalRead[c] = finalPlanes[c] = final[c].data();
+        }
+        for (size_t i = 0; i < d.routing.sources.size(); ++i)
+            inputs[i] = {{rawRead.data(), d.routing.sources[i].channels}, blockFrames};
+    }
+    bool render(const singz::AudioHostRenderBlock& physical) noexcept {
+        bool good = true;
+        for (uint32_t offset = 0; offset < physical.frames; offset += blockFrames) {
+            const auto count = std::min(blockFrames, physical.frames - offset);
+            for (uint32_t c = 0; c < 2; ++c)
+                std::fill_n(raw[c].data(), count, 0.f);
+            auto block = physical;
+            block.input = nullptr;
+            block.inputChannels = 0;
+            block.output = rawPlanes.data();
+            block.outputChannels = 2;
+            block.frames = count;
+            block.maximumFrames = blockFrames;
+            block.outputClockMaster = true;
+            block.outputFrame += offset;
+            block.outputHostTimeNs += frameNs(offset, physical.sampleRate);
+            block.callbackHostTimeNs += frameNs(offset, physical.sampleRate);
+            if (offset)
+                block.discontinuity = singz::AudioHostDiscontinuityNone;
+            const bool rendered = source->renderClocked(owner, block);
+            if (!rendered)
+                for (uint32_t c = 0; c < 2; ++c)
+                    std::fill_n(raw[c].data(), count, 0.f);
+            sourceMeter.publish({{rawRead.data(), 2}, blockFrames}, count);
+            songEnergy.observe({rawPlanes.data(), 2}, count, physical.sampleRate);
+            bool chunk =
+                deviceGraph.render({inputs.data(), device.routing.sources.size()},
+                                   {{mixPlanes.data(), device.routing.outputChannels}, blockFrames},
+                                   count, block.outputFrame);
+            const RoutingInput mix{{mixRead.data(), device.routing.outputChannels}, blockFrames};
+            deviceMeter.publish(mix, count);
+            routingEnergy.observe({mixPlanes.data(), device.routing.outputChannels}, count,
+                                  physical.sampleRate);
+            chunk &=
+                monitorGraph.render({&mix, 1}, {{finalPlanes.data(), monitorChannels}, blockFrames},
+                                    count, block.outputFrame);
+            for (uint32_t c = 0; c < physical.outputChannels; ++c)
+                for (uint32_t f = 0; f < count; ++f) {
+                    const auto sample = c < monitorChannels && chunk ? final[c][f] : 0.f;
+                    physical.output[c][offset + f] = std::isfinite(sample) ? sample : 0.f;
+                }
+            for (uint32_t c = physical.outputChannels; c < monitorChannels; ++c)
+                std::fill_n(final[c].data(), count, 0.f);
+            monitorMeter.publish({{finalRead.data(), monitorChannels}, blockFrames}, count);
+            good &= rendered;
+            if (!chunk)
+                failures.fetch_add(1, std::memory_order_relaxed);
+        }
+        callbacks.fetch_add(1, std::memory_order_relaxed);
+        online.store(good, std::memory_order_relaxed);
+        return true; // An absent/stopped song is silence, never device failure.
+    }
+};
 struct OutputProgram {
     const VirtualDeviceDefinition device;
     const MonitorDefinition monitor;
     const std::shared_ptr<const AudioSource> source;
     const MonitorBudget budget;
-    MonitorProgram program;
+    std::unique_ptr<MonitorProgram> program;
+    std::unique_ptr<ClockedProgram> clocked;
     OutputProgram(VirtualDeviceDefinition d, MonitorDefinition m,
                   std::shared_ptr<const AudioSource> s, const singz::AudioHostStatus& status)
         : device(std::move(d)), monitor(std::move(m)), source(std::move(s)),
           budget(monitorBudget(status)),
-          program(device, monitor, source,
-                  MonitorTiming{rate,
-                                status.format.sampleRate > 0 ? status.format.sampleRate : rate,
-                                budget.total}) {}
+          program(
+              source ? std::make_unique<MonitorProgram>(
+                           device, monitor, source,
+                           monitorTimingFromBudget(
+                               rate, status.format.sampleRate > 0 ? status.format.sampleRate : rate,
+                               budget.total, budget.queued, budget.period, budget.reserve,
+                               blockFrames))
+                     : nullptr) {}
 };
 // Estimated output timestamps are observations of a continuous device frame
 // counter, not commands to jump the source position every callback. Integrate
 // each block with its chosen rate; steer only the next block's spacing toward
 // the observed clock. Hardware-certified timestamps bypass this estimator.
-struct EstimatedOutputTimeline {
-    struct Result {
-        uint64_t ns;
-        double hz;
-    };
-    long double projectedNs{0};
-    double previousHz{0}, nominalHz{0};
-    long double basePeriodNs{0};
-    uint64_t acquisitionFrames{0};
-    uint64_t previousFrame{0}, previousRawNs{0};
-    uint32_t previousFrames{0};
-    void clear() noexcept {
-        *this = {};
-    }
-    Result observe(uint64_t frame, uint64_t rawNs, uint32_t frames, double hz,
-                   bool discontinuity) noexcept {
-        if (!rawNs || rawNs >= UINT64_MAX - 10000000000ULL || !frames ||
-            frames > singz::kAudioHostMaxFrames || frame > UINT64_MAX - frames ||
-            !std::isfinite(hz) || hz < AudioHistory::kMinimumSampleRate ||
-            hz > AudioHistory::kMaximumSampleRate) {
-            clear();
-            return {rawNs, 0};
-        }
-        const bool continuous = projectedNs && !discontinuity && nominalHz == hz &&
-                                previousFrame <= UINT64_MAX - previousFrames &&
-                                frame == previousFrame + previousFrames && rawNs > previousRawNs;
-        long double start = rawNs;
-        double selectedHz = hz;
-        bool reset = !continuous;
-        if (continuous) {
-            start = projectedNs + static_cast<long double>(previousFrames) * 1e9L / previousHz;
-            const auto error = static_cast<long double>(rawNs) - start;
-            reset = !std::isfinite(start) || start <= 0 ||
-                    start >= static_cast<long double>(UINT64_MAX - 10000000000ULL) ||
-                    std::abs(error) > 2000000.0L;
-            if (!reset) {
-                // Acquire device drift quickly after an explicit boundary,
-                // then reject timestamp-observer jitter with a slow alpha-beta
-                // clock servo. Only sample spacing changes, never block phase.
-                const auto coefficient =
-                    acquisitionFrames < static_cast<uint64_t>(hz) ? 1.0L / 16 : 1.0L / 8192;
-                const auto alpha = std::min(.25L, coefficient * frames / 256);
-                const auto beta = alpha * alpha / 4;
-                const auto minimum = 1e9L / (hz * 1.005);
-                const auto maximum = 1e9L / (hz * .995);
-                basePeriodNs = std::clamp(basePeriodNs + beta * error / frames, minimum, maximum);
-                const auto period =
-                    std::clamp(basePeriodNs + alpha * error / frames, minimum, maximum);
-                selectedHz = std::clamp(static_cast<double>(1e9L / period), hz * .995, hz * 1.005);
-            }
-        }
-        if (reset) {
-            start = rawNs;
-            basePeriodNs = 1e9L / hz;
-            acquisitionFrames = 0;
-        }
-        if (acquisitionFrames < static_cast<uint64_t>(hz))
-            acquisitionFrames += frames;
-        projectedNs = start;
-        previousHz = selectedHz;
-        nominalHz = hz;
-        previousFrame = frame;
-        previousRawNs = rawNs;
-        previousFrames = frames;
-        return {static_cast<uint64_t>(start), selectedHz};
-    }
-};
+using detail::EstimatedOutputTimeline;
 struct Output {
     std::string uid, error;
     singz::AudioHost host;
     singz::AudioHostConfig config;
     RealtimePublication<OutputProgram> programs;
     EstimatedOutputTimeline estimatedTimeline;
+    std::atomic<uint64_t> selectedHzBits{0}, basePeriodBits{0}, phaseErrorBits{0};
+    zcore::routing::AudioEnergyMeter preAlsaEnergy;
     uint64_t previousClock{0}, previousStream{0}, previousRoute{0};
-    explicit Output(std::string id, std::unique_ptr<singz::AudioHostBackend> backend)
-        : uid(std::move(id)), host(std::move(backend)) {}
+    const std::shared_ptr<singz::AudioInputCallbackGate> gate;
+    explicit Output(std::string id, std::unique_ptr<singz::AudioHostBackend> backend,
+                    std::shared_ptr<singz::AudioInputCallbackGate> admission)
+        : uid(std::move(id)), host(std::move(backend)), gate(std::move(admission)) {}
     ~Output() {
         host.stop();
     }
     static bool render(void* context, const singz::AudioHostRenderBlock& block) noexcept {
         auto& self = *static_cast<Output*>(context);
+        if (!block.output || !block.frames || block.frames > block.maximumFrames ||
+            block.frames > singz::kAudioHostMaxFrames || !block.outputChannels ||
+            block.outputChannels > kMaximumRoutingChannels || block.sampleRate != rate ||
+            std::any_of(block.output, block.output + block.outputChannels, [](const auto* plane) {
+                return !plane;
+            }))
+            return false;
+        singz::AudioInputCallbackScope scope(*self.gate);
         auto program = self.programs.borrow();
-        if (!program) {
+        if (!scope || !program) {
             for (uint32_t c = 0; c < block.outputChannels; ++c)
                 std::fill_n(block.output[c], block.frames, 0.f);
             return true;
+        }
+        if (program->clocked) {
+            const auto valid = program->clocked->render(block);
+            self.selectedHzBits.store(std::bit_cast<uint64_t>(block.sampleRate),
+                                      std::memory_order_relaxed);
+            self.basePeriodBits.store(0, std::memory_order_relaxed);
+            self.phaseErrorBits.store(0, std::memory_order_relaxed);
+            self.preAlsaEnergy.observe({block.output, block.outputChannels}, block.frames,
+                                       block.sampleRate);
+            return valid;
         }
         uint64_t ns =
             block.outputTimestampValid ? block.outputHostTimeNs : block.callbackHostTimeNs;
@@ -591,7 +636,7 @@ struct Output {
         if (block.outputTimestampValid && !block.outputTimestampHardware && ns && block.frames &&
             block.frames <= block.maximumFrames && block.outputChannels > 0 &&
             block.outputChannels <= kMaximumRoutingChannels &&
-            block.sampleRate == program->program.timing().outputRate) {
+            block.sampleRate == program->program->timing().outputRate) {
             const bool boundary = block.discontinuity != singz::AudioHostDiscontinuityNone ||
                                   block.clockDomain != self.previousClock ||
                                   block.streamGeneration != self.previousStream ||
@@ -606,11 +651,19 @@ struct Output {
         self.previousClock = block.clockDomain;
         self.previousStream = block.streamGeneration;
         self.previousRoute = block.routeGeneration;
-        return program->program
-            .render(ns, block.sampleRate,
-                    {{block.output, block.outputChannels}, block.maximumFrames}, block.frames,
-                    block.outputFrame, measuredRate)
-            .validBlock;
+        self.selectedHzBits.store(std::bit_cast<uint64_t>(measuredRate), std::memory_order_relaxed);
+        self.basePeriodBits.store(
+            std::bit_cast<uint64_t>(double(self.estimatedTimeline.basePeriodNs)),
+            std::memory_order_relaxed);
+        self.phaseErrorBits.store(
+            std::bit_cast<uint64_t>(double(self.estimatedTimeline.phaseErrorNs)),
+            std::memory_order_relaxed);
+        const auto result = program->program->render(
+            ns, block.sampleRate, {{block.output, block.outputChannels}, block.maximumFrames},
+            block.frames, block.outputFrame, measuredRate);
+        self.preAlsaEnergy.observe({block.output, block.outputChannels}, block.frames,
+                                   block.sampleRate);
+        return result.validBlock;
     }
     void open() {
         auto result = host.open(config, render, this);
@@ -631,6 +684,9 @@ struct Output {
         if (previous) {
             auto replacement = std::make_unique<OutputProgram>(previous->device, previous->monitor,
                                                                previous->source, host.status());
+            if (previous->clocked)
+                replacement->clocked = std::make_unique<ClockedProgram>(
+                    previous->device, previous->monitor, previous->clocked->source, this);
             auto prepared = programs.stage(std::move(replacement));
             prepared->commit();
         }
@@ -647,15 +703,24 @@ struct AudioRuntime::Prepared {
     std::map<std::string, std::shared_ptr<Capture>> inputs;
     std::map<std::string, std::shared_ptr<Output>> outputs;
     std::map<std::string, std::pair<std::string, std::string>> outputLabels;
+    std::shared_ptr<const DeviceClockSource> clockSource;
+    const void* clockOwner{nullptr};
+    std::string clockDevice;
     bool committed{false};
     const void* owner{nullptr};
     std::vector<std::unique_ptr<RealtimePublication<OutputProgram>::Update>> monitorUpdates;
     std::unique_ptr<RealtimePublication<AudioScene>::Update> sceneUpdate;
     std::shared_ptr<Prepared> retired;
 };
-struct AudioRuntime::Impl {
+struct
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((visibility("hidden")))
+#endif
+AudioRuntime::Impl {
     HostFactory hostFactory;
     InputFactory inputFactory;
+    std::shared_ptr<singz::AudioInputCallbackGate> outputGate =
+        std::make_shared<singz::AudioInputCallbackGate>();
     RealtimePublication<AudioScene> scenes;
     MonitorBuses buses{rate};
     std::shared_ptr<SceneHistoryStore> histories = std::make_shared<SceneHistoryStore>();
@@ -689,10 +754,17 @@ struct AudioRuntime::Impl {
     Impl(HostFactory host, InputFactory input)
         : hostFactory(std::move(host)), inputFactory(std::move(input)), renderer([this] {
               run();
-          }) {}
+          }) {
+        outputGate->open();
+    }
     ~Impl() {
         stopping.store(true);
         renderer.join();
+        outputGate->beginClose();
+        while (outputGate->inFlight())
+            std::this_thread::yield();
+        if (active && active->clockSource)
+            active->clockSource->selectClockDriver(nullptr);
         active.reset();
     }
     void run() noexcept {
@@ -827,6 +899,45 @@ std::shared_ptr<AudioRuntime::Prepared> AudioRuntime::prepare(const RouteDocumen
     auto next = std::make_shared<Prepared>();
     next->document = document;
     next->owner = impl_.get();
+    // Conservative phase-one admission. No virtual dependency or second native
+    // binding may hide another destination. Other sources (even muted) retain
+    // the existing history path; same-UID capture is not proof of one clock.
+    size_t bindings = 0, monitors = 0;
+    bool eligible = true;
+    std::string candidate;
+    std::shared_ptr<const DeviceClockSource> producer;
+    for (const auto& d : document.devices) {
+        for (const auto& m : d.monitors)
+            if (d.routing.enabled && m.enabled)
+                ++monitors;
+        for (const auto& b : d.bindings) {
+            if (b.kind == SourceKind::VirtualDevice)
+                eligible = false;
+            if (b.kind != SourceKind::Application)
+                continue;
+            auto found = impl_->native.find(b.selector);
+            auto clock = found == impl_->native.end()
+                             ? nullptr
+                             : std::dynamic_pointer_cast<const DeviceClockSource>(found->second);
+            if (!clock)
+                continue;
+            ++bindings;
+            candidate = d.id;
+            producer = std::move(clock);
+            if (!d.routing.enabled || d.routing.sources.size() != 1 || d.bindings.size() != 1 ||
+                d.routing.sources.front().channels != 2 || !d.routing.sources.front().enabled ||
+                d.monitors.size() != 1 || !d.monitors.front().enabled)
+                eligible = false;
+        }
+    }
+    if (eligible && bindings == 1 && monitors == 1) {
+        next->clockSource = std::move(producer);
+        next->clockDevice = candidate;
+    }
+    auto sceneDocument = document;
+    for (auto& d : sceneDocument.devices)
+        if (d.id == next->clockDevice)
+            d.routing.enabled = false;
     std::map<std::string, uint32_t> required;
     for (const auto& device : document.devices) {
         if (device.sampleRate != rate)
@@ -878,7 +989,7 @@ std::shared_ptr<AudioRuntime::Prepared> AudioRuntime::prepare(const RouteDocumen
         next->inputs.emplace(uid, std::move(capture));
     }
     auto scene = std::make_unique<AudioScene>(
-        document, SceneTiming{rate, blockFrames, 1024, 128},
+        sceneDocument, SceneTiming{rate, blockFrames, 1024, 128},
         [&](const VirtualDeviceDefinition&, const SourceBinding& binding, const SourceRouting&) {
             std::shared_ptr<const AudioSource> source;
             if (binding.kind == SourceKind::InputDevice) {
@@ -915,7 +1026,8 @@ std::shared_ptr<AudioRuntime::Prepared> AudioRuntime::prepare(const RouteDocumen
                     throw std::runtime_error("Output channel expansion requires explicit "
                                              "monitor-off before reconfiguration");
             } else {
-                output = std::make_shared<Output>(monitor.deviceSelector, impl_->hostFactory());
+                output = std::make_shared<Output>(monitor.deviceSelector, impl_->hostFactory(),
+                                                  impl_->outputGate);
                 output->config.outputDeviceUid = monitor.deviceSelector;
                 output->config.outputChannels.resize(monitor.channels);
                 std::iota(output->config.outputChannels.begin(),
@@ -933,8 +1045,13 @@ std::shared_ptr<AudioRuntime::Prepared> AudioRuntime::prepare(const RouteDocumen
                     output->error = failure.what();
                 }
             }
-            auto program = std::make_unique<OutputProgram>(device, monitor, sink->bus()->source(),
-                                                           output->host.status());
+            auto program = std::make_unique<OutputProgram>(
+                device, monitor, sink ? sink->bus()->source() : nullptr, output->host.status());
+            if (next->clockSource && device.id == next->clockDevice) {
+                program->clocked = std::make_unique<ClockedProgram>(
+                    device, monitor, next->clockSource, output.get());
+                next->clockOwner = output.get();
+            }
             next->monitorUpdates.push_back(output->programs.stage(std::move(program)));
             next->outputLabels.emplace(monitor.deviceSelector,
                                        std::make_pair(device.id, monitor.id));
@@ -948,12 +1065,35 @@ std::shared_ptr<AudioRuntime::Prepared> AudioRuntime::prepare(const RouteDocumen
 void AudioRuntime::commit(std::shared_ptr<Prepared> prepared) noexcept {
     if (!prepared || prepared->owner != impl_.get() || prepared->committed)
         return;
+    // Reclamation may stop/join retired physical hosts. Do that while surviving
+    // outputs remain admitted, never inside a clock-handover silence window.
+    impl_->scenes.collect();
+    if (impl_->active)
+        impl_->active->retired.reset();
+    impl_->buses.collect();
+    const auto* previous = impl_->active.get();
+    const bool clockChanged = previous ? previous->clockSource != prepared->clockSource ||
+                                             previous->clockOwner != prepared->clockOwner
+                                       : bool(prepared->clockSource);
+    // Gain/map-only edits retain the same clock owner and publish without
+    // draining callbacks. Only a typed clock handover drains complete programs.
+    if (clockChanged) {
+        impl_->outputGate->beginClose();
+        while (impl_->outputGate->inFlight())
+            std::this_thread::yield();
+        if (previous && previous->clockSource && previous->clockSource != prepared->clockSource)
+            previous->clockSource->selectClockDriver(nullptr);
+        if (prepared->clockSource)
+            prepared->clockSource->selectClockDriver(prepared->clockOwner);
+    }
     prepared->committed = true;
     for (auto& update : prepared->monitorUpdates)
         update->commit();
     prepared->sceneUpdate->commit();
     prepared->retired = std::move(impl_->active);
     impl_->active = std::move(prepared);
+    if (clockChanged)
+        impl_->outputGate->open();
 }
 void AudioRuntime::poll() {
     impl_->scenes.collect();
@@ -1032,6 +1172,26 @@ RuntimeStatus AudioRuntime::status() const {
         endpoint.error = output->error;
         endpoint.connected = connected;
         endpoint.audio = audio;
+        endpoint.outputSelectedHz =
+            std::bit_cast<double>(output->selectedHzBits.load(std::memory_order_relaxed));
+        endpoint.outputBasePeriodNs =
+            std::bit_cast<double>(output->basePeriodBits.load(std::memory_order_relaxed));
+        endpoint.outputPhaseErrorNs =
+            std::bit_cast<double>(output->phaseErrorBits.load(std::memory_order_relaxed));
+        endpoint.preAlsaEnergy = output->preAlsaEnergy.snapshot();
+        if (auto published = output->programs.borrow()) {
+            if (published->program) {
+                const auto monitor = published->program->status();
+                endpoint.routingHistory = monitor.historyReads;
+                endpoint.minimumLimiterGain = monitor.minimumLimiterGain;
+            } else if (published->clocked) {
+                endpoint.deviceClockedSongEnergy = published->clocked->songEnergy.snapshot();
+                endpoint.deviceClockedRoutingEnergy = published->clocked->routingEnergy.snapshot();
+                endpoint.minimumLimiterGain = std::min(
+                    published->clocked->deviceGraph.minimumLimiterGain(),
+                    published->clocked->monitorGraph.minimumLimiterGain());
+            }
+        }
         result.outputs.push_back(std::move(endpoint));
         auto program = output->programs.borrow();
         if (program) {
@@ -1039,14 +1199,22 @@ RuntimeStatus AudioRuntime::status() const {
             MonitorTelemetry monitor;
             monitor.device = labels.first;
             monitor.monitor = labels.second;
-            monitor.status = program->program.status();
-            program->program.meters(monitor.meter);
+            monitor.status = program->program ? program->program->status() : MonitorStatus{};
+            if (program->program)
+                program->program->meters(monitor.meter);
+            if (program->clocked) {
+                const auto& direct = *program->clocked;
+                monitor.deviceClocked = true;
+                monitor.status = {direct.callbacks.load(), 0,   direct.failures.load(), 0,
+                                  direct.online.load(),    rate};
+                direct.monitorMeter.read(monitor.meter);
+            }
             monitor.historyBudgetKnown = program->budget.known;
-            monitor.historyDelayFrames = program->budget.total;
+            monitor.historyDelayFrames = program->clocked ? 0 : program->budget.total;
             monitor.queuedOutputFrames = program->budget.queued;
             monitor.outputPeriodFrames = program->budget.period;
-            monitor.filterFutureFrames = program->budget.future;
-            monitor.schedulerReserveFrames = program->budget.reserve;
+            monitor.filterFutureFrames = program->clocked ? 0 : program->budget.future;
+            monitor.schedulerReserveFrames = program->clocked ? 0 : program->budget.reserve;
             result.monitors.push_back(std::move(monitor));
         }
         result.restored &= connected;
@@ -1054,7 +1222,14 @@ RuntimeStatus AudioRuntime::status() const {
     auto scene = impl_->scenes.borrow();
     if (scene) {
         // A newly published graph has not yet reported demand/source health.
-        result.restored &= scene->hasRendered();
+        const bool directOnly =
+            impl_->active->clockSource &&
+            std::all_of(impl_->active->document.devices.begin(),
+                        impl_->active->document.devices.end(), [&](const auto& device) {
+                            return !device.routing.enabled ||
+                                   device.id == impl_->active->clockDevice;
+                        });
+        result.restored &= scene->hasRendered() || directOnly;
         result.buses.resize(impl_->active->document.devices.size());
         for (size_t index = 0; index < result.buses.size(); ++index) {
             scene->deviceMeters(index, result.buses[index]);
@@ -1077,6 +1252,24 @@ RuntimeStatus AudioRuntime::status() const {
                     result.restored &= source.status.online;
                 scene->sourceMeters(index, sourceIndex, source.meter);
                 bus.sources.push_back(std::move(source));
+            }
+            if (device.id == impl_->active->clockDevice) {
+                for (const auto& [uid, output] : impl_->active->outputs) {
+                    (void)uid;
+                    auto program = output->programs.borrow();
+                    if (!program || !program->clocked)
+                        continue;
+                    const auto& direct = *program->clocked;
+                    bus.active = true;
+                    direct.deviceMeter.read(bus.meter);
+                    result.buses[index] = bus.meter;
+                    for (auto& source : bus.sources) {
+                        source.status.online = direct.online.load();
+                        source.status.historyBudgetFrames = 0;
+                        direct.sourceMeter.read(source.meter);
+                    }
+                    result.restored &= direct.online.load();
+                }
             }
             result.devices.push_back(std::move(bus));
         }
