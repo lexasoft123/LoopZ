@@ -434,8 +434,8 @@ SceneRenderResult AudioScene::render(uint64_t firstFrame, uint32_t frames,
                         // render quanta of scheduling phase; no latency control.
                         const auto slack = uint64_t(2) * impl_->timing.blockFrames;
                         input.binding.cursor->observation.bounds(
-                            node.latency > slack ? node.latency - slack : 0,
-                            std::min<uint64_t>(kCapacity, uint64_t(node.latency) + slack),
+                            static_cast<double>(node.latency > slack ? node.latency - slack : 0),
+                            static_cast<double>(std::min<uint64_t>(kCapacity, uint64_t(node.latency) + slack)),
                             static_cast<uint32_t>(slack), impl_->timing.renderRate);
                         auto output = suffix(input.scratch, prefix, planes);
                         std::optional<AudioReadResult> sparseRead;

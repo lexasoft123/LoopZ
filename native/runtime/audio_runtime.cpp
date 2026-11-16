@@ -712,7 +712,11 @@ struct AudioRuntime::Prepared {
     std::unique_ptr<RealtimePublication<AudioScene>::Update> sceneUpdate;
     std::shared_ptr<Prepared> retired;
 };
-struct AudioRuntime::Impl {
+struct
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((visibility("hidden")))
+#endif
+AudioRuntime::Impl {
     HostFactory hostFactory;
     InputFactory inputFactory;
     std::shared_ptr<singz::AudioInputCallbackGate> outputGate =
