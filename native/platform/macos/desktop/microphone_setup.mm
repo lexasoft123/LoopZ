@@ -1,3 +1,4 @@
+#include "engine_location.hpp"
 #include "microphone_setup.hpp"
 #import <Foundation/Foundation.h>
 #include <stdexcept>
@@ -47,7 +48,7 @@ MicrophoneSetup productionMicrophoneSetup() {
         // the page nor the environment chooses a bundle, executable or argument.
         productionSessionHost()->validateEngine();
         return decodeMicrophoneSetup(sessionCommand(
-            {"/Applications/LoopZ Engine.app/Contents/MacOS/LoopZ Engine", "--request-microphone"},
+            {(readEnginePath() / "Contents/MacOS/LoopZ Engine").string(), "--request-microphone"},
             // Foreground Cocoa diagnostics must not contaminate stdout's JSON.
             std::chrono::seconds(65), &running, SessionCommandOutput::StandardOutput));
     };

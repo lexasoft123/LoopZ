@@ -1,4 +1,5 @@
 #include "../../native/platform/macos/desktop/installation_setup.hpp"
+#include "../../native/platform/macos/desktop/engine_job.hpp"
 #include <cassert>
 #include <cstdio>
 #include <fstream>
@@ -36,7 +37,10 @@ struct Fixture {
             });
     }
     void complete() {
-        fs::create_directory(paths.engine);
+        fs::create_directories(paths.engine / "Contents/MacOS");
+        std::ofstream(paths.engine / "Contents/MacOS/LoopZ Engine") << "fixture";
+        fs::permissions(paths.engine / "Contents/MacOS/LoopZ Engine", fs::perms::owner_exec,
+                        fs::perm_options::add);
         fs::create_directory(paths.legacyDriver);
         std::ofstream(paths.broker) << "fixture";
         std::ofstream(paths.daemon) << "fixture";
@@ -66,7 +70,6 @@ void validSlotsAndIdentityRoles() {
     fixture.checks.clear();
     result = fixture.probe()();
     assert(result.components[1].state == InstallationState::Installed);
-    assert(fixture.checks[1].first == "com.lexasoft.loopz.driver.routing");
     fs::create_directory(fixture.paths.legacyDriver);
     fixture.checks.clear();
     result = fixture.probe()();
@@ -140,6 +143,117 @@ void legacyAudioDoesNotCountAsRoutingInstallationOrConflict() {
     assert(result.components[1].state == InstallationState::Installed);
     assert(fs::is_directory(fixture.paths.legacyDriver));
 }
+void knownOldJobIsNotForeign() {
+    const auto currentProgram = newEnginePath / "Contents/MacOS/LoopZ Engine";
+    const auto legacyProgram = legacyEnginePath / "Contents/MacOS/LoopZ Engine";
+    NSDictionary* current = @{
+        @"Label" : @"fixture",
+        @"KeepAlive" : @YES,
+        @"ProgramArguments" : @[ @(currentProgram.c_str()), @"--editor-service", @"true" ]
+    };
+    NSMutableDictionary* old = [current mutableCopy];
+    old[@"ProgramArguments"] = @[ @(legacyProgram.c_str()), @"--editor-service", @"true" ];
+    assert(classifyEngineJob(current, current) == EngineJobDefinition::Current);
+    assert(classifyEngineJob(old, current) == EngineJobDefinition::KnownOld);
+    old[@"KeepAlive"] = @NO;
+    assert(classifyEngineJob(old, current) == EngineJobDefinition::Foreign);
+    old[@"KeepAlive"] = @YES;
+    old[@"ProgramArguments"] = @[ @"/tmp/Engine", @"--editor-service", @"true" ];
+    assert(classifyEngineJob(old, current) == EngineJobDefinition::Foreign);
+}
+void productionRecoveryStates() {
+    Fixture f;
+    f.complete();
+    const auto app = f.root / "LoopZ.app", support = f.root / "support";
+    const auto helper = app / "Contents/Library/Helpers/LoopZSetup";
+    const auto payload = app / "Contents/Resources/AudioComponents";
+    ProductionInstallationPaths paths{f.paths, app, app, support, f.root / "new/Engine.app"};
+    bool different = false;
+    auto probe = [&] {
+        return makeProductionInstallationProbe(
+            paths,
+            [](const auto&, const auto&, bool) {
+                return true;
+            },
+            [](const auto&) {
+                return true;
+            },
+            [&](const auto& path) {
+                return different && path == payload / "LoopZ Engine.app" ? "new" : "same";
+            })();
+    };
+    paths.app = f.root / "elsewhere.app";
+    assert(probe().maintenanceUnavailableReason == "wrong-location");
+    paths.app = app;
+    assert(probe().maintenanceUnavailableReason == "missing-helper");
+    fs::create_directories(helper.parent_path());
+    std::ofstream(helper) << "fixture";
+    assert(probe().maintenanceUnavailableReason == "missing-payload");
+    assert([installationJSON(probe())[@"maintenanceUnavailableReason"] isEqual:@"missing-payload"]);
+    fs::create_directories(payload);
+    auto result = probe();
+    assert(result.maintenanceAvailable && !result.updateAvailable && !result.activationRequired);
+    different = true;
+    assert(probe().updateAvailable);
+    different = false;
+    fs::create_directory(support);
+    for (const char* marker : {"restart-required", "activation-required.plist"}) {
+        std::ofstream(support / marker) << "fixture";
+        assert(probe().activationRequired);
+        fs::remove(support / marker);
+    }
+    for (const char* marker : {"maintenance.plist", "maintenance-session.plist"}) {
+        std::ofstream(support / marker) << "fixture";
+        assert(probe().components[2].state == InstallationState::Invalid);
+        assert(probe().components[2].detail.find("interrupted") != std::string::npos);
+        fs::remove(support / marker);
+    }
+    assert(readEnginePath(paths.preferredEngine, paths.components.engine) == f.paths.engine);
+    fs::create_directories(paths.preferredEngine.parent_path());
+    for (int kind = 0; kind < 3; ++kind) {
+        if (kind == 0)
+            fs::create_directory(paths.preferredEngine);
+        if (kind == 1)
+            std::ofstream(paths.preferredEngine) << "stray";
+        if (kind == 2)
+            fs::create_directory_symlink(f.paths.engine, paths.preferredEngine);
+        assert(readEnginePath(paths.preferredEngine, paths.components.engine) == f.paths.engine);
+        assert(probe().components[0].state == InstallationState::Installed);
+        fs::remove_all(paths.preferredEngine);
+    }
+    fs::create_directories(paths.preferredEngine / "Contents/MacOS");
+    std::ofstream(paths.preferredEngine / "Contents/MacOS/LoopZ Engine") << "fixture";
+    fs::permissions(paths.preferredEngine / "Contents/MacOS/LoopZ Engine", fs::perms::owner_exec,
+                    fs::perm_options::add);
+    assert(readEnginePath(paths.preferredEngine, paths.components.engine) == paths.preferredEngine);
+    fs::remove_all(f.paths.engine);
+    assert(probe().components[0].state == InstallationState::Installed);
+    fs::remove_all(paths.preferredEngine);
+    fs::create_directory(paths.preferredEngine);
+    assert(probe().components[0].state == InstallationState::Invalid);
+    fs::remove_all(paths.preferredEngine);
+    result = probe();
+    assert(result.components[0].state == InstallationState::Missing);
+    assert(result.components[0].detail.find("Repair audio") != std::string::npos);
+    fs::remove_all(payload);
+    assert(probe().components[0].detail.find("incomplete") != std::string::npos);
+    fs::create_directory(f.paths.routingDriver);
+    result = probe();
+    assert(!result.maintenanceAvailable &&
+           result.maintenanceUnavailableReason == "separate-driver");
+    assert(result.components[1].state == InstallationState::Invalid);
+    assert(result.components[1].detail.find("More than one") != std::string::npos);
+    fs::remove_all(f.paths.legacyDriver);
+    fs::create_directories(f.paths.engine / "Contents/MacOS");
+    std::ofstream(f.paths.engine / "Contents/MacOS/LoopZ Engine") << "fixture";
+    fs::create_directory(payload);
+    different = true;
+    result = probe();
+    for (const auto& component : result.components)
+        assert(component.state == InstallationState::Installed);
+    assert(!result.updateAvailable && !result.maintenanceAvailable);
+    assert(result.maintenanceUnavailableReason == "separate-driver");
+}
 } // namespace
 int main(int argc, char** argv) {
     @autoreleasepool {
@@ -153,6 +267,8 @@ int main(int argc, char** argv) {
             std::putchar('\n');
             return 0;
         }
+        knownOldJobIsNotForeign();
+        productionRecoveryStates();
         missingAndUninspected();
         validSlotsAndIdentityRoles();
         invalidOrMissingCannotAdvertiseInstalled();

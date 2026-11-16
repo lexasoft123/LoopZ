@@ -17,6 +17,37 @@ from install_transaction import FileTransaction, files
 from desktop_files import DesktopFileTransaction, identity, remove_at
 
 
+class EngineLocationTests(unittest.TestCase):
+    def test_dual_read_prefers_new_without_changing_install_target(self):
+        from engine_location import ENGINE_TARGET, LEGACY_ENGINE, read_engine_path
+
+        self.assertEqual(ENGINE_TARGET, LEGACY_ENGINE)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            new, old = root / "new.app", root / "old.app"
+            (old / "Contents/MacOS").mkdir(parents=True)
+            (old / "Contents/MacOS/LoopZ Engine").write_text("fixture")
+            (old / "Contents/MacOS/LoopZ Engine").chmod(0o755)
+            self.assertEqual(read_engine_path(new, old), old)
+            for kind in ("empty", "file", "symlink"):
+                if kind == "empty":
+                    new.mkdir()
+                elif kind == "file":
+                    new.write_text("stray")
+                else:
+                    new.symlink_to(old, target_is_directory=True)
+                self.assertEqual(read_engine_path(new, old), old)
+                if kind == "empty":
+                    new.rmdir()
+                else:
+                    new.unlink()
+            (new / "Contents/MacOS").mkdir(parents=True)
+            executable = new / "Contents/MacOS/LoopZ Engine"
+            executable.write_text("fixture")
+            executable.chmod(0o755)
+            self.assertEqual(read_engine_path(new, old), new)
+
+
 class Guard:
     fail_stop = False
     fail_close = False

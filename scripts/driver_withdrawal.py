@@ -5,6 +5,8 @@ from pathlib import Path
 import tempfile
 import time
 
+from engine_location import ENGINE_EXECUTABLE
+
 
 def withdraw_devices(session):
     if not session.paused or session.job_state() is not None:
@@ -27,7 +29,7 @@ def withdraw_devices(session):
         document.write_text('{"version":2,"devices":[]}\n')
         document.chmod(0o600)
         result = session.host.user_command(
-            "/Applications/LoopZ Engine.app/Contents/MacOS/LoopZ Engine",
+            ENGINE_EXECUTABLE,
             "--routing-document", document,
             "--installation-validation", "true",
             "--seconds", "2",

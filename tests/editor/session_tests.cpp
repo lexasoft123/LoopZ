@@ -46,6 +46,10 @@ int main() {
     raw->job = SessionJob::Foreign;
     supervisor.poll(15001);
     assert(!supervisor.status().managed && raw->launches == 1);
+    raw->job = SessionJob::KnownOld;
+    supervisor.poll(20001);
+    assert(!supervisor.status().managed && raw->launches == 1);
+    assert(supervisor.status().detail.find("Repair audio") != std::string::npos);
     raw->job = SessionJob::Missing;
     raw->accepted = false;
     supervisor.retry();

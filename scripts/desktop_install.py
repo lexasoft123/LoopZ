@@ -8,11 +8,12 @@ import re
 import stat
 
 from desktop_files import DesktopFileTransaction
+from engine_location import ENGINE_TARGET
 from install_transaction import check_ancestors, files
 
 TEAM = "USJ7H3X44X"
 NAMES = ("LoopZ.app", "LoopZ Engine.app")
-TARGETS = {name: Path("/Applications") / name for name in NAMES}
+TARGETS = {"LoopZ.app": Path("/Applications/LoopZ.app"), "LoopZ Engine.app": ENGINE_TARGET}
 IDENTIFIERS = {
     "LoopZ.app/Contents/MacOS/LoopZLogin": "com.lexasoft.loopz.login",
     "LoopZ.app": "com.lexasoft.loopz.editor",

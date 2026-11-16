@@ -545,5 +545,42 @@
     "Enable to hear this mix on the selected output.": [
         "Включите, чтобы слышать микс на выбранном выходе.",
         "启用后可在所选输出上收听此混音。"
+    ],
+    "Move LoopZ to Applications to maintain audio components.": [
+        "Переместите LoopZ в «Программы» для обслуживания аудиокомпонентов.",
+        "将 LoopZ 移到“应用程序”以维护音频组件。"
+    ],
+    "This copy of LoopZ is missing its setup helper. Download the full LoopZ release and replace this copy.": [
+        "В этой копии LoopZ нет помощника установки. Скачайте полный выпуск LoopZ и замените эту копию.",
+        "此 LoopZ 副本缺少安装助手。请下载完整的 LoopZ 发行版并替换此副本。"
+    ],
+    "This copy of LoopZ is incomplete. Download the full LoopZ release and replace this copy.": [
+        "Эта копия LoopZ неполная. Скачайте полный выпуск LoopZ и замените эту копию.",
+        "此 LoopZ 副本不完整。请下载完整的 LoopZ 发行版并替换此副本。"
+    ],
+    "This older LoopZ audio installation must be removed before audio setup can continue. Contact support for help preserving your audio setup.": [
+        "Прежде чем продолжить настройку аудио, нужно удалить старую установку LoopZ. Обратитесь в поддержку, чтобы сохранить настройки аудио.",
+        "必须先移除旧版 LoopZ 音频安装才能继续设置。请联系支持以保留音频设置。"
+    ],
+    "LoopZ Engine is missing or damaged. Use Install audio components or Repair audio in Settings.": [
+        "LoopZ Engine отсутствует или повреждён. Выберите «Установить аудиокомпоненты» или «Восстановить аудио» в настройках.",
+        "LoopZ Engine 缺失或损坏。请在设置中选择“安装音频组件”或“修复音频”。"
+    ],
+    "Retry audio connection": ["Повторить подключение аудио", "重试音频连接"],
+    "The audio components are installed. Open Settings and choose Retry audio connection. Your saved graph stays intact.": [
+        "Аудиокомпоненты установлены. Откройте настройки и выберите «Повторить подключение аудио». Сохранённая схема останется без изменений.",
+        "音频组件已安装。请打开设置并选择“重试音频连接”。保存的路由图会保持不变。"
+    ],
+    "An older LoopZ Engine job is running. Use Repair audio in Settings.": [
+        "Запущено старое задание LoopZ Engine. Выберите «Восстановить аудио» в настройках.",
+        "旧版 LoopZ Engine 任务正在运行。请在设置中选择“修复音频”。"
+    ],
+    "More than one LoopZ audio driver is present. Contact support for help removing the older installation and preserving your audio setup.": [
+        "Установлено несколько аудиодрайверов LoopZ. Обратитесь в поддержку, чтобы удалить старую установку и сохранить настройки аудио.",
+        "存在多个 LoopZ 音频驱动程序。请联系支持，以移除旧版安装并保留音频设置。"
+    ],
+    "This separate routing driver layout cannot be maintained in-app. Contact support before changing audio components.": [
+        "Эту схему с отдельным драйвером маршрутизации нельзя обслуживать в приложении. Обратитесь в поддержку перед изменением аудиокомпонентов.",
+        "此独立路由驱动布局无法在应用内维护。更改音频组件前请联系支持。"
     ]
 }

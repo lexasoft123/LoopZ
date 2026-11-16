@@ -38,6 +38,8 @@ class Host final : public singz::AudioHostBackend {
     singz::AudioHostResult open(const singz::AudioHostConfig& config, singz::AudioHostRender render,
                                 void* context) override {
         ++counts_->opened;
+        // The macOS provider refuses a buffer request without explicit consent.
+        assert(config.requestedBufferFrames == 0 || config.allowSharedDeviceBufferChange);
         if (counts_->fail || config.outputDeviceUid == counts_->failedUid)
             return {false,
                     singz::AudioHostError::ProviderFailure,

@@ -1173,3 +1173,31 @@ a read-only rehearsal on the current single-user installation. Full installed
 removal/reinstall, other-user login registration, physical continuity and abrupt
 loss still require acceptance. No system removal has been performed, and this
 workspace feature is not included in the frozen recovery update package.
+
+## Engine location and recovery
+
+The installer still writes `/Applications/LoopZ Engine.app`. New installations
+and explicit audio maintenance protect the Engine as root-owned. Native readers
+prefer `/Library/Application Support/LoopZ/LoopZ Engine.app` only when it is a
+real bundle directory containing the Engine executable, then accept the
+Applications location. Stray entries, incomplete directories and symlinks
+at the new location do not shadow a healthy Applications installation. This does
+not move an existing installation
+or replace an existing launchd job automatically; see
+[the Engine location decision](decisions/engine-location.md).
+
+A missing Engine is recoverable through Install audio components or Repair audio
+in Settings when the complete application is in Applications. If the setup helper
+or bundled AudioComponents payload is absent, replace the incomplete copy with
+the full LoopZ release. Moving an incomplete copy cannot restore its payload.
+
+The older separate `LoopZRoutingAudio.driver` layout is not supported by the
+current in-app maintenance transaction. The helper deliberately refuses that
+slot to avoid replacing an independently installed driver or leaving competing
+routing plug-ins loaded. A healthy separate routing-only layout remains Installed
+and shows no setup-error
+banner; Settings explains that in-app maintenance is unavailable for that layout.
+The probe reports both driver slots present as invalid and gives accurate removal
+guidance. Removing or migrating that installation requires a separately reviewed
+procedure that preserves its audio setup; repeatedly choosing Repair cannot fix
+it. The Engine-location change does not implement that driver migration.

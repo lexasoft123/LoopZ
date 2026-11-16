@@ -17,6 +17,7 @@ struct InstallationSnapshot {
     std::array<InstallationComponent, 3> components;
     bool updateAvailable{false};
     bool maintenanceAvailable{false};
+    std::string maintenanceUnavailableReason;
     bool activationRequired{false};
 };
 using InstallationProbe = std::function<InstallationSnapshot()>;
@@ -30,6 +31,16 @@ using InstallationCodeCheck =
 using InstallationDaemonCheck = std::function<bool(const std::filesystem::path&)>;
 InstallationProbe makeInstallationProbe(InstallationPaths paths, InstallationCodeCheck code,
                                         InstallationDaemonCheck daemon);
+// Native-only fixture seam; production uses the fixed paths and signature checks below.
+struct ProductionInstallationPaths {
+    InstallationPaths components;
+    std::filesystem::path app, expectedApp, support, preferredEngine;
+};
+using InstallationDigest = std::function<std::string(const std::filesystem::path&)>;
+InstallationProbe makeProductionInstallationProbe(ProductionInstallationPaths paths,
+                                                  InstallationCodeCheck code,
+                                                  InstallationDaemonCheck daemon,
+                                                  InstallationDigest digest);
 InstallationProbe productionInstallationProbe();
 NSDictionary* installationJSON(const InstallationSnapshot& snapshot);
 } // namespace loopz::macos

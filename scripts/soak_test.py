@@ -7,16 +7,18 @@ monitor is muted. No recordings are saved, only counters and process metrics.
 import argparse
 import fcntl
 import hashlib
-import platform
 import json
 import os
 from pathlib import Path
+import platform
 import plistlib
 import re
-import signal
 import shutil
+import signal
 import subprocess
 import time
+
+from engine_location import ENGINE_EXECUTABLE
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
@@ -84,7 +86,7 @@ summary = {
     "executables": {
         str(path): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in [
-            Path("/Applications/LoopZ Engine.app/Contents/MacOS/LoopZ Engine"),
+            Path(ENGINE_EXECUTABLE),
             root / "build/loopz-probe",
             root / "build/LoopZ Test Source.app/Contents/MacOS/LoopZ Test Source",
             Path("/Library/Application Support/LoopZ/loopz-broker"),
@@ -226,7 +228,7 @@ try:
     bootstrap(
         engine_label,
         [
-            "/Applications/LoopZ Engine.app/Contents/MacOS/LoopZ Engine",
+            ENGINE_EXECUTABLE,
             "--app",
             "com.lexasoft.loopz.testsource",
             "--mute-app",

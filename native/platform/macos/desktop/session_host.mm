@@ -1,3 +1,4 @@
+#include "engine_job.hpp"
 #include "session_host.hpp"
 #import <Foundation/Foundation.h>
 #import <Security/Security.h>
@@ -146,6 +147,7 @@ bool processIdentity(pid_t pid, const std::filesystem::path& executable, const s
 }
 class Host final : public SessionHost {
     const SessionPaths paths_;
+    const SessionInspectCommand inspectCommand_;
     const std::string pin_;
     const std::string domain_{"gui/" + std::to_string(getuid())};
     std::string target() const {
@@ -154,18 +156,19 @@ class Host final : public SessionHost {
     std::filesystem::path executable() const {
         return paths_.engine / "Contents/MacOS/LoopZ Engine";
     }
-    NSArray* arguments() const {
+    NSArray* arguments(const std::filesystem::path& engine = {}) const {
         // The background profile uses the quantum verified with concurrent
         // 64-frame virtual clients. It preserves source/lookback metadata.
         return @[
-            text(executable().string()), @"--routing-document", text(paths_.document.string()),
-            @"--editor-service", @"true", @"--block-frames", @"64"
+            text((engine.empty() ? executable() : engine / "Contents/MacOS/LoopZ Engine").string()),
+            @"--routing-document", text(paths_.document.string()), @"--editor-service", @"true",
+            @"--block-frames", @"64"
         ];
     }
-    NSDictionary* definition() const {
+    NSDictionary* definition(const std::filesystem::path& engine = {}) const {
         return @{
             @"Label" : text(paths_.label),
-            @"ProgramArguments" : arguments(),
+            @"ProgramArguments" : arguments(engine),
             @"RunAtLoad" : @YES,
             @"KeepAlive" : @YES,
             @"ThrottleInterval" : @10,
@@ -176,7 +179,7 @@ class Host final : public SessionHost {
             @"StandardErrorPath" : @"/dev/null"
         };
     }
-    void validateDefinition(int directory) const {
+    void validateDefinition(int directory, const std::filesystem::path& engine = {}) const {
         File file(openat(directory, "engine.plist", O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
         privateFile(file, false);
         struct stat info{};
@@ -197,19 +200,27 @@ class Host final : public SessionHost {
                                                               options:NSPropertyListImmutable
                                                                format:nil
                                                                 error:nil];
-        if (![stored isEqual:definition()])
+        const auto match = classifyEngineJob(stored, definition(engine));
+        if (match == EngineJobDefinition::KnownOld)
+            throw std::runtime_error(
+                "An older LoopZ Engine job is running. Use Repair audio in Settings.");
+        if (match == EngineJobDefinition::Foreign)
             throw std::runtime_error("Another configuration occupies LoopZ’s background job file.");
     }
 
   public:
-    Host(SessionPaths paths, std::string pin) : paths_(std::move(paths)), pin_(std::move(pin)) {
+    Host(SessionPaths paths, std::string pin, SessionInspectCommand inspectCommand)
+        : paths_(std::move(paths)), inspectCommand_(std::move(inspectCommand)),
+          pin_(std::move(pin)) {
         if (!getuid() || paths_.label.empty() || paths_.service.empty() ||
             !paths_.engine.is_absolute() || !paths_.document.is_absolute() ||
-            !paths_.directory.is_absolute())
+            !paths_.directory.is_absolute() ||
+            (!paths_.legacyEngine.empty() && !paths_.legacyEngine.is_absolute()))
             throw std::invalid_argument(
                 "Background routing requires a user session and absolute paths");
-        for (const auto& path : {paths_.engine.string(), paths_.document.string(),
-                                 paths_.directory.string(), paths_.label, paths_.service})
+        for (const auto& path :
+             {paths_.engine.string(), paths_.document.string(), paths_.directory.string(),
+              paths_.legacyEngine.string(), paths_.label, paths_.service})
             if ([text(path) rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location !=
                 NSNotFound)
                 throw std::invalid_argument(
@@ -217,8 +228,9 @@ class Host final : public SessionHost {
         (void)definition();
     }
     SessionJob inspect() override {
-        AudioMaintenanceLease maintenance(paths_.engine == "/Applications/LoopZ Engine.app");
-        const auto result = sessionCommand({"/bin/launchctl", "print", target()});
+        AudioMaintenanceLease maintenance(installedEnginePath(paths_.engine));
+        const auto args = std::vector<std::string>{"/bin/launchctl", "print", target()};
+        const auto result = inspectCommand_ ? inspectCommand_(args) : sessionCommand(args);
         if (result.exitCode != 0) {
             if ((result.exitCode == 113 || result.exitCode == 3) &&
                 result.output.find("Could not find service") != std::string::npos)
@@ -232,14 +244,24 @@ class Host final : public SessionHost {
         for (NSString* line in [output componentsSeparatedByString:@"\n"])
             [lines addObject:[line stringByTrimmingCharactersInSet:NSCharacterSet
                                                                        .whitespaceCharacterSet]];
+        auto jobEngine = paths_.engine;
+        const auto legacy = paths_.legacyEngine.empty() ? legacyEnginePath : paths_.legacyEngine;
+        if ((installedEnginePath(paths_.engine) || !paths_.legacyEngine.empty()) &&
+            [lines containsObject:[@"program = "
+                                      stringByAppendingString:text((legacy /
+                                                                    "Contents/MacOS/LoopZ Engine")
+                                                                       .string())]])
+            jobEngine = legacy;
         if (![lines containsObject:[@"path = " stringByAppendingString:text((paths_.directory /
                                                                              "engine.plist")
                                                                                 .string())]] ||
-            ![lines
-                containsObject:[@"program = " stringByAppendingString:text(executable().string())]])
+            ![lines containsObject:[@"program = "
+                                       stringByAppendingString:text((jobEngine /
+                                                                     "Contents/MacOS/LoopZ Engine")
+                                                                        .string())]])
             return SessionJob::Foreign;
         NSUInteger first = [lines indexOfObject:@"arguments = {"];
-        auto* expected = arguments();
+        auto* expected = arguments(jobEngine);
         if (first == NSNotFound || first + expected.count + 1 >= lines.count)
             return SessionJob::Foreign;
         for (NSUInteger index = 0; index < expected.count; ++index)
@@ -258,17 +280,23 @@ class Host final : public SessionHost {
         const File directory(
             open(paths_.directory.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
         privateFile(directory, true);
-        validateDefinition(directory);
+        validateDefinition(directory, jobEngine);
+        if (!std::filesystem::is_regular_file(jobEngine / "Contents/MacOS/LoopZ Engine"))
+            throw std::runtime_error("LoopZ Engine is missing or damaged. Use Install audio "
+                                     "components or Repair audio in Settings.");
         for (NSString* line in lines)
             if ([line hasPrefix:@"pid = "]) {
                 const auto pid = [[line substringFromIndex:6] intValue];
-                if (pid <= 0 || !processIdentity(pid, executable(), pin_))
+                if (pid <= 0 ||
+                    !processIdentity(pid, jobEngine / "Contents/MacOS/LoopZ Engine", pin_))
                     return SessionJob::Foreign;
             }
-        return SessionJob::Managed;
+        // validateDefinition used the actual jobEngine, so its classifier sees Current.
+        // The preferred-path comparison here recognizes a fully verified legacy job.
+        return jobEngine != paths_.engine ? SessionJob::KnownOld : SessionJob::Managed;
     }
     void validateEngine() override {
-        AudioMaintenanceLease maintenance(paths_.engine == "/Applications/LoopZ Engine.app");
+        AudioMaintenanceLease maintenance(installedEnginePath(paths_.engine));
         staticIdentity(paths_.engine, pin_);
         const auto result = sessionCommand({executable().string(), "--runtime-capabilities"});
         NSData* data = [text(result.output) dataUsingEncoding:NSUTF8StringEncoding];
@@ -278,7 +306,7 @@ class Host final : public SessionHost {
             throw std::runtime_error("Update LoopZ Engine to enable background routing.");
     }
     void launch() override {
-        AudioMaintenanceLease maintenance(paths_.engine == "/Applications/LoopZ Engine.app");
+        AudioMaintenanceLease maintenance(installedEnginePath(paths_.engine));
         // The session file is deliberately outside Library/LaunchAgents.
         // Login registration is a separate, explicitly chosen SMAppService.
         auto parent = privateDirectory(paths_.directory.parent_path());
@@ -337,17 +365,17 @@ class Host final : public SessionHost {
     }
 };
 } // namespace
-std::unique_ptr<SessionHost> makeSessionHost(SessionPaths paths, const std::string& requirement) {
-    return std::make_unique<Host>(std::move(paths), requirement);
+std::unique_ptr<SessionHost> makeSessionHost(SessionPaths paths, const std::string& requirement,
+                                             SessionInspectCommand inspectCommand) {
+    return std::make_unique<Host>(std::move(paths), requirement, std::move(inspectCommand));
 }
 std::unique_ptr<SessionHost> productionSessionHost() {
     struct passwd* user = getpwuid(getuid());
     if (!user || !user->pw_dir)
         throw std::runtime_error("The current user’s home directory is unavailable.");
     const auto support = std::filesystem::path(user->pw_dir) / "Library/Application Support/LoopZ";
-    return makeSessionHost({"/Applications/LoopZ Engine.app", support / "routes.json",
-                            support / "Session", "com.lexasoft.loopz.session",
-                            "com.lexasoft.loopz.editor.control"},
+    return makeSessionHost({readEnginePath(), support / "routes.json", support / "Session",
+                            "com.lexasoft.loopz.session", "com.lexasoft.loopz.editor.control"},
                            "identifier \"com.lexasoft.loopz.engine\" and anchor apple generic and "
                            "certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate "
                            "leaf[field.1.2.840.113635.100.6.1.13] exists and certificate "
