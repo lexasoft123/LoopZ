@@ -1,4 +1,7 @@
 #include "engine_location.hpp"
+#include "engine_migration.hpp"
+#include <pwd.h>
+#include <unistd.h>
 #include "installation_setup.hpp"
 #import <Security/Security.h>
 #include <sys/stat.h>
@@ -87,7 +90,7 @@ bool daemonDefinition(const fs::path& path) {
         @"Label" : @"com.lexasoft.loopz.routing",
         @"ProgramArguments" : @[
             @"/Library/Application Support/LoopZ/loopz-routing-broker", @"--engine-requirement",
-            text(requirement("com.lexasoft.loopz.engine"))
+            text(requirement(engineBundleIdentifier))
         ],
         @"MachServices" : @{@"com.lexasoft.loopz.routing.bridge" : @YES},
         @"KeepAlive" : @YES,
@@ -168,7 +171,7 @@ InstallationProbe makeInstallationProbe(InstallationPaths paths, InstallationCod
             throw std::invalid_argument("Installation checks require absolute paths");
     return [paths = std::move(paths), code = std::move(code), daemon = std::move(daemon)] {
         InstallationSnapshot result;
-        result.components[0] = checkedCode(paths.engine, true, "com.lexasoft.loopz.engine", false,
+        result.components[0] = checkedCode(paths.engine, true, engineBundleIdentifier, false,
                                            "LoopZ Engine is missing or damaged. Use Install audio "
                                            "components or Repair audio in Settings.",
                                            "LoopZ Engine is missing or damaged. Use Install audio "
@@ -236,8 +239,32 @@ InstallationProbe makeProductionInstallationProbe(ProductionInstallationPaths pa
     return [paths, code, daemon, digest] {
         auto components = paths.components;
         components.engine = readEnginePath(paths.preferredEngine, components.engine);
+        bool invalidJob = false;
+        NSDictionary* accountJob =
+            paths.document.empty()
+                ? nil
+                : accountEngineJob(paths.document.parent_path() / "Session/engine.plist",
+                                   &invalidJob);
+        bool pendingMigration = false;
+        if (!paths.document.empty()) {
+            NSData* data = [NSData dataWithContentsOfFile:@(paths.document.c_str())];
+            id document =
+                data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+            if (!invalidJob && [document isKindOfClass:NSDictionary.class])
+                pendingMigration =
+                    accountMigrationPending(document, accountJob, paths.components.engine);
+        }
+        if (pendingMigration)
+            components.engine = paths.components.engine;
+        else if (!paths.document.empty() && accountJobUses(accountJob, paths.preferredEngine))
+            components.engine = paths.preferredEngine;
         auto result = makeInstallationProbe(components, code, daemon)();
-        if (!readableEngineBundle(paths.preferredEngine) &&
+        result.migrationPending = pendingMigration;
+        if (invalidJob)
+            result.components[0] = {
+                InstallationState::Unknown,
+                "LoopZ could not check its audio components. Retry the setup check."};
+        if (!pendingMigration && !readableEngineBundle(paths.preferredEngine) &&
             fs::symlink_status(paths.preferredEngine).type() != fs::file_type::not_found &&
             result.components[0].state != InstallationState::Installed)
             result.components[0].state = InstallationState::Invalid;
@@ -294,7 +321,10 @@ InstallationProbe productionInstallationProbe() {
          NSBundle.mainBundle.bundlePath.UTF8String ?: "",
          "/Applications/LoopZ.app",
          "/Library/Application Support/LoopZ",
-         newEnginePath},
+         newEnginePath,
+         getpwuid(getuid()) ? fs::path(getpwuid(getuid())->pw_dir) /
+                                  "Library/Application Support/LoopZ/routes.json"
+                            : fs::path{}},
         signedCode, daemonDefinition, [](const fs::path& path) -> std::string {
             NSData* value = codeDigest(path);
             return value ? std::string(static_cast<const char*>(value.bytes), value.length) : "";
@@ -316,7 +346,8 @@ NSDictionary* installationJSON(const InstallationSnapshot& snapshot) {
         @"updateAvailable" : @(snapshot.updateAvailable),
         @"maintenanceAvailable" : @(snapshot.maintenanceAvailable),
         @"maintenanceUnavailableReason" : text(snapshot.maintenanceUnavailableReason),
-        @"activationRequired" : @(snapshot.activationRequired)
+        @"activationRequired" : @(snapshot.activationRequired),
+        @"migrationPending" : @(snapshot.migrationPending)
     };
 }
 } // namespace loopz::macos

@@ -133,8 +133,8 @@ NSDictionary* requestAudioMaintenance(NSString* action) {
         return @{
             @"ok" : @NO,
             @"code" : @"approval-required",
-            @"detail" : @"Allow LoopZ in System Settings → General → Login Items & Extensions, "
-                        @"then try again."
+            @"detail" : @"Allow LoopZ in System Settings → General → Login Items & Extensions. "
+                        @"Setup continues automatically once you do."
         };
     if (service.status != SMAppServiceStatusEnabled)
         return @{

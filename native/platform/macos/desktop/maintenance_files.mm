@@ -178,7 +178,7 @@ void AudioInstallTransaction::save(const char* phase) {
     fs::rename(temporary, directory_ / "maintenance.plist");
     syncFile(directory_, true);
 }
-void AudioInstallTransaction::prepare() {
+void AudioInstallTransaction::prepare(const std::function<void(const fs::path&)>& verifyStage) {
     require(!present(directory_ / "maintenance.plist"),
             "Recover the interrupted audio update first.");
     oldHashes_.clear();
@@ -192,13 +192,18 @@ void AudioInstallTransaction::prepare() {
     try {
         for (size_t i = 0; i < entries_.size(); ++i) {
             oldHashes_.push_back(audioTreeDigest(entries_[i].target));
-            newHashes_.push_back(audioTreeDigest(entries_[i].source));
+            newHashes_.push_back(entries_[i].source.empty() ? std::string{}
+                                                            : audioTreeDigest(entries_[i].source));
+            if (entries_[i].source.empty())
+                continue;
             require(!newHashes_.back().empty(), "A bundled audio component is missing.");
             const auto target = work_ / "new" / std::to_string(i);
             fs::copy(entries_[i].source, target, fs::copy_options::recursive);
             require(audioTreeDigest(target) == newHashes_.back(), "Audio staging did not verify.");
             syncAudioTree(target);
         }
+        if (verifyStage)
+            verifyStage(work_ / "new");
         save("prepared");
     } catch (...) {
         if (!present(directory_ / "maintenance.plist"))
@@ -206,8 +211,39 @@ void AudioInstallTransaction::prepare() {
         throw;
     }
 }
+void AudioInstallTransaction::moveFromTarget(size_t index, const fs::path& backup) {
+    const auto& entry = entries_[index];
+    if (entry.targetDirectory < 0)
+        fs::rename(entry.target, backup);
+    else
+        require(!renameat(entry.targetDirectory, entry.target.filename().c_str(), AT_FDCWD,
+                          backup.c_str()) &&
+                    !fsync(entry.targetDirectory),
+                "The background job could not be backed up.");
+}
+void AudioInstallTransaction::moveToTarget(const fs::path& source, size_t index) {
+    const auto& entry = entries_[index];
+    if (entry.targetDirectory < 0)
+        fs::rename(source, entry.target);
+    else
+        require(!renameat(AT_FDCWD, source.c_str(), entry.targetDirectory,
+                          entry.target.filename().c_str()) &&
+                    !fsync(entry.targetDirectory),
+                "The background job could not be published.");
+}
+void AudioInstallTransaction::removeTarget(size_t index) {
+    if (entries_[index].targetDirectory < 0)
+        fs::remove_all(entries_[index].target);
+    else {
+        const auto discard = work_ / ("discard-" + std::to_string(index));
+        moveFromTarget(index, discard);
+        fs::remove_all(discard);
+    }
+}
 void AudioInstallTransaction::promote() {
     for (size_t i = 0; i < entries_.size(); ++i) {
+        if (entries_[i].source.empty())
+            continue;
         require(audioTreeDigest(entries_[i].target) == oldHashes_[i],
                 "An installed audio component changed during maintenance.");
         if (oldHashes_[i] == newHashes_[i])
@@ -215,25 +251,58 @@ void AudioInstallTransaction::promote() {
         attempted_ = i + 1;
         save("changing"); // Durable before either rename, including the crash window between them.
         if (!oldHashes_[i].empty())
-            fs::rename(entries_[i].target, work_ / "old" / std::to_string(i));
-        fs::rename(work_ / "new" / std::to_string(i), entries_[i].target);
+            moveFromTarget(i, work_ / "old" / std::to_string(i));
+        moveToTarget(work_ / "new" / std::to_string(i), i);
         syncFile(entries_[i].target.parent_path(), true);
         syncFile(work_ / "old", true);
+    }
+}
+void AudioInstallTransaction::retire() {
+    // Retirement entries must follow all replacements. The journal is durable
+    // before renaming; an interrupted verification can restore the old path.
+    for (size_t i = 0; i < entries_.size(); ++i) {
+        if (!entries_[i].source.empty())
+            continue;
+        require(audioTreeDigest(entries_[i].target) == oldHashes_[i],
+                "The legacy Engine changed during maintenance.");
+        attempted_ = i + 1;
+        save("changing");
+        if (!oldHashes_[i].empty()) {
+            moveFromTarget(i, work_ / "old" / std::to_string(i));
+            syncFile(entries_[i].target.parent_path(), true);
+            syncFile(work_ / "old", true);
+        }
     }
 }
 void AudioInstallTransaction::rollback() {
     for (size_t i = attempted_; i-- > 0;) {
         const auto backup = work_ / "old" / std::to_string(i);
-        const auto current = audioTreeDigest(entries_[i].target);
+        std::string current;
+        try {
+            current = audioTreeDigest(entries_[i].target);
+        } catch (...) {
+            if (!entries_[i].source.empty() || !present(backup))
+                throw;
+            current = "untrusted-retirement-conflict";
+        }
         if (present(backup)) {
             require(audioTreeDigest(backup) == oldHashes_[i], "An audio recovery backup changed.");
-            require(current.empty() || current == newHashes_[i],
-                    "A changed audio component was preserved for manual review.");
-            if (!current.empty())
-                fs::remove_all(entries_[i].target);
-            fs::rename(backup, entries_[i].target);
+            if (entries_[i].source.empty() && !current.empty()) {
+                // A recreated legacy path must not prevent restoration of the
+                // Engine, job and driver. Retain unknown bytes outside cleanup.
+                const auto preserved =
+                    directory_ /
+                    (".preserved-legacy-" + std::string(NSUUID.UUID.UUIDString.UTF8String));
+                moveFromTarget(i, preserved);
+                syncFile(directory_, true);
+            } else
+                require(current.empty() || current == newHashes_[i],
+                        "A changed audio component was preserved for manual review.");
+            if (!current.empty() && !entries_[i].source.empty())
+                removeTarget(i);
+            moveToTarget(backup, i);
         } else if (oldHashes_[i].empty() && current == newHashes_[i]) {
-            fs::remove_all(entries_[i].target);
+            removeTarget(i);
         } else {
             require(current == oldHashes_[i], "An audio recovery component is unavailable.");
         }
@@ -243,6 +312,9 @@ void AudioInstallTransaction::rollback() {
     clean();
 }
 void AudioInstallTransaction::commit() {
+    for (size_t i = 0; i < entries_.size(); ++i)
+        require(audioTreeDigest(entries_[i].target) == newHashes_[i],
+                "Audio maintenance verification is incomplete.");
     save("committed");
     clean();
 }

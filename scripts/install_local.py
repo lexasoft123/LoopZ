@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 import time
 
-from engine_location import ENGINE_TARGET
+from engine_location import lazy_installed_engine_path
 from install_transaction import (
     NAMES,
     FileTransaction,
@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STAGE = ROOT / "artifacts/feasibility"
 TARGETS = {
     "LoopZAudio.driver": Path("/Library/Audio/Plug-Ins/HAL/LoopZAudio.driver"),
-    "LoopZ Engine.app": ENGINE_TARGET,
+    "LoopZ Engine.app": lazy_installed_engine_path(),
     "loopz-broker": Path("/Library/Application Support/LoopZ/loopz-broker"),
     "loopz-probe": Path("/Library/Application Support/LoopZ/loopz-probe"),
     "loopz-install-check": Path("/Library/Application Support/LoopZ/loopz-install-check"),

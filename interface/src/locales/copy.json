@@ -346,9 +346,9 @@
         "Обслуживание ненадолго остановит маршрутизацию LoopZ, затем восстановит сохранённые миксы. Закройте приложения, использующие звук LoopZ. macOS запросит права администратора.",
         "维护会短暂停止 LoopZ 路由，然后恢复保存的混音。继续前请关闭使用 LoopZ 音频的应用。macOS 将请求管理员授权。"
     ],
-    "Allow LoopZ in System Settings → General → Login Items & Extensions, then try again.": [
-        "Разрешите LoopZ в «Системные настройки → Основные → Объекты входа и расширения» и повторите попытку.",
-        "在“系统设置 → 通用 → 登录项与扩展”中允许 LoopZ，然后重试。"
+    "Allow LoopZ in System Settings → General → Login Items & Extensions. Setup continues automatically once you do.": [
+        "Разрешите LoopZ в «Системные настройки → Основные → Объекты входа и расширения». Настройка продолжится автоматически.",
+        "在“系统设置 → 通用 → 登录项与扩展”中允许 LoopZ。允许后将自动继续设置。"
     ],
     "Finish audio setup": ["Завершить настройку звука", "完成音频设置"],
     "Audio components installed. Choose Finish audio setup to activate the driver.": [
@@ -558,10 +558,6 @@
         "Эта копия LoopZ неполная. Скачайте полный выпуск LoopZ и замените эту копию.",
         "此 LoopZ 副本不完整。请下载完整的 LoopZ 发行版并替换此副本。"
     ],
-    "This older LoopZ audio installation must be removed before audio setup can continue. Contact support for help preserving your audio setup.": [
-        "Прежде чем продолжить настройку аудио, нужно удалить старую установку LoopZ. Обратитесь в поддержку, чтобы сохранить настройки аудио.",
-        "必须先移除旧版 LoopZ 音频安装才能继续设置。请联系支持以保留音频设置。"
-    ],
     "LoopZ Engine is missing or damaged. Use Install audio components or Repair audio in Settings.": [
         "LoopZ Engine отсутствует или повреждён. Выберите «Установить аудиокомпоненты» или «Восстановить аудио» в настройках.",
         "LoopZ Engine 缺失或损坏。请在设置中选择“安装音频组件”或“修复音频”。"
@@ -582,5 +578,9 @@
     "This separate routing driver layout cannot be maintained in-app. Contact support before changing audio components.": [
         "Эту схему с отдельным драйвером маршрутизации нельзя обслуживать в приложении. Обратитесь в поддержку перед изменением аудиокомпонентов.",
         "此独立路由驱动布局无法在应用内维护。更改音频组件前请联系支持。"
+    ],
+    "Engine migration is pending consent verification. Your saved mixes keep using the current Engine.": [
+        "Перенос Engine ожидает проверки разрешений. Сохранённые миксы продолжают использовать текущий Engine.",
+        "Engine 迁移正在等待权限验证。您保存的混音将继续使用当前 Engine。"
     ]
 }

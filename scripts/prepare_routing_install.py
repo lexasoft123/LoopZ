@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 import uuid
 
-from engine_location import ENGINE_EXECUTABLE
+from engine_location import installed_engine_executable
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVICE = "com.lexasoft.loopz.routing.bridge"
@@ -173,7 +173,7 @@ def stage(build, output, document, identity, keychain=None, legacy_slot=False):
         agent = {
             "Label": "com.lexasoft.loopz.engine",
             "ProgramArguments": [
-                ENGINE_EXECUTABLE,
+                installed_engine_executable(),
                 "--routing-document",
                 str(document),
             ],

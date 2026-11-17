@@ -1,4 +1,5 @@
 #include "engine_job.hpp"
+#include "engine_migration.hpp"
 #include "session_host.hpp"
 #import <Foundation/Foundation.h>
 #import <Security/Security.h>
@@ -180,7 +181,8 @@ class Host final : public SessionHost {
         };
     }
     void validateDefinition(int directory, const std::filesystem::path& engine = {}) const {
-        File file(openat(directory, "engine.plist", O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
+        File file(
+            openat(directory, "engine.plist", O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC));
         privateFile(file, false);
         struct stat info{};
         if (fstat(file, &info) || info.st_size < 1 || info.st_size > 65536)
@@ -252,6 +254,14 @@ class Host final : public SessionHost {
                                                                     "Contents/MacOS/LoopZ Engine")
                                                                        .string())]])
             jobEngine = legacy;
+        const auto preferred =
+            paths_.preferredEngine.empty() ? newEnginePath : paths_.preferredEngine;
+        if ((installedEnginePath(paths_.engine) || !paths_.preferredEngine.empty()) &&
+            [lines containsObject:[@"program = "
+                                      stringByAppendingString:text((preferred /
+                                                                    "Contents/MacOS/LoopZ Engine")
+                                                                       .string())]])
+            jobEngine = preferred;
         if (![lines containsObject:[@"path = " stringByAppendingString:text((paths_.directory /
                                                                              "engine.plist")
                                                                                 .string())]] ||
@@ -293,7 +303,8 @@ class Host final : public SessionHost {
             }
         // validateDefinition used the actual jobEngine, so its classifier sees Current.
         // The preferred-path comparison here recognizes a fully verified legacy job.
-        return jobEngine != paths_.engine ? SessionJob::KnownOld : SessionJob::Managed;
+        return jobEngine == legacy && jobEngine != paths_.engine ? SessionJob::KnownOld
+                                                                 : SessionJob::Managed;
     }
     void validateEngine() override {
         AudioMaintenanceLease maintenance(installedEnginePath(paths_.engine));
@@ -369,16 +380,35 @@ std::unique_ptr<SessionHost> makeSessionHost(SessionPaths paths, const std::stri
                                              SessionInspectCommand inspectCommand) {
     return std::make_unique<Host>(std::move(paths), requirement, std::move(inspectCommand));
 }
+std::unique_ptr<SessionHost> makeAccountSessionHost(SessionPaths paths,
+                                                    const std::string& requirement,
+                                                    SessionInspectCommand inspectCommand) {
+    NSData* bytes = [NSData dataWithContentsOfFile:@(paths.document.c_str())];
+    id document = bytes ? [NSJSONSerialization JSONObjectWithData:bytes options:0 error:nil] : nil;
+    const auto preferred = paths.preferredEngine.empty() ? newEnginePath : paths.preferredEngine;
+    const auto legacy = paths.legacyEngine.empty() ? legacyEnginePath : paths.legacyEngine;
+    paths.engine = sessionEnginePath([document isKindOfClass:NSDictionary.class] ? document : nil,
+                                     preferred, legacy, kMigrateApplicationCaptureGraphs,
+                                     accountEngineJob(paths.directory / "engine.plist"));
+    return makeSessionHost(std::move(paths), requirement, std::move(inspectCommand));
+}
 std::unique_ptr<SessionHost> productionSessionHost() {
+    const auto* user = getpwuid(getuid());
+    if (!user || !user->pw_dir)
+        throw std::runtime_error("The current user’s home directory is unavailable.");
+    const auto support = std::filesystem::path(user->pw_dir) / "Library/Application Support/LoopZ";
+    return makeAccountSessionHost({newEnginePath, support / "routes.json", support / "Session",
+                                   engineJobLabel, engineControlService, legacyEnginePath,
+                                   newEnginePath},
+                                  engineRequirement);
+}
+std::unique_ptr<SessionHost> productionSessionHost(const std::filesystem::path& engine) {
     struct passwd* user = getpwuid(getuid());
     if (!user || !user->pw_dir)
         throw std::runtime_error("The current user’s home directory is unavailable.");
     const auto support = std::filesystem::path(user->pw_dir) / "Library/Application Support/LoopZ";
-    return makeSessionHost({readEnginePath(), support / "routes.json", support / "Session",
-                            "com.lexasoft.loopz.session", "com.lexasoft.loopz.editor.control"},
-                           "identifier \"com.lexasoft.loopz.engine\" and anchor apple generic and "
-                           "certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate "
-                           "leaf[field.1.2.840.113635.100.6.1.13] exists and certificate "
-                           "leaf[subject.OU] = \"USJ7H3X44X\"");
+    return makeSessionHost({engine, support / "routes.json", support / "Session", engineJobLabel,
+                            engineControlService},
+                           engineRequirement);
 }
 } // namespace loopz::macos

@@ -18,7 +18,7 @@ import signal
 import subprocess
 import time
 
-from engine_location import ENGINE_EXECUTABLE
+from engine_location import installed_engine_executable
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
@@ -86,7 +86,7 @@ summary = {
     "executables": {
         str(path): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in [
-            Path(ENGINE_EXECUTABLE),
+            Path(installed_engine_executable()),
             root / "build/loopz-probe",
             root / "build/LoopZ Test Source.app/Contents/MacOS/LoopZ Test Source",
             Path("/Library/Application Support/LoopZ/loopz-broker"),
@@ -228,7 +228,7 @@ try:
     bootstrap(
         engine_label,
         [
-            ENGINE_EXECUTABLE,
+            installed_engine_executable(),
             "--app",
             "com.lexasoft.loopz.testsource",
             "--mute-app",

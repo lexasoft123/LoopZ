@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -32,4 +33,5 @@ class SessionSupervisor {
     uint64_t nextAttempt_{0};
 };
 std::unique_ptr<SessionHost> productionSessionHost();
+std::unique_ptr<SessionHost> productionSessionHost(const std::filesystem::path& engine);
 } // namespace loopz::macos

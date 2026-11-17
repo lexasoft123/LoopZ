@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@singz/ui";
 import { installationComponents } from "./installation.js";
 import { t } from "./i18n.js";
@@ -8,6 +8,15 @@ export function AudioSetup({ state, transport, refresh }) {
     const [detail, setDetail] = useState("");
     const [approvalRequired, setApprovalRequired] = useState(false);
     const [pendingActivation, setPendingActivation] = useState(false);
+    const waiter = useRef(0);
+    const mounted = useRef(true);
+    useEffect(() => {
+        mounted.current = true;
+        return () => {
+            mounted.current = false;
+            waiter.current += 1;
+        };
+    }, []);
     const components = installationComponents(state);
     if (!components.length || state.installation?.checked !== true) return null;
     const fresh = components.every(
@@ -30,8 +39,33 @@ export function AudioSetup({ state, transport, refresh }) {
         repair: "Repair audio",
         activate: "Finish audio setup",
     };
+    // After macOS asks for Login Items approval, watch the helper registration
+    // and continue the same action once it is enabled (SMAppService status 1).
+    const continueAfterApproval = async (choice) => {
+        const ticket = ++waiter.current;
+        for (let i = 0; i < 150; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            if (!mounted.current || waiter.current !== ticket) return;
+            let status;
+            try {
+                status = await transport({
+                    version: 1,
+                    operation: "audio-setup",
+                    action: "status",
+                });
+            } catch {
+                continue;
+            }
+            if (status?.registrationStatus === 1) {
+                setApprovalRequired(false);
+                await maintain(choice);
+                return;
+            }
+        }
+    };
     const maintain = async (choice) => {
         if (busy) return;
+        waiter.current += 1;
         setBusy(true);
         setDetail("");
         try {
@@ -40,7 +74,9 @@ export function AudioSetup({ state, transport, refresh }) {
                 operation: "audio-setup",
                 action: choice,
             });
-            setApprovalRequired(result?.code === "approval-required");
+            const approval = result?.code === "approval-required";
+            setApprovalRequired(approval);
+            if (approval && mounted.current) void continueAfterApproval(choice);
             if (!result?.ok)
                 throw Error(
                     result?.detail || t("Audio maintenance could not finish."),
@@ -48,9 +84,11 @@ export function AudioSetup({ state, transport, refresh }) {
             setPendingActivation(result.activationRequired === true);
             setDetail(
                 t(
-                    result.activationRequired
-                        ? "Audio components installed. Choose Finish audio setup to activate the driver."
-                        : "Audio components verified. Reconnecting your saved mixes…",
+                    result.migrationPending
+                        ? "Engine migration is pending consent verification. Your saved mixes keep using the current Engine."
+                        : result.activationRequired
+                          ? "Audio components installed. Choose Finish audio setup to activate the driver."
+                          : "Audio components verified. Reconnecting your saved mixes…",
                 ),
             );
             await transport({ version: 1, operation: "retry-session" });
@@ -74,7 +112,7 @@ export function AudioSetup({ state, transport, refresh }) {
     };
     const waiting = state.snapshot?.restoration?.phase === "waiting-for-driver";
     return (
-        <div className="lz-setting-row">
+        <div className="lz-setting-row lz-setting-row-stacked">
             <div>
                 <strong>
                     {t(fresh ? "Set up audio" : "Audio components")}
@@ -98,48 +136,57 @@ export function AudioSetup({ state, transport, refresh }) {
                         )}
                     </p>
                 )}
+                {state.installation?.migrationPending && !detail && (
+                    <p role="status">
+                        {t(
+                            "Engine migration is pending consent verification. Your saved mixes keep using the current Engine.",
+                        )}
+                    </p>
+                )}
                 {detail && <p role="status">{detail}</p>}
             </div>
-            {waiting && (
-                <Button
-                    disabled={busy}
-                    onClick={async () => {
-                        await transport({
-                            version: 1,
-                            operation: "retry-session",
-                        });
-                        await refresh();
-                    }}
-                >
-                    {t("Retry audio connection")}
-                </Button>
-            )}
-            {approvalRequired && (
-                <Button
-                    onClick={() =>
-                        transport({
-                            version: 1,
-                            operation: "audio-maintenance-settings",
-                        })
-                    }
-                >
-                    {t("Open audio approval settings")}
-                </Button>
-            )}
-            <Button
-                disabled={busy || !available}
-                onClick={() => maintain(action)}
-            >
-                {t(busy ? "Maintaining audio components…" : labels[action])}
-            </Button>
-            {update && (
+            <div className="lz-setting-actions">
+                {waiting && (
+                    <Button
+                        disabled={busy}
+                        onClick={async () => {
+                            await transport({
+                                version: 1,
+                                operation: "retry-session",
+                            });
+                            await refresh();
+                        }}
+                    >
+                        {t("Retry audio connection")}
+                    </Button>
+                )}
+                {approvalRequired && (
+                    <Button
+                        onClick={() =>
+                            transport({
+                                version: 1,
+                                operation: "audio-maintenance-settings",
+                            })
+                        }
+                    >
+                        {t("Open audio approval settings")}
+                    </Button>
+                )}
                 <Button
                     disabled={busy || !available}
-                    onClick={() => maintain("repair")}
+                    onClick={() => maintain(action)}
                 >
-                    {t("Repair audio")}
+                    {t(busy ? "Maintaining audio components…" : labels[action])}
                 </Button>
-            )}
+                {update && (
+                    <Button
+                        disabled={busy || !available}
+                        onClick={() => maintain("repair")}
+                    >
+                        {t("Repair audio")}
+                    </Button>
+                )}
+            </div>
         </div>
     );
 }

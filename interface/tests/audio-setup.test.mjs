@@ -114,6 +114,18 @@ try {
         assert.match(html, /disabled=""/);
         assert.doesNotMatch(html, /must be removed/);
     });
+    test("application capture migration pending is guidance without an error banner", () => {
+        const healthy = state({
+            migrationPending: true,
+            updateAvailable: false,
+        });
+        assert.equal(installationCondition(healthy), null);
+        assert.match(
+            render(healthy),
+            /Engine migration is pending consent verification/,
+        );
+        assert.match(render(healthy), /role="status"/);
+    });
     test("AudioSetup exposes retry for a waiting driver", () => {
         assert.match(
             render({

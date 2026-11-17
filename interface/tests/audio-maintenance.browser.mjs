@@ -20,6 +20,7 @@ let outcome = {
     code: "approval-required",
     detail: "Allow the LoopZ helper.",
 };
+let registrationStatus = 2;
 const calls = [];
 const browser = await chromium.launch({
     executablePath:
@@ -40,6 +41,8 @@ try {
                 currentVersion: "0.2.0",
                 automatic: true,
             };
+        if (request.operation === "audio-setup" && request.action === "status")
+            return { ok: true, registrationStatus };
         if (request.operation === "audio-setup")
             return structuredClone(outcome);
         if (
@@ -75,6 +78,10 @@ try {
         .getByRole("button", { name: "Install audio components", exact: true })
         .click();
     await page.getByText("Allow the LoopZ helper.", { exact: true }).waitFor();
+    await mkdir("../artifacts/audio-maintenance", { recursive: true });
+    await page.screenshot({
+        path: "../artifacts/audio-maintenance/approval-required.png",
+    });
     await page
         .getByRole("button", {
             name: "Open audio approval settings",
@@ -86,10 +93,22 @@ try {
             (request) => request.operation === "audio-maintenance-settings",
         ),
     );
+    // Approving the helper in Login Items continues the install by itself.
+    const installs = () =>
+        calls.filter(
+            (request) =>
+                request.operation === "audio-setup" &&
+                request.action === "install",
+        ).length;
+    assert.equal(installs(), 1);
+    outcome = { ok: true };
+    registrationStatus = 1;
+    for (let i = 0; i < 40 && installs() < 2; i++)
+        await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.equal(installs(), 2, "install did not continue after approval");
     for (const component of Object.values(fixture.installation.components))
         component.state = "installed";
     fixture.installation.updateAvailable = true;
-    outcome = { ok: true };
     await settings();
     await page
         .getByRole("button", { name: "Update audio components", exact: true })
@@ -210,6 +229,26 @@ try {
             .getByRole("button", { name: "Repair audio", exact: true })
             .isDisabled(),
     );
+    fixture.installation.maintenanceAvailable = true;
+    fixture.installation.migrationPending = true;
+    await settings();
+    await page
+        .getByText(
+            "Engine migration is pending consent verification. Your saved mixes keep using the current Engine.",
+            { exact: true },
+        )
+        .waitFor();
+    assert.equal(
+        await page
+            .getByText("LoopZ setup needs attention", { exact: true })
+            .count(),
+        0,
+    );
+    await mkdir("../artifacts/engine-migration", { recursive: true });
+    await page.getByRole("dialog").screenshot({
+        path: "../artifacts/engine-migration/pending-chrome.png",
+        animations: "disabled",
+    });
     console.log(
         "PASS: native maintenance actions, approval, update, repair and explicit audio activation UI",
     );

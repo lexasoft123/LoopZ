@@ -1,5 +1,6 @@
 #include "login.hpp"
 #import <ServiceManagement/ServiceManagement.h>
+#include <mutex>
 #include <stdexcept>
 
 namespace loopz::macos {
@@ -15,10 +16,28 @@ bool installed() {
                                  stringByAppendingPathComponent:@"Contents/Library/LaunchAgents/"
                                                                 @"com.lexasoft.loopz.login.plist"]];
 }
+// The editor state is polled every ~100 ms. Each SMAppService.status read makes
+// macOS look the background item up, so reuse a recent answer.
+std::mutex statusLock;
+SMAppServiceStatus cachedStatus = SMAppServiceStatusNotFound;
+CFAbsoluteTime cachedAt = 0;
+void invalidateStatus() {
+    std::lock_guard guard(statusLock);
+    cachedAt = 0;
+}
+SMAppServiceStatus currentStatus() {
+    std::lock_guard guard(statusLock);
+    const auto now = CFAbsoluteTimeGetCurrent();
+    if (cachedAt == 0 || now - cachedAt > 2.0 || now < cachedAt) {
+        cachedStatus = service().status;
+        cachedAt = now;
+    }
+    return cachedStatus;
+}
 } // namespace
 NSDictionary* loginStartupStatus() {
     const bool available = installed();
-    const auto status = available ? service().status : SMAppServiceStatusNotFound;
+    const auto status = available ? currentStatus() : SMAppServiceStatusNotFound;
     return @{
         @"available" : @(available),
         @"enabled" : @(status == SMAppServiceStatusEnabled),
@@ -42,6 +61,7 @@ void setLoginStartup(bool enabled) {
     NSError* error = nil;
     const bool changed =
         enabled ? [item registerAndReturnError:&error] : [item unregisterAndReturnError:&error];
+    invalidateStatus();
     if (!changed)
         throw std::runtime_error(error.localizedDescription.UTF8String
                                      ?: "macOS could not update login startup.");
